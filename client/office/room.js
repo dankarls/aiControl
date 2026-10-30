@@ -400,9 +400,11 @@ export function createRoom(scene, renderer) {
     // either side of it.
     const wall = (w, x, z, rotation, normal, color = '#eef1f5', door) => {
       const spans = door === undefined ? [[-w / 2, w / 2]] : [[-w / 2, door - DOOR.w / 2], [door + DOOR.w / 2, w / 2]];
+      // The trim stops a hair short of the doorway: ending flush, its ends would share the jambs' faces and flicker.
+      const trims = door === undefined ? spans : [[-w / 2, door - DOOR.w / 2 - 0.003], [door + DOOR.w / 2 + 0.003, w / 2]];
       const m = mesh(door === undefined ? new THREE.BoxGeometry(w, WALL_H, WALL_T) : notched(w, door), toonMaterial(color, { transparent: true }), 0);
       m.position.set(x, WALL_H / 2, z); m.rotation.y = rotation; shell.add(m); m.updateMatrixWorld();
-      const trim = mesh(mergeGeometries(spans.map(([a, b]) => new THREE.BoxGeometry(b - a, 0.14, WALL_T + 0.04).translate((a + b) / 2, 0, 0))), toonMaterial('#3a4352'), 0); trim.position.y = -WALL_H / 2 + 0.07; m.add(trim);
+      const trim = mesh(mergeGeometries(trims.map(([a, b]) => new THREE.BoxGeometry(b - a, 0.14, WALL_T + 0.04).translate((a + b) / 2, 0, 0))), toonMaterial('#3a4352'), 0); trim.position.y = -WALL_H / 2 + 0.07; m.add(trim);
       room.fadeables.walls.push({ mesh: m, normal });
       for (const [a, b] of spans) room.wallColliders.push(new THREE.Box3(new THREE.Vector3(a, -WALL_H / 2, -WALL_T / 2), new THREE.Vector3(b, WALL_H / 2, WALL_T / 2)).applyMatrix4(m.matrixWorld));
       return m;

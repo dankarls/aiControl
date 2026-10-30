@@ -214,7 +214,8 @@ export function pick(event, canvas, camera, scene) {
     while (node && !node.userData.sessionId && !node.userData.monitor && !node.userData.board && !node.userData.hire && !node.userData.toggle) node = node.parent;
     if (node?.userData.sessionId) return { kind: 'character', id: node.userData.sessionId };
     if (node?.userData.monitor) return { kind: 'monitor', id: node.userData.monitor, node, point: hit.point };
-    if (node?.userData.toggle) { if (shown(node)) return { kind: 'toggle', node }; continue; } // the light switch, hidden with its wall; a game behind a shut shelf
+    // A toggle (with where it was hit): the light switch, hidden with its wall, or a game behind a shut shelf, look past.
+    if (node?.userData.toggle) { if (shown(node)) return { kind: 'toggle', node, point: hit.point }; continue; }
     if (node?.userData.hire) return { kind: 'hire', node, point: hit.point, ...node.userData.hire };
     // A board on a wall that's faded out for the overview is hidden: look past it.
     if (node) { if (node.visible) return { kind: 'board', node }; continue; }

@@ -87,7 +87,12 @@ function drawScore(g, w, h, game, best, active) {
   g.fillStyle = word[1]; g.fillText(word[0], w / 2, 345);
 }
 // What a dart just scored, floating up off the board (golf.js calls its holes with it too).
-export function drawCall(g, w, h, text, color) { g.clearRect(0, 0, w, h); if (!text) return; g.font = `bold 84px ${CHALK}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineWidth = 12; g.strokeStyle = '#1b1a1f'; g.strokeText(text, w / 2, h / 2); g.fillStyle = color; g.fillText(text, w / 2, h / 2); }
+export function drawCall(g, w, h, text, color) {
+  g.clearRect(0, 0, w, h); if (!text) return;
+  // As big as fits across, room left for the outline.
+  g.font = `bold 84px ${CHALK}`; g.font = `bold ${Math.min(84, Math.floor(84 * (w - 30) / g.measureText(text).width))}px ${CHALK}`;
+  g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineWidth = 12; g.strokeStyle = '#1b1a1f'; g.strokeText(text, w / 2, h / 2); g.fillStyle = color; g.fillText(text, w / 2, h / 2);
+}
 
 // `hands`: the camera's hands (camera.js), where the next dart is held; `aim()`: where you're pointing, as a direction;
 // `onPlay(darts)`: the board was clicked.
@@ -137,7 +142,7 @@ export function createDarts({ hands, camera, aim, onPlay }) {
       // Where it would land: a white ring with a dark edge, so it shows on cream and black alike.
       sight = new THREE.Mesh(new THREE.RingGeometry(0.011, 0.017, 24), new THREE.MeshBasicMaterial({ color: '#ffffff', depthTest: false })); sight.renderOrder = 2; sight.visible = false; room.add(sight);
       const edge = new THREE.Mesh(new THREE.RingGeometry(0.017, 0.021, 24), new THREE.MeshBasicMaterial({ color: '#1b1a1f', depthTest: false })); edge.renderOrder = 2; sight.add(edge);
-      call = new THREE.Sprite(new THREE.SpriteMaterial({ map: canvasTexture(256, 128, drawCall), transparent: true, depthTest: false })); call.scale.set(0.36, 0.18, 1); call.renderOrder = 3; call.visible = false; room.add(call);
+      call = new THREE.Sprite(new THREE.SpriteMaterial({ map: canvasTexture(512, 128, drawCall), transparent: true, depthTest: false })); call.scale.set(0.72, 0.18, 1); call.renderOrder = 3; call.visible = false; room.add(call);
     },
     // Throws the dart in hand along `direction` (where you aim if not given). False if it wouldn't reach the back wall.
     throw(direction = aim()) {
