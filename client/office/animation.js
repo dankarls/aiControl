@@ -224,8 +224,11 @@ export class Cast {
     this.characters.delete(id);
   }
 
-  // Hit by something or the boss's coffee, or their desk was: a jump, then a frown and a glare at the boss for a moment.
-  startle(id) { const c = this.characters.get(id); if (c && !c.plus) c.startled = this.time; }
+  // Hit by something or the boss's coffee, or their desk was: a jump, then a frown and a glare at the boss for a moment; at
+  // `from` instead if that's where it came from (the goose, honking a sleeper awake).
+  startle(id, from = null) { const c = this.characters.get(id); if (c && !c.plus) { c.startled = this.time; c.startledBy = from?.clone() ?? null; } }
+  // Who's dozing at their desk right now (not slacking off or talking to you), and their seat.
+  sleepers() { return [...this.characters.values()].filter(c => c.shown === 'sleeping' && !c.trip && !c.leaving).map(c => ({ id: c.id, at: c.anchor.seat })); }
 
   update(dt, playerPos) {
     if (this.frozen) return; // connection lost: everyone holds still until it's back
@@ -269,7 +272,7 @@ export class Cast {
         other.fruit.body.getWorldPosition(head).y += other.fruit.height * other.scale * 0.6; target.glance = fruit.group.worldToLocal(head);
       }
       // Standing characters turn toward the boss when they want something, and anyone you're talking to turns in their chair.
-      if (playerPos && (STANDING.has(pose) || this.facingYou === c.id || startled)) target.turn = toward(c, playerPos);
+      if (playerPos && (STANDING.has(pose) || this.facingYou === c.id || startled)) target.turn = toward(c, startled && c.startledBy || playerPos);
       // Caught out, they snap to it; startled, they whip round.
       const kPose = (pose === 'busted' || startled) && !still ? 1 - Math.exp(-dt * 20) : k;
       if (!c.current) c.current = clonePose(target); else blendPose(c.current, target, this.time - c.changed > SETTLED ? 1 : kPose, kPose);

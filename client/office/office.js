@@ -121,7 +121,8 @@ export function mountOffice(container, hooks) {
   const bubbles = new Bubbles(container, id => office.talkTo(id));
   // It lets you be in the overview and on your way to someone.
   const goose = createGoose(scene, { props, player, walkable, bounds: () => layout?.room, busy: () => view.overview || !!player.flight || !!office.talking,
-    reducedMotion: () => !!reducedMotion?.matches, say: (icon, text) => bubbles.say(GOOSE, icon, text) });
+    reducedMotion: () => !!reducedMotion?.matches, say: (icon, text) => bubbles.say(GOOSE, icon, text),
+    sleepers: () => cast.sleepers(), wake: (id, line) => { cast.startle(id, goose.root.position); bubbles.say(id, '😱', line); } });
   const card = createCard(container);
   const menu = createMenu(container, (cwd, choice, item) => hooks.spawn?.(cwd, choice, item));
   const shots = createScreenshots(container, { room, onClose: () => office.panelClosed(), onSession: id => hooks.openPanel(id) });
