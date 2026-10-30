@@ -10,7 +10,7 @@ import { createSlacking } from './slack.js';
 import { createWindows } from './windows.js';
 import { createScreens, SCREEN_W, SCREEN_H } from './screens.js';
 import { createSecret, DOOR } from './secret.js';
-import { DESK_W, DESK_D } from './layout.js';
+import { DESK_W, DESK_D, coffeeSpot } from './layout.js';
 import {
   WALL_H, WALL_T, shared, once, rounded, mesh, canvasTexture, paint, painted, piece, deskItem, coffeeCup, plant, picture, sofa, armchair, lowTable, floorLamp, rug,
   counter, coffeeMachine, mugShelf, waterCooler, bookshelf, printer, filingCabinet, coatRack, extinguisher, glowTexture, floorShadow,
@@ -435,7 +435,7 @@ export function createRoom(scene, renderer) {
     const count = Math.max(1, Math.floor(width / 4)), xs = Array.from({ length: count }, (_, i) => -width / 2 + (i + 0.5) * width / count);
     const windows = createWindows(xs); back.add(windows);
     for (const [i, x] of xs.entries()) {
-      if (i) { hang(back, picture(i - 1, 0.7, 0.95), x - width / count / 2, 1.75); if (i % 2) place(plant('bush'), x - width / count / 2 + width / 2, 0.45); }
+      if (i > 1) { hang(back, picture(i - 1, 0.7, 0.95), x - width / count / 2, 1.75); if (i % 2) place(plant('bush'), x - width / count / 2 + width / 2, 0.45); }
     }
     place(plant('tree'), 0.5, 0.5); place(plant('snake'), width - 0.5, 0.5);
 
@@ -455,7 +455,7 @@ export function createRoom(scene, renderer) {
 
     // Boards; boards.js draws on their faces. The whiteboard is on the left wall, the clock above the door, the waiting board beside it.
     const board = (w, h, frameColor, keep) => { const g = new THREE.Group(); const frame = mesh(rounded(w + 0.1, h + 0.1, 0.05, 0.02), toonMaterial(frameColor), 0.008); g.add(frame); const face = new THREE.Mesh(new THREE.PlaneGeometry(w, h), dims(new THREE.MeshBasicMaterial({ color: '#ffffff' }), keep)); face.position.z = 0.03; g.add(face); g.userData.face = face; return g; };
-    // Its foot clears the counter's top, and it stays readable with the lights off.
+    // Its foot sits at the middle of the left wall, clear of the kitchen doorway at the front; readable with the lights off.
     const whiteboard = hang(left, board(3, 1.5, '#c0c4cc', 0.5), 0, 1.75, 0.03);
     const clock = new THREE.Group(); const rim = mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.06, 32).rotateX(Math.PI / 2), toonMaterial('#2f3542'), 0.008); clock.add(rim);
     const clockFace = new THREE.Mesh(new THREE.CircleGeometry(0.25, 32), dims(new THREE.MeshBasicMaterial({ color: '#ffffff' }))); clockFace.position.z = 0.032; clock.add(clockFace); clock.userData.face = clockFace;
@@ -466,21 +466,23 @@ export function createRoom(scene, renderer) {
     hang(front, notes('noticeboard', [[-0.57, 0.41, -0.15, NOTE.pink], [0.57, -0.4, 0.12, NOTE.blue], [0.585, -0.29, -0.06, NOTE.yellow]]), door.x - width / 2 - 1.4, 1.5, 0.0585);
     room.boards = { whiteboard: whiteboard.userData.face, clock: clockFace, waiting: waiting.userData.face, plate };
 
-    // Left wall: a bookshelf at the back, the coffee corner at the front, pictures where there's room.
+    // Left wall: a bookshelf at the back, the whiteboard, pictures where there's room; the front is kept clear for the kitchen doorway.
     const along = z => depth / 2 - z;
     place(bookshelf(), 0.2, 1.45, Math.PI / 2); shadowUnder(0.25, 1.45, 0.5, 1);
     if (depth / 2 - 1.6 - 1.95 > 1.1) hang(left, picture(1, 0.8, 0.6), along((1.95 + depth / 2 - 1.6) / 2), 1.7);
-    place(counter(), 0.32, depth - 1.6, Math.PI / 2); shadowUnder(0.35, depth - 1.6, 0.7, 2.1);
+    // The coffee corner is on the back wall, between the first two windows.
+    const spot = coffeeSpot(width);
+    place(counter(), spot, 0.32); shadowUnder(spot, 0.35, 2.1, 0.7);
     // E or a click on the machine fills the boss's mug (room.onCoffee, from office.js).
-    room.coffeeMachine = place(coffeeMachine(), 0.32, depth - 1.6, Math.PI / 2, false); room.coffeeMachine.userData.toggle = () => room.onCoffee?.();
+    room.coffeeMachine = place(coffeeMachine(), spot, 0.32, 0, false); room.coffeeMachine.userData.toggle = () => room.onCoffee?.();
     // Taped over its front while a usage window is used up, with its light gone red; boards.js writes on it and shows it.
     const sign = new THREE.Group(); sign.visible = false; sign.position.set(-0.535, 1.23, 0.122); room.coffeeMachine.add(sign);
     sign.userData.face = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 0.135), dims(new THREE.MeshBasicMaterial({ color: '#ffffff' }))); sign.userData.face.rotation.z = 0.06;
     const led = new THREE.Mesh(new THREE.SphereGeometry(0.017, 10, 8), new THREE.MeshBasicMaterial({ color: '#ff3b30' })); led.position.set(0.135, -0.01, -0.006);
     sign.add(sign.userData.face, led); room.coffeeSign = sign;
-    hang(left, mugShelf(), along(depth - 1.6), 1.75, 0.11);
-    hang(left, notes('coffee', [[0, 0.05, 0.08, NOTE.yellow], [0.07, -0.05, -0.12, NOTE.green]]), along(depth - 0.75), 1.25, 0.004);
-    bin('#3a3d46', 0.3, depth - 0.35);
+    hang(back, mugShelf(), spot - width / 2, 1.75, 0.11);
+    hang(back, notes('coffee', [[0, 0.05, 0.08, NOTE.yellow], [0.07, -0.05, -0.12, NOTE.green]]), spot - width / 2 + 0.85, 1.25, 0.004);
+    bin('#3a3d46', spot + 1.3, 0.3);
     if (depth - 3.05 > depth / 2 + 1.65) place(waterCooler(), 0.24, depth - 3.05, Math.PI / 2);
     if (depth - 3.65 > depth / 2 + 1.65) place(plant('bush'), 0.42, depth - 3.65);
 

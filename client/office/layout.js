@@ -4,8 +4,12 @@
 // so nobody already seated moves when projects come and go.
 // ponytail: cells fit CELL_PAIRS pairs; a pod bigger than that widens every cell and shifts later columns once.
 export const DESK_W = 1.6, DESK_D = 0.9, AISLE = 1.9, MAX_SUBAGENTS = 3, VACANT_MS = 30_000, DONE_MS = 60_000;
-// The first column sits a little nearer the left wall (bookshelf and coffee corner) than AISLE, leaving more room by the lounge.
+// The first column sits a little nearer the left wall (bookshelf and the kitchen doorway) than AISLE, leaving more room by the lounge.
 const CHAIR = 0.9, START = 2.6, MIN_ROOM = 8, CELL_PAIRS = 3, LEFT = 1.5;
+
+// Where the coffee counter stands on the back wall (the boundary between two windows, world x), and the kitchen doorway in the left wall (world z).
+export const KITCHEN_DOOR_W = 1.5;
+export const coffeeSpot = width => width / Math.max(1, Math.floor(width / 4)), kitchenDoor = depth => depth - 1.5;
 
 const podKey = session => session.cwd || session.project || 'Unknown';
 

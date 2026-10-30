@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { layoutOffice, MAX_SUBAGENTS } from '../client/office/layout.js';
+import { layoutOffice, MAX_SUBAGENTS, coffeeSpot, kitchenDoor, KITCHEN_DOOR_W } from '../client/office/layout.js';
 
 const s = (id, project, extra = {}) => ({ id, project, cwd: `/p/${project}`, status: 'idle', ...extra });
 
@@ -102,4 +102,17 @@ test('a pod knows the folder to start another agent in, from someone still there
   assert.equal(pod.cwd, '/p/x');
   assert.equal(pod.width, 1.6, 'no spare desk: two sit at one pair');
   assert.equal(layoutOffice([{ id: 'a', project: 'x', status: 'idle' }]).pods[0].cwd, undefined, 'nowhere to start one without a folder');
+});
+
+test('the coffee corner fits between the back windows, and the kitchen door clears the whiteboard', () => {
+  for (let width = 8; width <= 40; width += 0.25) {
+    const spot = coffeeSpot(width), count = Math.floor(width / 4);
+    for (let i = 0; i < count; i++) assert.ok(Math.abs(spot - (i + 0.5) * width / count) >= 1.03 + 0.82, `width ${width}`);
+  }
+  for (let depth = 8; depth <= 40; depth += 0.25) {
+    const door = kitchenDoor(depth);
+    assert.equal(door, depth - 1.5);
+    assert.ok(door - KITCHEN_DOOR_W / 2 >= depth / 2 + 1.55, `depth ${depth}`); // the whiteboard's frame
+    assert.ok(depth - 3.05 + 0.17 <= door - KITCHEN_DOOR_W / 2); // the water cooler
+  }
 });
