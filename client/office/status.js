@@ -24,6 +24,7 @@ const looks = {
   permission: ['waving', 'worried', '✋', 'amber'],
   question: ['raising', 'curious', '❓', 'amber'],
   idle: ['sleeping', 'asleep', '💤', 'dark'],
+  waiting: ['drumming', 'neutral', '⏳', 'blue'],
   error: ['slumped', 'frown', '⚠️', 'red'],
 };
 // A working bubble's icon follows the running call's tool: "Edit · office/room.js" gets a pencil. Shells and the rest type.
@@ -35,9 +36,10 @@ const oneLine = text => {
 };
 
 // `activity` is 'thinking' while the model works out its next step (Codex reasoning, or a quiet Claude transcript),
-// and 'compacting' while it squeezes its context down to a summary. `since` is when a session needing you started waiting.
+// and 'compacting' while it squeezes its context down to a summary. `waitingOn` is what an idle session still has running: it stays awake for that.
+// `since` is when a session needing you started waiting.
 export function officeStatus(session, now = Date.now()) {
-  const activity = session.status === 'working' && ['thinking', 'compacting'].includes(session.activity) ? session.activity : '', look = looks[activity || session.status];
+  const activity = session.status === 'working' && ['thinking', 'compacting'].includes(session.activity) ? session.activity : '', look = looks[activity || (session.status === 'idle' && session.waitingOn ? 'waiting' : session.status)];
   const mode = MODES[session.permissionMode] || '', provider = session.provider;
   if (!look) return { pose: 'still', expression: 'neutral', bubble: null, screen: 'off', mode, provider, wear: 0, cups: 0 };
   const [pose, expression, icon, screen] = look, request = session.requests?.[0]?.title;
@@ -45,7 +47,7 @@ export function officeStatus(session, now = Date.now()) {
     working: session.detail || 'Working',
     permission: request || 'Needs permission',
     question: request || session.asks || 'Has a question',
-    idle: '',
+    idle: session.waitingOn ? `Waiting · ${session.waitingOn}` : '',
     error: session.detail || 'Error',
   }[session.status];
   // Helpers on a desk only chat while working, but always speak up when they need you.

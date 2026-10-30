@@ -11,11 +11,13 @@ const SETTLED = 0.7;    // seconds after a pose change, after which the pose is 
 // The sitter's root sits a little forward of the chair; standing, they step out behind it.
 const SEAT_FORWARD = 0.06, STAND_BACK = -0.8, STANDING = new Set(['waving', 'raising', 'impatient']);
 const KEYS = KEYS_Z - CHAIR_Z - SEAT_FORWARD; // the keyboard, from the sitter's root (the mouse's x is the same from either)
-const LOOK_RANGE = 4, WALK_SPEED = 2, RUN_SPEED = 4, GOODBYE = 1.2, STARTLED = 2.5, FINISHED = 2.5, WORKING = new Set(['typing', 'thinking', 'squeezing']);
+const LOOK_RANGE = 4, WALK_SPEED = 2, RUN_SPEED = 4, GOODBYE = 1.2, STARTLED = 2.5, FINISHED = 2.5, WORKING = new Set(['typing', 'thinking', 'squeezing', 'drumming']);
 // Waiting on you gets louder: a raised hand, then after a couple of minutes both arms waving, after ten a tapping foot.
 const WAVE_AFTER = 2 * 60_000, TAP_AFTER = 10 * 60_000;
 // Neighbours within NEAR metres react: a thumbs up for a finish, and every GLANCE_EVERY seconds a GLANCE_FOR look at a red desk.
 const NEAR = 6, GLANCE_EVERY = 7, GLANCE_FOR = 1.6;
+// The stretch or cheer on going to sleep, only once nothing is left running.
+export const finishes = (from, to) => to === 'sleeping' && WORKING.has(from);
 export const waitingPose = (since, now = Date.now()) => now - since >= TAP_AFTER ? 'impatient' : now - since >= WAVE_AFTER ? 'waving' : 'raising';
 
 // t is seconds (frozen at 0 with reduced motion), seed spreads characters out of step, fruit gives the body's height and shape,
@@ -57,6 +59,12 @@ export function poseTargets(pose, t, seed, fruit, wear = 0, habit = '') {
         leftHand: V(crown.x + crown.r * 0.5, SEAT_H + h * 0.78, -crown.r - 0.1), rightHand: V(crown.x - crown.r * 0.5, SEAT_H + h * 0.78, -crown.r - 0.1), ...feetUnder } };
       return { ...seated(-0.1, wave(1.2) * 0.006), limbs: {
         leftHand: desk, rightHand: V(-0.09, SEAT_H + h * 0.46 + Math.max(0, wave(3)) * 0.012, 0.33), ...feetUnder } };
+    }
+    // Waiting on a task: awake and upright, one hand drumming on the desk in bursts, the other resting; now and then a look up at the monitor.
+    case 'drumming': {
+      const burst = clamp(wave(0.8) * 3, 0, 1), resting = DESK_H + 0.03, z = KEYS - 0.08;
+      return { ...seated(0.04, wave(1.2) * 0.004), glance: wave(0.5) > 0.6 ? V(0, DESK_H + 0.34, 1) : null, limbs: {
+        leftHand: V(0.2, resting, z), rightHand: V(-0.24, resting + Math.abs(s(t * 13 + seed)) * 0.05 * burst, z), ...feetUnder } };
     }
     // Compacting: hunched forward hugging itself, eyes screwed shut (fruit.js), shivering hard enough to see across the room.
     case 'squeezing': {
@@ -193,7 +201,7 @@ export class Cast {
       const status = !going && statuses.get(id) || { pose: 'waving', expression: 'smile' };
       c.expression = status.expression; c.since = status.since;
       // Done: a sitter going from work to idle stretches or punches the air before nodding off (not on a page load).
-      if (c.pose !== status.pose && !firstSync && !still && WORKING.has(c.pose) && status.pose === 'sleeping') { c.finished = this.time; c.fan = undefined; }
+      if (c.pose !== status.pose && !firstSync && !still && finishes(c.pose, status.pose)) { c.finished = this.time; c.fan = undefined; }
       if (c.pose !== status.pose) { c.pose = status.pose; c.changed = this.time; c.fruit.setGrey(status.pose === 'still'); }
       if (c.wear !== (status.wear || 0)) { c.wear = status.wear || 0; c.changed = this.time; c.fruit.setWear(c.wear); }
       if (c.shades !== (status.mode === 'bypass')) { c.shades = status.mode === 'bypass'; c.fruit.setShades(c.shades); }

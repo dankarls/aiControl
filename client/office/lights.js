@@ -9,7 +9,7 @@ const KEY = 'office-lights', DIM = 0.2; // the share of its brightness a dimmed 
 const HOLD = 0.5, ROW = 0.3; // start-up: how long the room stays dark, then the time between rows of lamps
 const SCREENS = 4, SCREEN_POWER = 1.6, SCREEN_LIT = 0.3; // the share they keep while the room lights are on
 // Each screen tone's light, a whiter shade of its accent, and how bright.
-const tones = { green: ['#a4f2c2', 1], amber: ['#ffd496', 1], red: ['#ffa3a3', 1], dark: ['#aebcd8', 0.45] };
+const tones = { green: ['#a4f2c2', 1], amber: ['#ffd496', 1], blue: ['#a8d4ff', 0.8], red: ['#ffa3a3', 1], dark: ['#aebcd8', 0.45] };
 
 // Marks what the switch dims (a light's intensity, a material's colour or opacity) and how much of it stays.
 export function dims(target, keep = DIM, what = target.isLight ? 'intensity' : 'color') {

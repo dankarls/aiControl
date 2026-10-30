@@ -31,7 +31,7 @@ const teams = [['#f4a6a6', '#e0675c'], ['#a6d8f4', '#3d8fd1'], ['#b9e4a1', '#4fa
 const HELPER_SPOTS = [[0.56, -0.66], [-0.56, -0.66], [-0.6, -1.42]];
 const CUP_SPOTS = [[0.5, -0.34], [0.62, -0.3], [0.56, -0.2], [0.68, -0.19], [0.5, -0.1], [0.63, -0.09]];
 const ITEM_SPOTS = [[-0.6, 0.22], [-0.42, 0.3], [-0.62, -0.06]]; // the front-left corner stays free, and the back left for a second monitor
-const leds = { green: '#5ee08a', amber: '#ffb23e', dark: '#4d6fa8', red: '#ff6b6b', off: '#2a2d35' };
+const leds = { green: '#5ee08a', amber: '#ffb23e', blue: '#4aa8ff', dark: '#4d6fa8', red: '#ff6b6b', off: '#2a2d35' };
 // A desk pops up out of the floor for someone new and sinks back into it once someone leaving has got up (animation.js's
 // goodbye), not on a page load; with reduced motion it's just there, or gone. Seconds, but SINK_AFTER is ms; BURIED is metres.
 const RISE = 0.6, SINK = 0.8, SINK_AFTER = 1800, BURIED = 1.4;
@@ -152,7 +152,7 @@ function createDesk(color, width = DESK_W, helper = false, notes = 0, provider =
   return desk;
 }
 
-const tints = { green: ['#0f2a1a', '#5ee08a'], amber: ['#2e2108', '#ffb23e'], dark: ['#151821', '#7d8699'], red: ['#2e0f0f', '#ff6b6b'], off: ['#0d0e12', '#3a3f4b'] };
+const tints = { green: ['#0f2a1a', '#5ee08a'], amber: ['#2e2108', '#ffb23e'], blue: ['#0c2238', '#5db4ff'], dark: ['#151821', '#7d8699'], red: ['#2e0f0f', '#ff6b6b'], off: ['#0d0e12', '#3a3f4b'] };
 // Drawn at 432×256 and scaled to the canvas, so helpers' smaller screens show the same thing.
 function drawScreen(g, w, h, monitor = null, tone = 'off') {
   const [background, accent] = tints[tone] || tints.off;

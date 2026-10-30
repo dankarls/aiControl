@@ -52,8 +52,8 @@ const sessions = [
   ]),
   claude('2d4f6a8c-1e3b-4c5d-9f7a-8b6c4d2e0f1a', 'weather-station', 'Fix flaky timezone test', 'idle', 95, [
     msg('user', 'The nightly summary test fails around midnight UTC. Fix it.', 120),
-    msg('assistant', 'The test used the local clock. It now freezes time at `2026-03-01T23:59:30Z` and passes in every timezone.', 95),
-  ]),
+    msg('assistant', 'The test used the local clock. It now freezes time at `2026-03-01T23:59:30Z` and passes in every timezone. The full nightly suite is running in the background.', 95),
+  ], { waitingOn: 'shell' }),
   codex('019a4c2e-7b1d-7e3f-a5c6-2d8e9f0a1b2c', 'recipe-api', 'Add pagination to /recipes', 'working', 1, [
     msg('user', 'Add cursor pagination to GET /recipes, 20 per page, and update the OpenAPI spec.', 8),
     tool('Shell · pnpm test -- recipes', 3), tool('Edit · src/routes/recipes.ts, openapi.yaml', 2),

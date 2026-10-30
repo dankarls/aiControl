@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { poseTargets, waitingPose } from '../client/office/animation.js';
+import { poseTargets, waitingPose, finishes } from '../client/office/animation.js';
 import { handGeometry, fistGeometry } from '../client/office/fruit.js';
 
 const fruit = { height: 0.5, surface: () => ({ x: 0, r: 0.22 }) };
@@ -12,6 +12,19 @@ test('a compacting fruit shivers in its seat, big enough to see across the room'
   assert.ok(range(p => p.x) > 0.03, 'jiggles on the spot');
   assert.ok(range(p => p.body.y) < 0.04 && Math.abs(frames[0].z - poseTargets('thinking', 0, 1, fruit).z) < 0.01, 'stays in the chair');
   assert.deepEqual(poseTargets('squeezing', 0, 1, fruit), poseTargets('squeezing', 0, 1, fruit), 'reduced motion (t = 0) holds still');
+});
+
+test('waiting on a task: awake in the seat, drumming on the desk in bursts, looking up at the monitor now and then', () => {
+  const frames = Array.from({ length: 600 }, (_, i) => poseTargets('drumming', i / 30, 1, fruit)), typing = poseTargets('typing', 0, 1, fruit), lift = frames.map(p => p.limbs.rightHand.y);
+  assert.ok(frames.every(p => Math.abs(p.z - typing.z) < 0.01), 'stays in the chair');
+  assert.ok(Math.max(...lift) - Math.min(...lift) > 0.03, 'the fingers lift and come back down');
+  assert.ok(frames.some(p => p.glance) && frames.some(p => !p.glance), 'checks the monitor now and then');
+  assert.deepEqual(poseTargets('drumming', 0, 1, fruit), poseTargets('drumming', 0, 1, fruit), 'reduced motion (t = 0) holds still');
+});
+
+test('a finish plays when the work is really over: from working or waiting to asleep, not from working to waiting', () => {
+  assert.deepEqual(['typing', 'drumming', 'raising'].map(from => finishes(from, 'sleeping')), [true, true, false]);
+  assert.equal(finishes('typing', 'drumming'), false);
 });
 
 test('waiting on you gets louder: a raised hand, waving after two minutes, a tapping foot after ten', () => {
