@@ -149,9 +149,20 @@ export function drawCall(g, w, h, text, color) {
 // `onPlay(darts)`: the board was clicked.
 export function createDarts({ hands, camera, canvas, onPlay }) {
   let game = newGame(), best = null, room = null, active = false, flight = null, pullAt = 0, time = 0, still = false;
-  let drag = null, breath = 0, shot = 0, wasReady = false, lit = '';
+  let drag = null, breath = 0, shot = 0, flick = 0, wasReady = false, lit = '';
   try { best = Number(localStorage.getItem(BEST)) || null; } catch {}
-  const held = dart(0); held.rotation.set(0.12, 0.08, 0); held.visible = false; hands.add(held);
+  // Your hand, with the next dart pinched near the back of its barrel, the arm running off the bottom left like the mug's
+  // (camera.js). It follows the ring round the board, shakes as it sways and flicks forward as it lets go (update).
+  const arm = new THREE.Group(), grip = new THREE.Group(), ink = toonMaterial('#26252b'); arm.visible = false; hands.add(arm);
+  const held = dart(0); held.visible = false; arm.add(held, grip);
+  for (const m of [held, grip]) m.rotation.set(0.3, -0.5, 0.2);
+  const fist = new THREE.Vector3(0.006, -0.022, 0.068);
+  grip.add(new THREE.Mesh(new THREE.SphereGeometry(0.016, 14, 10).scale(1, 1.1, 1.2).translate(fist.x, fist.y, fist.z), ink));
+  for (const z of [0.044, 0.056]) grip.add(new THREE.Mesh(new THREE.TorusGeometry(0.008, 0.0042, 6, 12, Math.PI * 1.15).rotateZ(-0.35).translate(0, 0, z), ink));
+  grip.add(new THREE.Mesh(new THREE.CapsuleGeometry(0.0045, 0.022, 4, 8).rotateX(Math.PI / 2).rotateY(0.4).translate(-0.006, -0.007, 0.06), ink));
+  grip.updateMatrix(); fist.applyMatrix4(grip.matrix); const wrist = new THREE.Vector3(0.006, -0.03, 0.08).applyMatrix4(grip.matrix);
+  arm.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.QuadraticBezierCurve3(wrist, new THREE.Vector3(-0.04, -0.12, 0.12), new THREE.Vector3(-0.14, -0.3, 0.3)), 16, 0.012, 8), ink));
+  arm.add(new THREE.Mesh(new THREE.SphereGeometry(0.0125, 12, 8).translate(wrist.x, wrist.y, wrist.z), ink));
   let stuck, ring, chalk, call, glow, hud, pad;
   // On the board's face in the room's frame: where the ring's been steered to, where this dart's started, where it's pulled
   // back to (drifting about there) and the ring with the sway; the stick, as a push up to 1; the drift's phases this dart.
@@ -239,7 +250,7 @@ export function createDarts({ hands, camera, canvas, onPlay }) {
       held.updateWorldMatrix(true, false);
       const from = room.worldToLocal(held.getWorldPosition(new THREE.Vector3()));
       flight = { m, i, from, to, hit, t: 0, time: Math.max(0.12, from.distanceTo(to) / SPEED) };
-      m.visible = true; if (still) land();
+      m.visible = true; if (still) land(); else flick = 1;
       return true;
     },
     update(dt, at, reduced) {
@@ -257,10 +268,13 @@ export function createDarts({ hands, camera, canvas, onPlay }) {
       }
       wasReady = ready; held.visible = ready;
       if (ready) { const next = game.over || game.won ? 0 : game.turn.length; if (held.userData.i !== next) { held.userData.i = next; held.geometry = stuck[next].geometry; } }
-      // The dart in hand at the bottom left and, on a narrow screen, the chalkboard up top, both kept inside the view.
+      // The hand at the bottom left (its fist at the same place on screen however wide; on a narrow screen, where the board
+      // fills the width, smaller and lower so it's clear of the beds) and there the chalkboard up top, both inside the view.
       const deep = 0.4, high = deep * tan(), across = high * camera.aspect, px = 2 * high / (canvas.clientHeight || 1);
-      held.position.set(-Math.min(0.11, 0.55 * across), -Math.min(0.11, 0.8 * high), -deep);
-      hud.visible = active && narrow();
+      arm.visible = active;
+      const thin = narrow(), k = thin ? 0.75 : 1, near = (deep - k * fist.z) / deep; arm.scale.setScalar(k);
+      arm.position.set(-0.6 * across * near - k * fist.x, (thin ? -0.9 : -0.7) * high * near - k * fist.y, -deep);
+      hud.visible = active && thin;
       if (hud.visible) { const w = Math.min(0.45 * high, 1.1 * across); hud.scale.setScalar(w); hud.position.set(0, high - BAR * px - 0.415 * w, -deep); }
       ring.visible = ready;
       if (drag?.moved) { push.set(drag.x - drag.x0, drag.y0 - drag.y).divideScalar(STICK); if (push.lengthSq() > 1) push.normalize(); } else push.set(0, 0);
@@ -288,6 +302,12 @@ export function createDarts({ hands, camera, canvas, onPlay }) {
         dial[1].material.color.set(left < LATE ? late : 0xffffff);
         if (left <= 0) darts.throw();
       }
+      // The hand: a little way along with the ring and further with its sway; letting go, a quick push out and back.
+      flick = Math.max(0, flick - dt / 0.4); const f = flick && Math.sin(Math.PI * Math.sqrt(1 - flick));
+      arm.position.x += (spot.x - BOARD.x) * 0.05 + (sight.x - spot.x) * 0.5;
+      arm.position.y += (spot.y - BOARD.y) * 0.05 + (sight.y - spot.y) * 0.5;
+      arm.position.y += 0.015 * f; arm.position.z -= 0.08 * f;
+      arm.rotation.set((sight.y - BOARD.y) * 0.4 + 0.2 * f, -(sight.x - BOARD.x) * 0.4, (sight.x - spot.x) * 3);
       glow.visible = active && !!lit; if (glow.visible) glow.material.opacity = still ? 0.9 : 0.75 + 0.25 * Math.sin(time * 5);
       if (flight) {
         // A shallow arc, the tail trailing (its +z) back along the way it's going.
