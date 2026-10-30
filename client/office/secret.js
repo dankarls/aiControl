@@ -2,8 +2,8 @@
 // right book (the red one with gold bands, leaning a little proud; it doesn't light up under the pointer) and the shelf slides
 // aside. Behind it is a games room: confetti carpet, a neon sign, string lights, a disco ball whose spots sweep the walls and
 // floor, a lava lamp and beanbags, under two coloured lamps of its own that don't reach the office. Nothing in it is even
-// built until the shelf first moves; after that it isn't drawn at all
-// until the shelf moves, nor in the overview, and the shelf slides shut by itself once you've left and walked off.
+// built until the shelf first moves; after that, shut (or in the overview) it's skipped whole: not drawn, its matrices not
+// kept up and no ray tested on it. The shelf slides shut by itself once you've left and walked off.
 // Fruit and the goose stay out (no paths in here yet). With reduced motion the shelf jumps and nothing in there moves.
 import * as THREE from 'three';
 import { WALL_H, WALL_T, mesh, once, canvasTexture, glowTexture, paint, painted, piece } from './furniture.js';
@@ -123,7 +123,7 @@ export function createSecret({ onPress }) {
         for (const game of games) game.build(built.room);
       }
       const { room } = built;
-      if (room) room.visible = shown;
+      if (room) room.visible = room.matrixWorldAutoUpdate = shown;
       for (const [light, power] of built.lamps) light.intensity = shown ? power : 0;
       if (shown && !still) room?.userData.animate(time);
       for (const game of games) game.update(dt, at, still, shown);
@@ -142,7 +142,7 @@ export function createSecret({ onPress }) {
 // userData.animate(time) moves what moves.
 function buildRoom() {
   const { w, back, front } = SECRET, long = back + front, mid = (front - back) / 2, group = new THREE.Group();
-  group.userData.secret = 'room';
+  group.userData.secret = 'room'; group.raycast = () => group.visible; // hidden, a ray (the pointer's, every hover) skips all of it
   const carpet = canvasTexture(256, 256, confetti); carpet.wrapS = carpet.wrapT = THREE.RepeatWrapping; carpet.repeat.set(w / 2, long / 2);
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(w, long).rotateX(-Math.PI / 2), toonMaterial('#ffffff', { map: carpet }));
   floor.position.set(w / 2, 0, mid); floor.userData.floor = true; group.add(floor);

@@ -178,7 +178,7 @@ export function createDarts({ hands, camera, canvas, onPlay }) {
     get ready() { return active && !flight && !(game.over && time < pullAt); },
     // Playing: office.js steps you up to the oche and back.
     enter() { active = true; chalk.redraw(); },
-    leave() { active = false; drag = null; chalk.redraw(); },
+    leave() { active = false; drag = null; arm.visible = hud.visible = pad.visible = false; chalk.redraw(); },
     // Where you stand to play (on the floor, in world space) and which way you face; the view while playing: the board as
     // near the middle as leaves the chalkboard in sight, or on a narrow screen the board low, for the chalkboard up top.
     stand() { const p = room.localToWorld(new THREE.Vector3(BOARD.x, 0, OCHE + 0.35)); return { x: p.x, z: p.z, yaw: Math.PI }; },
@@ -253,9 +253,9 @@ export function createDarts({ hands, camera, canvas, onPlay }) {
       m.visible = true; if (still) land(); else flick = 1;
       return true;
     },
-    update(dt, at, reduced) {
+    update(dt, at, reduced, shown) {
       time += dt; still = reduced;
-      if (!room) return;
+      if (!room || !shown && !active && !flight) return; // shut away and not playing: nothing to do
       if (game.over && time >= pullAt && stuck.some(m => m.visible) && !flight) for (const m of stuck) m.visible = false; // pulled out
       const ready = darts.ready;
       // A fresh dart: the ring starts wide somewhere on the board, the dial full. A stick still held from the last one has to
