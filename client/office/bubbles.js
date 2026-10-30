@@ -161,7 +161,7 @@ export function createMenu(container, onChoose) {
 export function createOverlays(container, { onNext, onList, onOverview, onNew, onLeave }) {
   const bar = document.createElement('div'); bar.className = 'office-overlay'; container.append(bar);
   const button = (className, text, title, onclick) => { const b = document.createElement('button'); b.type = 'button'; b.className = className; b.textContent = text; b.title = title; b.setAttribute('aria-label', title); if (onclick) b.onclick = onclick; bar.append(b); return b; };
-  const leave = button('office-leave', '✕ Leave', 'Leave the game (Esc)', onLeave); leave.hidden = true;
+  const leave = button('office-leave', '✕ Quit game', 'Stop playing and stand up (Esc)', onLeave); leave.hidden = true;
   const waiting = button('office-waiting', '', 'Walk to the next one waiting (n)', onNext); waiting.hidden = true;
   const usage = button('office-usage', '⚡', 'Usage is near its limit; see the whiteboard'); usage.hidden = true;
   button('office-new', '+', 'New agent in a folder', event => onNew(event.currentTarget));
