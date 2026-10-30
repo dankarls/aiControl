@@ -69,3 +69,13 @@ test('a stale or unreadable saved colour falls back', () => {
     saveColour('violet');
   });
 });
+test('the chrome knows the bridge', () => {
+  assert.match(readFileSync('client/theme-console.js', 'utf8'), /bridge:/);
+  assert.match(readFileSync('client/alerts.js', 'utf8'), /bridge:/);
+  assert.match(readFileSync('client/themes.css', 'utf8'), /\[data-theme=['"]?bridge/);
+  assert.match(readFileSync('client/style.css', 'utf8'), /\.status-text\.bridge/);
+});
+test('chrome tokens use no gold', () => {
+  const block = readFileSync('client/themes.css', 'utf8').match(/\[data-theme=['"]?bridge[^{]*\{[^}]*\}/)[0];
+  for (const c of block.match(/#[0-9a-f]{6}/gi)) assert.ok(saturation(c) < .15 || hue(c) < 35 || hue(c) > 65, c);
+});

@@ -71,6 +71,22 @@
 }
 
 /* OFFICE: paper pinned to a corkboard, inked like the scene's speech bubbles. */
+/* BRIDGE: the holograms on the bridge, as a list: dark glass and a thin blue edge, with the bridge's signal colours. */
+:root[data-theme=bridge] {
+  color-scheme: dark;
+  --display: 'Antonio', 'Arial Narrow', 'Liberation Sans Narrow', sans-serif;
+  --bg: #070716; --panel: #0a1030; --panel-2: #111a45; --sunken: #060a22;
+  --text: #e4eaff; --text-2: #b8c4ea; --text-3: #8f9dcc;
+  --line: #24316e; --line-2: #3d4fa8;
+  --accent: #6a8cff; --accent-2: #8ba6ff; --accent-ink: #05060f; --accent-soft: #18235a;
+  --ok: #39e0c8; --ok-soft: #0a2b2e; --warn: #ff4a33; --warn-soft: #2c100c; --warn-line: #8c2e20; --danger: #ff5c8a; --danger-soft: #2e0d1c;
+  --codex: #e4eaff; --claude: #ec8a5f; --claude-soft: #2c1a12;
+  --radius: 8px; --radius-sm: 5px;
+  --shadow: 0 0 10px #6a8cff1f;
+  --shadow-lg: 0 0 0 1px #6a8cff55, 0 18px 50px #000c;
+  --focus: #8ba6ff;
+}
+
 :root[data-theme=office] {
   color-scheme: light;
   --hand: 'Comic Neue', 'Comic Sans MS', 'Chalkboard SE', 'Marker Felt', cursive;

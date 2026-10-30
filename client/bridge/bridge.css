@@ -7,3 +7,8 @@
 .bridge-overlay button:hover, .bridge-overlay button:focus-visible, .bridge-overlay button[aria-pressed=true] { background: var(--bridge-accent, #4d6be0); outline: none; }
 .bridge-overlay .bridge-next { border-color: #ff4a33; color: #ff4a33; }
 .bridge-overlay .bridge-next:hover, .bridge-overlay .bridge-next:focus-visible { background: #ff4a33; color: #05060f; }
+/* Talking: a narrower panel and no dimming, so the bridge stays in view beside it. */
+@media (min-width: 641px) {
+  :root[data-theme=bridge]:not([data-scene-fallback], [data-scene-list]) .detail-panel { width: min(100%, max(520px, 44vw)); }
+  :root[data-theme=bridge]:not([data-scene-fallback], [data-scene-list]) .panel-backdrop { background: transparent; backdrop-filter: none; }
+}
