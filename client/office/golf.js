@@ -15,16 +15,16 @@ import { mesh, once, canvasTexture, paint, painted } from './furniture.js';
 import { toonMaterial } from './toon.js';
 import { drawCall, CHALK } from './darts.js';
 import { SECRET } from './secret.js';
-import { BALL, CUP, RAIL, PIPE, PERIOD, DT, MAX, HOLE_COUNT, PARS, hole, endless, height, step, inside } from './golf-course.js';
+import { AREA, BALL, CUP, RAIL, PIPE, PERIOD, DT, MAX, HOLE_COUNT, PARS, hole, endless, height, step, inside } from './golf-course.js';
 
 // The green's surface over the floor (high enough that its deepest hollow stays above it); how far rails stand above it;
 // how much higher than it rolls the green is drawn, so its mounds and hollows show.
 const BASE = 0.32, CAP = 0.06, LIFT = 2.5;
 // How far back the club is drawn for the hardest putt (m); strokes before you pick up; how far over par ends an Endless run.
-const REACH = 0.6, STROKES = 8, OUT = 10, SAVE = 'ai-control-golf';
+const REACH = 0.5, STROKES = 8, OUT = 10, SAVE = 'ai-control-golf';
 const NEON = ['#ff4fd8', '#38f2ff', '#ffe14f', '#7dff6b', '#ff8a3d'], RAIL_BODY = '#2b2346';
-// The notice board: on the back wall behind the course (where it stays however wide the room gets), facing into the room.
-const BOARD = { x: 7, y: 1.55, z: -SECRET.back + 0.03, w: 1.7, h: 1.2 };
+// The notice board: on the back wall behind the middle of the course, facing into the room.
+const BOARD = { x: (AREA.x0 + AREA.x1) / 2, y: 1.55, z: -SECRET.back + 0.03, w: 1.7, h: 1.2 };
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const hash = (i, j) => { const v = Math.sin(i * 12.9898 + j * 78.233) * 43758.5453; return v - Math.floor(v); };
 // A spot kept `inset` metres inside the secret room's walls.
