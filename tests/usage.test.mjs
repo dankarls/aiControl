@@ -125,6 +125,7 @@ test('Claude handles access errors, throttling and malformed responses as unavai
 
 test('usage presentation labels expired data without inventing a reset or hiding over-limit percentages', () => {
   assert.equal(usageWindowView(window, now).resetText, 'Resets in 2h 0m');
+  assert.equal(usageWindowView(window, now).resetIn, '2h 0m');
   assert.equal(usageWindowView(window, now).shortLabel, '5h');
   assert.equal(usageWindowView(window, now).resetShortText, new Date(window.resetsAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }));
   const weekly = usageWindowView({ ...window, label: 'Weekly', resetsAt: now + 2.5 * 86_400_000 }, now);
@@ -133,9 +134,10 @@ test('usage presentation labels expired data without inventing a reset or hiding
   const expired = usageWindowView({ ...window, usedPercent: 101.5, resetsAt: now }, now);
   assert.equal(expired.percentText, '101.5%'); assert.equal(expired.barPercent, 100);
   assert.equal(expired.expired, true); assert.match(expired.resetText, /awaiting refresh/);
-  assert.equal(expired.resetShortText, 'due');
+  assert.equal(expired.resetShortText, 'due'); assert.equal(expired.resetIn, 'due');
   assert.equal(usageWindowView({ ...window, resetsAt: null }, now).resetText, 'Reset time unavailable');
   assert.equal(usageWindowView({ ...window, resetsAt: null }, now).resetShortText, '—');
+  assert.equal(usageWindowView({ ...window, resetsAt: null }, now).resetIn, '—');
   assert.equal(usageWindowView({ ...window, usedPercent: 0 }, now).percentText, '0%');
   assert.match(usageUpdatedText({ updatedAt: now - usageRefreshMs }, now, true), /5m ago · stale/);
   assert.equal(usageUpdatedText({ updatedAt: null, status: 'unavailable' }, now), 'Unavailable');

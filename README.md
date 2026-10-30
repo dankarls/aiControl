@@ -88,4 +88,4 @@ npm test
 
 ## License
 
-MIT. Bundles [Marked](client/vendor/marked/LICENSE.md) (MIT) and three Google Fonts under the [SIL Open Font License](client/public/fonts/OFL.txt).
+MIT. Bundles [Marked](client/vendor/marked/LICENSE.md) (MIT) and Google Fonts under the [SIL Open Font License](client/public/fonts/OFL.txt) and the [Apache License](client/public/fonts/APACHE-2.0.txt).

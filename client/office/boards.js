@@ -5,13 +5,16 @@ import * as THREE from 'three';
 import { usageWindowView } from '../usage-presentation.js';
 
 const MARKER = "'Comic Neue', 'Comic Sans MS', 'Chalkboard SE', 'Marker Felt', cursive";
+const SHARPIE = "'Permanent Marker', 'Marker Felt', 'Comic Neue', cursive";
 const INK = { black: '#23262e', blue: '#2b59c3', red: '#d7263d', green: '#1f9d55' };
 
-function paint(face, width, height) {
-  const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
+// `scale`: texture pixels per drawing unit.
+function paint(face, width, height, scale = 1) {
+  const canvas = document.createElement('canvas'); canvas.width = width * scale; canvas.height = height * scale;
   const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace; texture.anisotropy = 4;
   face.material.map = texture; face.material.color.set('#ffffff'); face.material.needsUpdate = true;
-  return { g: canvas.getContext('2d'), width, height, texture };
+  const g = canvas.getContext('2d'); g.scale(scale, scale);
+  return { g, width, height, texture };
 }
 // A slightly wobbly hand-drawn line.
 function scribble(g, x1, y1, x2, y2, seed = 1) {
@@ -27,46 +30,48 @@ function fit(g, text, width) {
   return `${text}…`;
 }
 
-function drawWhiteboard({ g, width: w, height: h }, usage, providers, error, now) {
+export function drawWhiteboard({ g, width: w, height: h }, usage, providers, error, now) {
   g.fillStyle = '#fbfcfd'; g.fillRect(0, 0, w, h);
   g.lineCap = 'round'; g.lineJoin = 'round';
-  g.fillStyle = INK.blue; g.font = `bold 52px ${MARKER}`; g.fillText('Usage', 40, 70);
-  g.strokeStyle = INK.blue; g.lineWidth = 4; scribble(g, 40, 84, 200, 86);
+  g.fillStyle = INK.blue; g.font = `52px ${SHARPIE}`; g.fillText('Usage', 40, 70);
+  g.strokeStyle = INK.blue; g.lineWidth = 4; scribble(g, 40, 84, 40 + g.measureText('Usage').width, 86);
   if (error) {
-    g.fillStyle = INK.red; g.font = `bold 64px ${MARKER}`; g.save(); g.translate(w / 2, h / 2 + 20); g.rotate(-0.08); g.textAlign = 'center'; g.fillText('connection lost', 0, 0); g.restore();
+    g.fillStyle = INK.red; g.font = `64px ${SHARPIE}`; g.save(); g.translate(w / 2, h / 2 + 20); g.rotate(-0.08); g.textAlign = 'center'; g.fillText('connection lost', 0, 0); g.restore();
     return;
   }
   // Agents the server can't reach, at the foot of the board: who in red, why underneath (the server's detail, less its "X disconnected:").
   const offline = (providers || []).filter(provider => !provider.connected).slice(0, 2);
   offline.forEach((provider, i) => {
     const y = h - 30 - (offline.length - 1 - i) * 76;
-    g.fillStyle = INK.red; g.font = `bold 36px ${MARKER}`; g.fillText(`${provider.name} offline`, 40, y - 34);
-    g.fillStyle = INK.black; g.font = `26px ${MARKER}`; g.fillText(fit(g, String(provider.detail || '').replace(/^[^:]*disconnected:\s*/i, ''), w - 80), 40, y);
+    g.fillStyle = INK.red; g.font = `36px ${SHARPIE}`; g.fillText(`${provider.name} offline`, 40, y - 34);
+    g.fillStyle = INK.black; g.font = `26px ${SHARPIE}`; g.fillText(fit(g, String(provider.detail || '').replace(/^[^:]*disconnected:\s*/i, ''), w - 80), 40, y);
   });
   const accounts = (usage || []).filter(account => account.windows?.length), space = h - 120 - offline.length * 76;
-  if (!accounts.length) { g.fillStyle = INK.black; g.font = `36px ${MARKER}`; g.fillText('no usage data yet', 40, 160); return; }
+  if (!accounts.length) { g.fillStyle = INK.black; g.font = `36px ${SHARPIE}`; g.fillText('no usage data yet', 40, 160); return; }
   // Two accounts fill the board; more (e.g. several Claude accounts) write smaller.
   const k = Math.min(1, space / (accounts.length * 182));
   let y = 110 + 40 * k, slow = false;
   accounts.forEach((account, a) => {
-    g.fillStyle = INK.black; g.font = `bold ${46 * k}px ${MARKER}`; g.fillText(account.name || account.provider, 40, y);
+    g.fillStyle = INK.black; g.font = `${46 * k}px ${SHARPIE}`; g.fillText(account.name || account.provider, 40, y);
     y += 58 * k;
     for (const window of account.windows.slice(0, 2)) {
-      const view = usageWindowView(window, now), x = 120, barW = w - x - 210, filled = barW * view.barPercent / 100;
-      g.fillStyle = INK.black; g.font = `${36 * k}px ${MARKER}`; g.fillText(view.shortLabel, x - 66, y);
+      const view = usageWindowView(window, now), x = 120, barW = w - x - 400, filled = barW * view.barPercent / 100;
+      g.fillStyle = INK.black; g.font = `${36 * k}px ${SHARPIE}`; g.fillText(view.shortLabel, x - 66, y);
       // Bar: an outline with a hatched fill, red once it's high.
       const color = view.tone ? INK.red : INK.green;
       g.strokeStyle = INK.black; g.lineWidth = 4; g.strokeRect(x, y - 30 * k, barW, 36 * k);
       g.save(); g.beginPath(); g.rect(x, y - 30 * k, filled, 36 * k); g.clip(); g.strokeStyle = color; g.lineWidth = 6;
       for (let i = -36; i < filled + 36; i += 13) scribble(g, x + i, y + 6 * k, x + i + 28, y - 30 * k, i + a);
       g.restore();
-      g.fillStyle = color; g.font = `bold ${40 * k}px ${MARKER}`; g.fillText(view.percentText, x + barW + 18, y + 4 * k);
+      g.fillStyle = color; g.font = `${40 * k}px ${SHARPIE}`; g.fillText(view.percentText, x + barW + 14, y + 4 * k);
+      // How long until this window resets, when that's known.
+      g.fillStyle = INK.blue; g.font = `${30 * k}px ${SHARPIE}`; g.fillText(view.expired ? 'reset due' : view.resetIn === '—' ? '' : `resets ${view.resetIn}`, x + barW + 136, y + 2 * k);
       if (view.pace > 100) slow = true;
       y += 52 * k;
     }
     y += 20 * k;
   });
-  if (slow) { g.save(); g.translate(w - 230, 70); g.rotate(-0.12); g.fillStyle = INK.red; g.font = `bold 46px ${MARKER}`; g.fillText('slow down!', 0, 0); g.restore(); }
+  if (slow) { g.save(); g.translate(w - 40, 66); g.rotate(-0.08); g.textAlign = 'right'; g.fillStyle = INK.red; g.font = `46px ${SHARPIE}`; g.fillText('slow down!', 0, 0); g.restore(); }
 }
 
 // Accounts with a usage window used up, each with when it's back (the last of its full windows to reset).
@@ -136,12 +141,15 @@ function drawWaiting({ g, width: w, height: h }, titles) {
 }
 
 export function createBoards(room) {
-  let boards = null, faces = null, usageKey = '', waitingKey = '', plateKey = null, minute = -1;
+  let boards = null, faces = null, usageKey = '', waitingKey = '', plateKey = null, minute = -1, written = null;
+  const writeUsage = () => { drawWhiteboard(boards.whiteboard, ...written); boards.whiteboard.texture.needsUpdate = true; };
+  // A canvas draws in a fallback until the font is in, so write the board again once it is.
+  document.fonts?.load(`40px 'Permanent Marker'`).then(() => { if (written) writeUsage(); }).catch(() => {});
   const ensure = () => {
     // The room rebuilds its walls (and so its boards) when it resizes; repaint onto the new faces.
     if (faces === room.boards.whiteboard) return;
     faces = room.boards.whiteboard;
-    boards = { whiteboard: paint(room.boards.whiteboard, 1024, 512), clock: paint(room.boards.clock, 256, 256), waiting: paint(room.boards.waiting, 528, 384), plate: paint(room.boards.plate, 512, 112), sign: paint(room.coffeeSign.userData.face, 256, 192) };
+    boards = { whiteboard: paint(room.boards.whiteboard, 1024, 512, 1.5), clock: paint(room.boards.clock, 256, 256), waiting: paint(room.boards.waiting, 528, 384), plate: paint(room.boards.plate, 512, 112), sign: paint(room.coffeeSign.userData.face, 256, 192) };
     usageKey = waitingKey = ''; plateKey = null; minute = -1;
   };
   return {
@@ -149,7 +157,7 @@ export function createBoards(room) {
       ensure();
       const now = Date.now(), nextUsage = JSON.stringify([snapshot.usage, snapshot.providers, !!error, Math.floor(now / 60_000)]);
       if (nextUsage !== usageKey) {
-        usageKey = nextUsage; drawWhiteboard(boards.whiteboard, snapshot.usage, snapshot.providers, error, now); boards.whiteboard.texture.needsUpdate = true;
+        usageKey = nextUsage; written = [snapshot.usage, snapshot.providers, error, now]; writeUsage();
         const empty = usedUp(snapshot.usage, now); room.coffeeSign.visible = empty.length > 0;
         if (empty.length) { drawSign(boards.sign, empty); boards.sign.texture.needsUpdate = true; }
       }
