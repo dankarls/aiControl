@@ -1,7 +1,7 @@
 // The putting green in the secret room: holes from golf-course.js, built, drawn and played here.
 // Click the course (or the notice board beside it) to play: the view moves behind the ball, raised enough to see the cup,
-// and follows the ball as it rolls. Press and pull back away from the ball, like drawing back a putter, and let go: the ball
-// goes the other way, as hard as you pulled (pull back to the ball to call it off). The green's height is in shades of green,
+// and follows the ball as it rolls. Press anywhere and drag back, like drawing back a putter, and let go: the ball goes the
+// other way, as hard as you dragged (drag back to where you pressed to call it off). The green's height is in shades of green,
 // darkest in its lowest hollow and lightest on its highest crest.
 // Holes 1 to 50 are the same for everyone; the notice board keeps your best on each, and any you've reached can be picked
 // there to play again. Endless (on the board too) deals fresh holes, harder as it goes, until you're ten over par; your
@@ -17,8 +17,9 @@ import { SECRET } from './secret.js';
 import { BALL, CUP, RAIL, PIPE, PERIOD, DT, MAX, HOLE_COUNT, PARS, hole, endless, height, step, inside } from './golf-course.js';
 
 const BASE = 0.16, CAP = 0.06; // the green's surface over the floor; how far rails stand above it
-// Metres of pull for the hardest putt; strokes before you pick up; how far over par ends an Endless run.
-const PULL = 1.1, STROKES = 8, OUT = 10, SAVE = 'ai-control-golf';
+// How far a drag goes for the hardest putt (a share of the scene's height); strokes before you pick up; how far over par
+// ends an Endless run.
+const PULL = 0.3, STROKES = 8, OUT = 10, SAVE = 'ai-control-golf';
 const NEON = ['#ff4fd8', '#38f2ff', '#ffe14f', '#7dff6b', '#ff8a3d'], RAIL_BODY = '#2b2346';
 const BOARD = { x: SECRET.w - 0.03, y: 1.55, z: -2.55, w: 1.7, h: 1.2 }; // the notice board, on the far wall
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
@@ -181,7 +182,7 @@ export function createGolf({ camera, canvas, ray, onPlay }) {
   // The view while playing, easing after the ball: behind it along `heading` (to the cup when it last stopped).
   const view = { from: new THREE.Vector3(), look: new THREE.Vector3(), heading: new THREE.Vector2(1, 0), set: false };
   const surfaceY = (x, z) => BASE + height(c, x, z);
-  const hint = () => !active ? 'Click the green to play' : mode === 'holes' && progress.n === 1 && !strokes ? 'Press, pull back from the ball and let go' : '';
+  const hint = () => !active ? 'Click the green to play' : mode === 'holes' && progress.n === 1 && !strokes ? 'Press anywhere, drag back and let go' : '';
   const redraw = () => boardTexture?.redraw({ mode, n: progress.n, index: run?.index ?? 0, over: run?.over ?? 0, par: c.par, strokes, best: progress.best, reached: progress.reached, endlessBest: progress.endlessBest, hint: hint() });
   const aimAtCup = () => { const d = view.heading.set(c.cup.x - ball.x, c.cup.z - ball.z); if (d.lengthSq() > 1e-6) d.normalize(); };
 
@@ -305,9 +306,9 @@ export function createGolf({ camera, canvas, ray, onPlay }) {
       // pulled in); it eases after the ball, and holds still while you pull.
       if (!pull) {
         const k = still || !view.set ? 1 : 1 - Math.exp(-dt * 2.5), y = surfaceY(ball.x, ball.z), far = Math.hypot(c.cup.x - ball.x, c.cup.z - ball.z);
-        const back = [ball.x - view.heading.x * 1.5, ball.z - view.heading.y * 1.5], [cx, cz] = within(...back, 0.3);
-        view.from.lerp(local.set(cx, y + Math.min(2.5, 1.05 + 0.28 * far + 0.7 * Math.hypot(back[0] - cx, back[1] - cz)), cz), k);
-        view.look.lerp(local.set(ball.x + (c.cup.x - ball.x) * 0.4, y, ball.z + (c.cup.z - ball.z) * 0.4), k); view.set = true;
+        const back = [ball.x - view.heading.x * 1.6, ball.z - view.heading.y * 1.6], [cx, cz] = within(...back, 0.3);
+        view.from.lerp(local.set(cx, y + Math.min(2.6, 1.3 + 0.25 * far + 0.7 * Math.hypot(back[0] - cx, back[1] - cz)), cz), k);
+        view.look.lerp(local.set(ball.x + (c.cup.x - ball.x) * 0.2, y, ball.z + (c.cup.z - ball.z) * 0.2), k); view.set = true;
       }
     },
   };
@@ -346,20 +347,21 @@ export function createGolf({ camera, canvas, ray, onPlay }) {
     confetti.userData.at = time; confetti.visible = true;
   }
 
-  // Pulling back: where the pointer meets the level of the ball, against where you pressed; the putt goes the other way.
+  // Pulling back: the way is where the pointer meets the level of the ball, against where you pressed (the putt goes the
+  // other way); how hard is how far it's been dragged on the screen, so a short drag anywhere does, ball near an edge or not.
   const onPlane = event => {
     rayer.origin.copy(room.worldToLocal(local.copy(camera.position))); rayer.direction.copy(ray(event));
     plane.constant = -surfaceY(ball.x, ball.z); return rayer.intersectPlane(plane, hitPoint) && hitPoint.clone();
   };
   canvas.addEventListener('pointerdown', event => {
     if (event.button !== 0 || !golf.ready) return;
-    const at = onPlane(event); if (at) pull = { start: at, dir: view.heading.clone(), power: 0 };
+    const at = onPlane(event); if (at) pull = { start: at, x: event.clientX, y: event.clientY, dir: view.heading.clone(), power: 0 };
   });
   canvas.addEventListener('pointermove', event => {
     if (!pull) return;
     const at = onPlane(event); if (!at) return;
     const dx = pull.start.x - at.x, dz = pull.start.z - at.z, length = Math.hypot(dx, dz);
-    pull.power = Math.min(1, length / PULL); if (length > 0.01) pull.dir.set(dx / length, dz / length);
+    pull.power = Math.min(1, Math.hypot(event.clientX - pull.x, event.clientY - pull.y) / (canvas.clientHeight * PULL)); if (length > 0.003) pull.dir.set(dx / length, dz / length);
     place(pull.dir, 0.03 + pull.power * 0.4);
   });
   canvas.addEventListener('pointerup', () => {
