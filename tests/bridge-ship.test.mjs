@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { assignStations, shipState } from '../client/bridge/ship.js';
+import { assignStations, displayState, stationSignals, shipState, signalOf } from '../client/bridge/ship.js';
 import { VACANT_MS } from '../client/office/layout.js';
 import { compareSessions } from '../client/session-order.js';
 
@@ -77,4 +77,34 @@ test('a waiting session takes a closing station before displacing', () => {
   const second = assignStations([...rest, s('ask', 'question')], first.stations, 1);
   assert.equal(ids(second)[0], 'ask');
   assert.equal(second.overflow, 0);
+});
+
+test('no signal drops out of warp and says so', () => {
+  const out = displayState(shipState({ sessions: [s('a', 'working'), s('b', 'question')] }, 0), 'gone');
+  assert.deepEqual([out.offline, out.warp, out.mode, out.left, out.right, out.rightName], [true, 0, 'orbit', 'NO SIGNAL', 'NO SIGNAL', '']);
+});
+test('sign text per mode', () => {
+  const hail = displayState(shipState({ sessions: [s('b', 'question', { title: 'Fix it' })] }, 0), '');
+  assert.equal(hail.right, '1 WAITING');
+  assert.equal(hail.rightName, 'Fix it');
+  assert.equal(displayState(shipState({ sessions: [s('a', 'working')] }, 0), '').left, 'WARP 1');
+  assert.equal(displayState(shipState({ sessions: [], usage: usage(100) }, 0), '').left, 'ENGINE OFFLINE');
+  assert.equal(displayState(shipState({ sessions: [] }, 0), '').left, 'ORBIT');
+});
+test('a waiting session is named by its project when it has no title', () => {
+  assert.equal(displayState(shipState({ sessions: [s('b', 'question', { project: 'site' })] }, 0), '').rightName, 'site');
+});
+test('a session shows one of the three signals', () => {
+  assert.deepEqual(['question', 'permission', 'working', 'idle', 'error', 'offline', undefined].map(status => signalOf({ status })), ['need', 'need', 'working', 'idle', 'idle', 'idle', 'idle']);
+});
+
+test('station signals follow the seats', () => {
+  const sessions = [s('a', 'working'), s('b', 'question'), s('c', 'idle')];
+  const seats = [{ id: 'a', goneAt: null }, { id: 'b', goneAt: null }, { id: 'c', goneAt: null }, { id: 'gone', goneAt: 5 }, null];
+  assert.deepEqual(stationSignals(seats, sessions, false), ['working', 'need', 'idle', null, null]);
+});
+test('with no signal the stations stop claiming anything', () => {
+  const sessions = [s('a', 'working'), s('b', 'question')];
+  const seats = [{ id: 'a', goneAt: null }, { id: 'b', goneAt: null }];
+  assert.deepEqual(stationSignals(seats, sessions, true), [null, null]);
 });

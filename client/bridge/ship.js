@@ -13,7 +13,7 @@ function limitsOf(usage, now) {
     if (!Number.isFinite(window.usedPercent)) continue;
     // An expired window is waiting for a refresh, so its old figure says nothing about now.
     const live = !usageWindowView(window, now).expired;
-    limits.push({ provider: account.provider, label: account.label, window: window.label, usedPercent: window.usedPercent, resetsAt: window.resetsAt, near: live && window.usedPercent >= NEAR, full: live && window.usedPercent >= FULL });
+    limits.push({ provider: account.provider, label: account.label || account.name, window: window.label, usedPercent: window.usedPercent, resetsAt: window.resetsAt, near: live && window.usedPercent >= NEAR, full: live && window.usedPercent >= FULL });
   }
   return limits;
 }
@@ -57,4 +57,24 @@ export function assignStations(sessions, previous, now) {
     if (index >= 0) take(index, session);
   }
   return { stations, overflow: main.filter(session => !seated.has(session.id)).length };
+}
+
+// The three signals a station can show: an error or a closed client isn't asking for anything.
+export const signalOf = session => isWaiting(session) ? 'need' : session.status === 'working' ? 'working' : 'idle';
+
+// Per station. With no signal nothing here is known, so nothing is claimed.
+export function stationSignals(seats, sessions, offline) {
+  const byId = new Map(sessions.map(session => [session.id, session]));
+  return seats.map(seat => { const session = !offline && seat && seat.goneAt == null && byId.get(seat.id); return session ? signalOf(session) : null; });
+}
+
+// What the signs say, and the ship with no signal: it drops out of warp rather than leave stale data looking live.
+export function displayState(state, error) {
+  if (error) return { ...state, mode: 'orbit', warp: 0, offline: true, left: 'NO SIGNAL', right: 'NO SIGNAL', rightName: '' };
+  return {
+    ...state, offline: false,
+    left: state.mode === 'limit' ? 'ENGINE OFFLINE' : state.warp > 0 ? `WARP ${state.warp}` : 'ORBIT',
+    right: state.waiting > 0 ? `${state.waiting} WAITING` : '',
+    rightName: state.next?.title || state.next?.project || '',
+  };
 }

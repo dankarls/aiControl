@@ -1,9 +1,11 @@
 import * as THREE from 'three';
 import './bridge.css';
+import { createDisplays } from './displays.js';
 import { createLights } from './lights.js';
 import { PALETTES, paletteFor, saveColour, savedColour } from './palettes.js';
 import { createPost } from './post.js';
 import { buildRoom } from './room.js';
+import { assignStations, displayState, shipState, stationSignals } from './ship.js';
 import { createSpace } from './space.js';
 
 export function webglAvailable() {
@@ -21,14 +23,17 @@ export function mountBridge(container, hooks = {}, options = {}) {
   const world = new THREE.Scene(), camera = new THREE.PerspectiveCamera(68, 1, .2, 34); camera.rotation.order = 'YXZ';
   const room = buildRoom(world, still), lights = createLights(world, room.glow, still), space = createSpace(still), post = createPost(renderer);
   room.stations.forEach((station, i) => station.lamps.push({ material: space.arcs[i], gain: 2.4, vacant: new THREE.Color(0) }));
+  let broken = false, seats = null;
   const view = { ...STANDING, ...options.view };
   const place = () => { camera.position.set(view.x, view.y, view.z); camera.rotation.set(view.pitch, view.yaw, 0); camera.updateMatrixWorld(); };
 
-  function repaint(palette) { room.repaint(palette); lights.repaint(palette); space.repaint(palette); }
+  const displays = createDisplays(room, still);
+  function repaint(palette) { room.repaint(palette); lights.repaint(palette); space.repaint(palette); displays.repaint(palette); }
   repaint(paletteFor(savedColour()));
-  const state = options.state || { mode: 'orbit', warp: 0, offline: false };
-  (options.statuses || []).forEach((status, i) => room.setStation(i, status));
-  room.setMode(state); lights.setMode(state); space.setMode(state);
+  const setMode = state => { room.setMode(state); lights.setMode(state); space.setMode(state); };
+  setMode({ mode: 'orbit', warp: 0, offline: false });
+  // The canvases are drawn before the bundled font has loaded, and text drawn in a fallback stays that way.
+  document.fonts?.load?.("700 40px Antonio").then(() => { if (!broken) repaint(paletteFor(savedColour())); }).catch(() => {});
 
   const resize = () => {
     const w = container.clientWidth || 1, h = container.clientHeight || 1;
@@ -49,7 +54,7 @@ export function mountBridge(container, hooks = {}, options = {}) {
   const onHover = event => { if (event.pointerType !== 'mouse') return; const name = buttonAt(event); el.title = name ? PALETTES[name].name : ''; el.style.cursor = name ? 'pointer' : ''; };
   el.addEventListener('click', onClick); el.addEventListener('pointermove', onHover);
 
-  let broken = false, raf = 0, last = performance.now(), T = 0;
+  let raf = 0, last = performance.now(), T = 0;
   const stop = () => { broken = true; cancelAnimationFrame(raf); };
   const onLost = event => { event.preventDefault(); stop(); };
   el.addEventListener('webglcontextlost', onLost);
@@ -59,7 +64,7 @@ export function mountBridge(container, hooks = {}, options = {}) {
     const dt = Math.min(.05, (now - last) / 1000); last = now; if (!still) T += dt;
     try {
       place();
-      space.tick(dt, T); lights.tick(dt, T, space); room.tick(dt, T, camera);
+      space.tick(dt, T); lights.tick(dt, T, space); room.tick(dt, T, camera); displays.tickLive(T);
       post.flash = space.flash; post.time = T; post.render(world, space.scene, camera);
     } catch (error) { console.error(error); stop(); }
   }
@@ -67,7 +72,15 @@ export function mountBridge(container, hooks = {}, options = {}) {
 
   return {
     // syncScene turns this throw into the fallback to the list.
-    update() { if (broken) throw new Error('The bridge lost its graphics context'); },
+    update(snapshot, { error } = {}) {
+      if (broken) throw new Error('The bridge lost its graphics context');
+      const now = Date.now(), sessions = snapshot.sessions || [], state = displayState(shipState(snapshot, now), error);
+      const { stations, overflow } = assignStations(sessions, seats, now);
+      seats = stations;
+      setMode(state);
+      stationSignals(stations, sessions, state.offline).forEach((signal, i) => room.setStation(i, signal));
+      displays.update({ state, stations, overflow, sessions, usage: snapshot.usage, machine: snapshot.machine, unread: hooks.isUnread, now });
+    },
     unmount() {
       cancelAnimationFrame(raf); observer.disconnect();
       for (const scene of [world, space.scene]) scene.traverse(object => {

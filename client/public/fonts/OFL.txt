@@ -3,6 +3,9 @@ Fonts in this folder, from Google Fonts (latin subset), served locally:
 vt323.woff2 (VT323):
 Copyright 2011, The VT323 Project Authors (peter.hull@oikoi.com)
 
+antonio.woff2 (Antonio):
+Copyright 2013 The Antonio Project Authors (https://github.com/googlefonts/antonioFont)
+
 josefin-slab.woff2 (Josefin Slab):
 Copyright 2020 The Josefin Slab Project Authors (https://github.com/googlefonts/josefinslab/)
 Copyright (c) 2010, Santiago Orozco (hi@typemade.mx), with Reserved Font Name Josefin.

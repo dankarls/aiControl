@@ -130,7 +130,7 @@ export function buildRoom(world, still = false) {
   }
   pane(-EDGE[0], EDGE[1], -MID[0], MID[1]); pane(-MID[0], MID[1], MID[0], MID[1]); pane(MID[0], MID[1], EDGE[0], EDGE[1]);
   for (const [x, z] of [[-EDGE[0], EDGE[1]], [-MID[0], MID[1]], [MID[0], MID[1]], [EDGE[0], EDGE[1]]]) add(box(.2, GLASS_TOP - SILL, .3), MAT.black, null, x, (GLASS_TOP + SILL) / 2, z);
-  screen(panel('stardate', 640, 64), 1.9, .19, null, 0, 3.5, BAY_Z_BACK + .3);
+  screen(panel('clock', 640, 64), 1.9, .19, null, 0, 3.5, BAY_Z_BACK + .3);
   add(box(2, .25, .06), MAT.black, null, 0, 3.5, BAY_Z_BACK + .27);
 
   // Either side of the opening: lamp panels and a tall lamp strip. Lamps with no meaning behind them use the palette's tones.
@@ -254,7 +254,7 @@ export function buildRoom(world, still = false) {
     add(podBase, MAT.black, pod);
     if (s < 0) {
       screen(panel('arm', 420, 170, 1.45), .32, .13, pod, 0, .035, .1, -UP);
-      for (let i = 0; i < 3; i++) { const m = lit('#e4eaff', .9), mesh = add(box(.075, .035, .15), m, pod, -.1 + i * .1, .05, -.08); crystals.push({ mesh, material: m, color: C('#e4eaff', .9), i }); }
+      for (let i = 0; i < 3; i++) { const m = lit('#e4eaff', .9), mesh = add(box(.075, .035, .15), m, pod, -.1 + i * .1, .05, -.08); crystals.push({ mesh, material: m, color: C('#e4eaff', .9), near: C(SIGNALS.near), full: C(SIGNALS.need), off: C('#e4eaff', .12) }); }
     } else {
       [[SIGNALS.need, 'need'], [SIGNALS.working, 'work'], [SIGNALS.idle, 'calm']].forEach(([color, role], i) => { const m = lit(color); add(new THREE.CylinderGeometry(.052, .06, .05, 18), m, pod, -.115 + i * .115, .05, -.07); add(new THREE.CylinderGeometry(.068, .07, .025, 18), MAT.metal, pod, -.115 + i * .115, .03, -.07); bigLamps.push({ material: m, color: C(color), role }); });
       // The room's colours: a button for each, with a generous invisible target over it.
@@ -324,7 +324,7 @@ export function buildRoom(world, still = false) {
         const level = station.status === 'need' ? .3 + pulse * 1.2 : station.status === 'working' ? 1 : .45;
         lamp.material.color.copy(SIGNAL[station.status]).multiplyScalar(Math.min(1, lamp.gain * level * dim));
       }
-      for (const p of Object.values(panels)) p.material.color.setScalar(p.gain * (limit ? .55 : 1));
+      for (const p of Object.values(panels)) p.material.color.setScalar(p.gain * (limit || offline ? .55 : 1));
       for (const lamp of bigLamps) {
         const on = lamp.role === 'need' ? hail || limit : lamp.role === 'work' ? warp > 0 && !limit : !hail && !limit && !warp;
         lamp.material.color.copy(lamp.color).multiplyScalar(on ? (lamp.role === 'need' ? .5 + pulse * .5 : 1) : .1);
