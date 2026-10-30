@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { resolveStep, standNear } from '../client/office/player.js';
+import { Player, EYE, free, resolveStep, standNear } from '../client/office/player.js';
+import { walkGrid, findPath } from '../client/office/path.js';
 
 const box = (x1, z1, x2, z2) => new THREE.Box3(new THREE.Vector3(x1, 0, z1), new THREE.Vector3(x2, 1, z2));
 const room = { width: 10, depth: 10 };
@@ -30,4 +31,104 @@ test('a desk in the way puts you beside them instead', () => {
 });
 test('nowhere to stand: null', () => {
   assert.equal(standNear(new THREE.Vector3(5, 1.2, 5), new THREE.Vector3(5, 1.5, 9), [box(3, 3, 7, 7)], room), null);
+});
+
+// A Player without a browser: its listeners are kept so a test can press keys and move the mouse.
+function walker(t, colliders, { route = (from, to) => findPath(walkGrid(colliders, room), from, to) } = {}) {
+  const was = { document: globalThis.document, window: globalThis.window }, handlers = {};
+  const target = { addEventListener: (type, fn) => { handlers[type] = fn; }, removeEventListener() {} };
+  globalThis.document = { ...target, body: { classList: { contains: () => false } }, querySelector: () => null, activeElement: null };
+  globalThis.window = target;
+  t.after(() => Object.assign(globalThis, was));
+  const player = new Player({ ...target, setPointerCapture() {} }, { colliders: () => colliders, room: () => room, onPick() {}, route });
+  player.place(5, 2, 0);
+  const press = code => handlers.keydown({ code, target: null, preventDefault() {} });
+  const run = (seconds, each) => { for (let i = 0; i < seconds * 60; i++) { player.update(1 / 60); each?.(); } };
+  return { player, press, handlers, run };
+}
+const pod = [box(2, 4, 8, 6)], beyond = new THREE.Vector3(5, 0, 8);
+const at = (player, x, z) => Math.hypot(player.position.x - x, player.position.z - z);
+
+test('a walk to a floor point goes round the furniture and arrives', t => {
+  const { player, run } = walker(t, pod);
+  let arrived = false;
+  player.walkTo(beyond, () => { arrived = true; });
+  run(8, () => assert.ok(free(player.position, pod, room), 'never into the pod'));
+  assert.ok(arrived && at(player, 5, 8) < 0.1, 'got there');
+  assert.equal(player.position.y, EYE);
+});
+test('with no way through it still heads straight there, and stops at what blocks it', t => {
+  const wall = [box(0, 4, 10, 6)];
+  const { player, run } = walker(t, wall);
+  let called = false;
+  player.walkTo(beyond, () => { called = true; }, 0, true);
+  run(4);
+  assert.equal(player.target, null);
+  assert.ok(called && player.position.z < 4, 'gives up at the wall, and a talk still goes ahead');
+});
+test('stopping short counts on the last leg, not through the furniture', t => {
+  const { player, run } = walker(t, pod);
+  let arrived = false;
+  player.walkTo(new THREE.Vector3(5, 0, 6.5), () => { arrived = true; }, 4.6);
+  run(1 / 60);
+  assert.equal(arrived, false, 'already within 4.6 m as the crow flies, but the way round is much further');
+  run(8);
+  assert.ok(arrived && player.position.z > 6, 'came round the pod first');
+});
+test('WASD calls off a walk, and whatever it was going to do', t => {
+  for (const code of ['KeyW', 'KeyA', 'KeyS', 'KeyD']) {
+    const { player, press, run } = walker(t, pod);
+    let arrived = false;
+    player.walkTo(beyond, () => { arrived = true; });
+    run(0.2);
+    press(code);
+    assert.equal(player.target, null, code);
+    run(8);
+    assert.equal(arrived, false, code);
+  }
+});
+test('a walk started with a walking key held is called off too, not resumed on letting go', t => {
+  const { player, press, handlers, run } = walker(t, pod);
+  press('KeyD');
+  player.walkTo(beyond);
+  run(0.1);
+  handlers.keyup({ code: 'KeyD', shiftKey: false });
+  const stopped = player.position.clone();
+  run(1);
+  assert.equal(player.target, null);
+  assert.ok(player.position.distanceTo(stopped) < 1e-9);
+});
+test('the arrow keys look around on the way without stopping it', t => {
+  const { player, press, handlers, run } = walker(t, pod);
+  let arrived = false;
+  player.walkTo(beyond, () => { arrived = true; });
+  run(0.2);
+  press('ArrowLeft');
+  run(0.5);
+  handlers.keyup({ code: 'ArrowLeft', shiftKey: false });
+  const yaw = player.yaw;
+  run(8);
+  assert.ok(arrived, 'still got there');
+  assert.equal(player.yaw, yaw, 'and the view stayed where it was left');
+});
+test('the mouse looks around on the way, and the view stays yours', t => {
+  const { player, handlers, run } = walker(t, pod);
+  player.locked = true;
+  let arrived = false;
+  player.walkTo(beyond, () => { arrived = true; });
+  run(0.2);
+  handlers.pointermove({ movementX: 200, movementY: 40, pointerId: 1 });
+  const { yaw, pitch } = player;
+  run(8);
+  assert.ok(arrived);
+  assert.equal(player.yaw, yaw);
+  assert.equal(player.pitch, pitch);
+});
+test('untouched, the view turns to face the way it walks; a twitch of the mouse does not stop that', t => {
+  const { player, handlers, run } = walker(t, []);
+  player.locked = true; player.yaw = Math.PI;
+  player.walkTo(beyond);
+  handlers.pointermove({ movementX: 2, movementY: -1, pointerId: 1 });
+  run(0.6);
+  assert.ok(Math.abs(Math.sin(player.yaw)) < 0.05 && Math.cos(player.yaw) > 0.95, `yaw ${player.yaw}`);
 });

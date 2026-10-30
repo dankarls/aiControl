@@ -45,6 +45,14 @@ export function mountOffice(container, hooks) {
   let grid = null;
   const walkable = () => { const key = gridKey(room.colliders, layout.room); return grid?.key === key ? grid : grid = walkGrid(room.colliders, layout.room); };
   const route = (from, to) => layout ? findPath(walkable(), from, to) : null;
+  // Yours takes in the secret room too (its shut door is one of the boxes).
+  let yourGrid = null;
+  const yourRoute = (from, to) => {
+    if (!layout) return null;
+    const bounds = room.secret.bounds(layout.room), key = gridKey(room.colliders, bounds);
+    if (yourGrid?.key !== key) yourGrid = walkGrid(room.colliders, bounds);
+    return findPath(yourGrid, from, to);
+  };
   const cast = new Cast(scene, { reducedMotion: () => !!reducedMotion?.matches, route });
   let layout;
   const fired = new Map(); // session id → when it was fired from the panel
@@ -72,6 +80,7 @@ export function mountOffice(container, hooks) {
   const player = new Player(renderer.domElement, {
     colliders: () => room.colliders,
     room: () => layout && room.secret.bounds(layout.room), // the secret room's beside the office
+    route: yourRoute,
     // In first person, a mouse click that isn't on someone (or a board, a pod's sign or a ball) captures the mouse; captured, a
     // click on the floor walks there. With a ball in hand a click throws it that way; playing a game, the game has the click.
     // A press that closes the sign's menu does nothing else.

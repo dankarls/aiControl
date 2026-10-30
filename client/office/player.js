@@ -3,6 +3,7 @@
 // Captured is what you want until you let go yourself: whatever else takes the mouse (a panel, a menu, the overview, another
 // window) gives it back when it's done (`wanted`, `resume`). Looking with the arrow keys aims with the dot too, until the mouse moves.
 // Touch drags the view along with the finger and taps to walk or pick someone. While the overview is up it has the keys and drags.
+// A click on the floor walks there round the furniture: a walking key calls it off, and looking around doesn't.
 import * as THREE from 'three';
 import { isTypingTarget } from './status.js';
 
@@ -11,6 +12,8 @@ const reduceMotion = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)')
 // How far (px) a press can move and still be a tap, not a drag (darts.js tells them apart the same way).
 export const DRAG_SLOP = 6;
 const SPEED = 4, RUN = 1.9, RADIUS = 0.3, LOOK = 0.0035, TOUCH_LOOK = 0.006, LOCKED_LOOK = 0.0022, JUMP = 4.2, FLING = 0.3, GRAVITY = 13, TURN = 2.4, TILT = 1.4;
+// How far (radians) you have to look on a walk for the view to stay yours; less is a twitch of the mouse as it clicks.
+const TAKE_VIEW = 0.05;
 const keys = { KeyW: [0, 1], KeyS: [0, -1], KeyA: [-1, 0], KeyD: [1, 0] };
 const turns = { ArrowLeft: [1, 0], ArrowRight: [-1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1] };
 const turnTo = (from, to) => Math.atan2(Math.sin(to - from), Math.cos(to - from));
@@ -26,16 +29,16 @@ export function officeHasKeys(event) {
 export const sceneFocused = canvas => [document.body, canvas, null].includes(document.activeElement);
 
 export class Player {
-  constructor(canvas, { colliders, room, onPick }) {
+  constructor(canvas, { colliders, room, onPick, route }) {
     this.canvas = canvas; this.position = new THREE.Vector3(0, EYE, 0); this.yaw = Math.PI; this.pitch = -0.08; this.spin = 0;
-    this.colliders = colliders; this.room = room; this.onPick = onPick; this.held = new Set(); this.target = null;
+    this.colliders = colliders; this.room = room; this.onPick = onPick; this.route = route; this.held = new Set(); this.target = null;
     this.locked = this.wanted = this.releasing = this.asking = false; this.overview = false; this.keyLook = false; this.shift = false; this.running = false; this.height = 0; this.rise = 0; this.flight = null;
     const listen = (target, type, fn, options) => { target.addEventListener(type, fn, options); this.disposers.push(() => target.removeEventListener(type, fn, options)); };
     this.disposers = [];
     listen(document, 'keydown', event => {
       this.shift = event.shiftKey;
       if (!officeHasKeys(event) || this.overview) return;
-      if (keys[event.code] || turns[event.code]) { this.held.add(event.code); this.target = null; if (turns[event.code]) this.keyLook = true; event.preventDefault(); }
+      if (keys[event.code] || turns[event.code]) { this.held.add(event.code); if (keys[event.code]) this.target = null; else this.keyLook = true; event.preventDefault(); }
       else if (event.code === 'Space' && sceneFocused(canvas)) { event.preventDefault(); this.jump(); }
     });
     listen(document, 'keyup', event => { this.shift = event.shiftKey; this.held.delete(event.code); });
@@ -47,7 +50,7 @@ export class Player {
       if (lost) setTimeout(() => { if (document.hasFocus() && !document.hidden) this.wanted = false; }, 100);
     });
     listen(document, 'pointerlockerror', () => { this.asking = false; });
-    const look = (x, y, speed) => { this.yaw -= x * speed; this.pitch = THREE.MathUtils.clamp(this.pitch - y * speed, -1.1, 0.8); };
+    const look = (x, y, speed) => { this.yaw -= x * speed; this.pitch = THREE.MathUtils.clamp(this.pitch - y * speed, -1.1, 0.8); if (this.target) this.target.looked += (Math.abs(x) + Math.abs(y)) * speed; };
     // Captured: every move looks, a left click picks under the dot, a right click lets go.
     // Otherwise a drag looks around and a press that barely moves is a click on what's under it; a second finger makes it neither.
     let drag = null;
@@ -107,8 +110,12 @@ export class Player {
   get forward() { return new THREE.Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw)); }
   jump() { if (!this.height && !this.rise && !this.flight) this.rise = JUMP; }
 
-  // Walks straight toward a floor point, sliding along whatever is in the way; `then` runs on arrival, or when stuck if `always`.
-  walkTo(point, then, stopShort = 0, always = false) { this.target = { point: point.clone().setY(EYE), then, stopShort, always, stuck: 0 }; }
+  // Walks to a floor point round the furniture (`route`), or straight there sliding along what's in the way if there's no way
+  // through; `then` runs on arrival, or when stuck if `always`. The view turns to face the way until you look somewhere yourself.
+  walkTo(point, then, stopShort = 0, always = false) {
+    const way = this.route?.(this.position, point) || [point];
+    this.target = { way: way.map(at => at.clone().setY(EYE)), then, stopShort, always, stuck: 0, looked: 0 };
+  }
 
   // Flies to a spot, turning to face `look` (clicking someone or a board) and tilting to `pitch`: quick and eased, with a small arc over the desks.
   flyTo(point, look, then, instant = false, pitch = -0.08) {
@@ -126,8 +133,8 @@ export class Player {
     if (this.rise || this.height) { this.rise -= GRAVITY * dt; this.height = Math.max(0, this.height + this.rise * dt); if (!this.height) this.rise = 0; this.position.y = EYE + this.height; }
     const speed = SPEED * (this.shift ? RUN : 1), move = new THREE.Vector3();
     for (const code of this.held) {
-      if (turns[code]) { const [yaw, pitch] = turns[code]; this.yaw += yaw * TURN * dt; this.pitch = THREE.MathUtils.clamp(this.pitch + pitch * TILT * dt, -1.1, 0.8); }
-      else { const [x, z] = keys[code]; move.x += x; move.z += z; }
+      if (turns[code]) { const [yaw, pitch] = turns[code]; this.yaw += yaw * TURN * dt; this.pitch = THREE.MathUtils.clamp(this.pitch + pitch * TILT * dt, -1.1, 0.8); if (this.target) this.target.looked += TURN * dt; }
+      else { const [x, z] = keys[code]; move.x += x; move.z += z; this.target = null; } // also a walk begun with this key already down
     }
     if (move.lengthSq()) {
       // Forward is where you look; strafe is to its right.
@@ -137,11 +144,14 @@ export class Player {
       return;
     }
     const target = this.target; if (!target) return;
-    const to = target.point.clone().sub(this.position).setY(0), distance = to.length();
-    if (distance <= target.stopShort + 0.05) { this.target = null; target.then?.(); return; }
-    this.yaw += turnTo(this.yaw, Math.atan2(to.x, to.z)) * Math.min(1, dt * 8);
+    const flat = at => at.clone().sub(this.position).setY(0), { way } = target;
+    while (way.length > 1 && flat(way[0]).length() <= 0.05) way.shift();
+    // Stopping short is of the last leg: through a desk, the end can be near long before you are.
+    const to = flat(way[0]), distance = to.length(), stopShort = way.length > 1 ? 0 : target.stopShort;
+    if (way.length === 1 && distance <= stopShort + 0.05) { this.target = null; target.then?.(); return; }
+    if (target.looked < TAKE_VIEW) this.yaw += turnTo(this.yaw, Math.atan2(to.x, to.z)) * Math.min(1, dt * 8);
     const before = this.position.clone();
-    this.step(to.normalize().multiplyScalar(Math.min(speed * dt, distance - target.stopShort)));
+    this.step(to.normalize().multiplyScalar(Math.min(speed * dt, distance - stopShort)));
     this.running = this.shift;
     target.stuck = this.position.distanceTo(before) < speed * dt * 0.2 ? target.stuck + dt : 0;
     // Blocked by a desk: stop here; a talk still goes ahead from as close as we got.
