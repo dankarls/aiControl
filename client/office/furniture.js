@@ -10,7 +10,10 @@ export const shared = {};
 export const once = (key, make) => shared[key] ??= make();
 export const rounded = (w, h, d, r = 0.04) => new RoundedBoxGeometry(w, h, d, 2, r);
 
+// Built once and never bent, so it gets a box: a ray (the pointer's, every hover) through its bounding sphere that misses the
+// box skips the triangles.
 export function mesh(geometry, material, outline = 0.01) {
+  if (!geometry.boundingBox) geometry.computeBoundingBox();
   const m = new THREE.Mesh(geometry, material);
   return outline ? withOutline(m, outline) : m;
 }

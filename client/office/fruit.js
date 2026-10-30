@@ -214,10 +214,12 @@ class Limbs {
     // The right hand is a mirrored left hand, so its triangles wind the other way round to keep facing out.
     const order = this.geometry.index.array, right = slots[names.length + 1];
     for (let i = right.first; i < right.first + right.size; i += 3) [order[i + 1], order[i + 2]] = [order[i + 2], order[i + 1]];
-    // Limbs move every frame, so the bounds are fixed: wide enough for a reach across the desk or heels up on it.
+    // Limbs move every frame, so the sphere is fixed: wide enough for a reach across the desk or heels up on it. The box is
+    // kept up as they move (from each limb's own), so a ray (the pointer's, every hover) passing near skips the triangles.
     this.geometry.boundingSphere = new THREE.Sphere(V(0, 0.6, 0.2), 1.3);
+    this.geometry.computeBoundingBox();
     this.mesh = new THREE.Mesh(this.geometry, material);
-    this.limbs = Object.fromEntries(names.map((name, i) => [name, { radius: LIMBS[name], tube: slots[i], end: slots[names.length + i], template: parts[names.length + i].attributes, curve: new THREE.QuadraticBezierCurve3(V(0, 0), V(0, 0), V(0, 0)), last: null }]));
+    this.limbs = Object.fromEntries(names.map((name, i) => [name, { radius: LIMBS[name], tube: slots[i], end: slots[names.length + i], template: parts[names.length + i].attributes, curve: new THREE.QuadraticBezierCurve3(V(0, 0), V(0, 0), V(0, 0)), box: this.geometry.boundingBox.clone(), last: null }]));
   }
   // A limb's tube runs from `from`, bowed by `bend`, to `to`; a hand there points along it, a shoe is turned by `turn`.
   // A `fist` hand is a thumbs up instead.
@@ -225,8 +227,9 @@ class Limbs {
     const limb = this.limbs[name], key = [from, to, bend].map(v => `${v.x.toFixed(3)},${v.y.toFixed(3)},${v.z.toFixed(3)}`).join() + fist;
     if (key === limb.last) return;
     limb.last = key;
-    const { curve, radius, tube, end } = limb, template = fist ? fistGeometry().attributes : limb.template, { position, normal } = this.geometry.attributes;
+    const { curve, radius, tube, end, box } = limb, template = fist ? fistGeometry().attributes : limb.template, { position, normal } = this.geometry.attributes;
     curve.v0.copy(from); curve.v2.copy(to); curve.v1.copy(from).add(to).multiplyScalar(0.5).add(bend);
+    box.makeEmpty().expandByPoint(curve.v0).expandByPoint(curve.v1).expandByPoint(curve.v2).expandByScalar(radius); // a bezier stays among its points
     curve.updateArcLengths(); // getPointAt and the frames read a cached length table
     const { tangents, normals, binormals } = curve.computeFrenetFrames(TUBE, false);
     for (let i = 0; i <= TUBE; i++) {
@@ -240,9 +243,11 @@ class Limbs {
     if (turn) q.setFromEuler(turn); else q.setFromUnitVectors(FORWARD, tangents[TUBE]);
     m.compose(to, q, name === 'rightHand' ? MIRROR : ONE); nm.getNormalMatrix(m);
     for (let i = 0; i < end.count; i++) {
-      p.fromBufferAttribute(template.position, i).applyMatrix4(m); position.setXYZ(end.start + i, p.x, p.y, p.z);
+      p.fromBufferAttribute(template.position, i).applyMatrix4(m); position.setXYZ(end.start + i, p.x, p.y, p.z); box.expandByPoint(p);
       n.fromBufferAttribute(template.normal, i).applyMatrix3(nm).normalize(); normal.setXYZ(end.start + i, n.x, n.y, n.z);
     }
+    const all = this.geometry.boundingBox.makeEmpty();
+    for (const other in this.limbs) all.union(this.limbs[other].box);
     for (const attribute of [position, normal]) { for (const { start, count } of [tube, end]) attribute.addUpdateRange(start * 3, count * 3); attribute.needsUpdate = true; }
   }
 }
