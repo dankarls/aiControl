@@ -154,7 +154,7 @@ export function make(difficulty, seed) {
   }
   // From hole 4, a mound or a hollow or two on the way, compact and high enough to see; the rest of the green is flat, so a
   // putt only bends where you can see why.
-  const bumps = d < 0.06 ? [] : Array.from({ length: Math.floor(between(1, 2 + 1.5 * d)) }, () => ({ ...along(r, 0.3), r: between(0.3, 0.5), a: (r() < 0.6 ? 1 : -1) * (0.045 + 0.035 * d) }));
+  const bumps = d < 0.06 ? [] : Array.from({ length: Math.floor(between(1, 2 + 1.5 * d)) }, () => ({ ...along(r, 0.3), r: between(0.3, 0.5), a: (r() < 0.6 ? 1 : -1) * (0.08 + 0.06 * d) }));
   const features = obstacles(d, rng(seed * 31 + 17), { poly, rects, tee, cup, things, inner, clear, along });
   const walls = [...poly.map((p, i) => [...p, ...poly[(i + 1) % poly.length]]), ...wedges.flatMap(([p, q, s]) => [[...p, ...q], [...q, ...s]]), ...inner];
   const c = { difficulty, seed, outline: poly, wedges, inner, things, features, walls, tee, cup, bumps };
@@ -203,7 +203,7 @@ function grid(c) {
     for (const b of c.bumps) v += b.a * Math.exp(-((x - b.x) ** 2 + (z - b.z) ** 2) / (b.r * b.r));
     let flat = 1;
     for (const f of c.features) for (const p of f.to ? [f, f.to] : [f]) flat *= smooth(footprint(f), footprint(f) + 0.2, Math.hypot(x - p.x, z - p.z));
-    h[j * cols + i] = flat * clamp(v, -0.12, 0.12) * smooth(0.04, 0.35, fromEdge(c.outline, x, z)) * smooth(0.1, 0.35, Math.hypot(x - c.cup.x, z - c.cup.z)) * smooth(0.05, 0.3, Math.hypot(x - c.tee.x, z - c.tee.z));
+    h[j * cols + i] = flat * clamp(v, -0.18, 0.18) * smooth(0.04, 0.35, fromEdge(c.outline, x, z)) * smooth(0.1, 0.35, Math.hypot(x - c.cup.x, z - c.cup.z)) * smooth(0.05, 0.3, Math.hypot(x - c.tee.x, z - c.tee.z));
   }
   const px = new Float32Array(cols * rows), pz = new Float32Array(cols * rows);
   for (let j = 1; j < rows - 1; j++) for (let i = 1; i < cols - 1; i++) { const k = j * cols + i; px[k] = -PULL * (h[k + 1] - h[k - 1]) / (2 * GRID); pz[k] = -PULL * (h[k + cols] - h[k - cols]) / (2 * GRID); }
@@ -239,9 +239,10 @@ export function step(c, b) {
   b.touch = [];
   b.vx += fx * DT; b.vz += fz * DT;
   const s = Math.hypot(b.vx, b.vz), drop = DECEL * DT;
-  // Hardly moving for a quarter of a second (creeping down a gentle slope, nudging along a rail) is stopped: a ball that
-  // looks still is ready for the next putt.
-  b.slow = s < 0.06 ? (b.slow || 0) + DT : 0;
+  // Hardly moving for a quarter of a second where the slope (less what it rests against) is too gentle to start it rolling
+  // back (creeping on the flat, nudging along a rail) is stopped: a ball that looks still is ready for the next putt. One
+  // that slows at the top of its climb up a mound rolls back down.
+  b.slow = s < 0.06 && Math.hypot(fx, fz) <= DECEL * 1.5 ? (b.slow || 0) + DT : 0;
   if (b.slow > 0.25) { b.vx = b.vz = 0; b.rest = true; return b; }
   if (s <= drop) { b.vx = b.vz = 0; if (Math.hypot(fx, fz) <= DECEL) { b.rest = true; return b; } }
   else { b.vx -= b.vx / s * drop; b.vz -= b.vz / s * drop; }
@@ -306,7 +307,7 @@ export const par = c => { const it = survey(c); for (;;) { const s = it.next(); 
 
 // The course: holes 1 to 50, harder as they go, the same for everyone, each with its par worked out ahead (a test checks
 // them), so none has to be surveyed while you play.
-export const HOLE_COUNT = 50, PARS = '22222232222222222222232322222332322233233332222232';
+export const HOLE_COUNT = 50, PARS = '22222232222222222232232322222332322333233233222233';
 export const difficulty = n => Math.min(1, (n - 1) / 45);
 export const seedOf = (n, k) => n * 7919 + k * 104729;
 export const hole = n => ({ ...make(difficulty(n), seedOf(n, 0)), n, par: Number(PARS[n - 1]) });
