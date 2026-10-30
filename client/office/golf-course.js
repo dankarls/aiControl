@@ -205,9 +205,10 @@ export function step(c, b) {
   b.touch = [];
   b.vx += fx * DT; b.vz += fz * DT;
   const s = Math.hypot(b.vx, b.vz), drop = DECEL * DT;
-  // Hardly moving for half a second (nudging along a rail, say) is stopped.
-  b.slow = s < 0.04 ? (b.slow || 0) + DT : 0;
-  if (b.slow > 0.5) { b.vx = b.vz = 0; b.rest = true; return b; }
+  // Hardly moving for a quarter of a second (creeping down a gentle slope, nudging along a rail) is stopped: a ball that
+  // looks still is ready for the next putt.
+  b.slow = s < 0.06 ? (b.slow || 0) + DT : 0;
+  if (b.slow > 0.25) { b.vx = b.vz = 0; b.rest = true; return b; }
   if (s <= drop) { b.vx = b.vz = 0; if (Math.hypot(fx, fz) <= DECEL) { b.rest = true; return b; } }
   else { b.vx -= b.vx / s * drop; b.vz -= b.vz / s * drop; }
   b.x += b.vx * DT; b.z += b.vz * DT;
