@@ -3,12 +3,15 @@
 //
 // A hole is a green inside AREA: one to three straight legs (straight, L or dogleg, or one wide one) joined into a single
 // outline, some corners cut off at an angle, wedges on the rails to bank off and, further on, walls and office things in the
-// way; humps, hollows and a tilt; a tee at one end, the cup at the other. `difficulty` (0 to 1) sets how much of that it
-// gets. It's makeable if some putt from the tee drops (par 2) or leaves one that does (par 3).
+// way; humps, hollows and a tilt; a tee at one end, the cup at the other; and obstacles: bumpers, a coffee spill, a pipe, a
+// windmill. `difficulty` (0 to 1) sets how much of that it gets. It's makeable if some putt from the tee drops (par 2) or
+// leaves one that does (par 3).
 
 // In the secret room's frame (secret.js): x across from the doorway's wall, z along it.
 export const AREA = { x0: 4.6, x1: 9.3, z0: -3.45, z1: 2.55 };
-export const BALL = 0.022, CUP = 0.054, RAIL = 0.03; // radii; RAIL is half a rail's thickness
+export const BALL = 0.022, CUP = 0.054, RAIL = 0.03, PIPE = 0.06; // radii; RAIL is half a rail's thickness
+// A windmill: the sails turn once in PERIOD seconds, and with four of them one is down across the tunnel 40% of the time.
+export const PERIOD = 3, shut = t => { const a = (t / PERIOD * 4) % 1; return a < 0.2 || a > 0.8; };
 export const DT = 1 / 120, MAX = 4; // a step (s); the hardest putt (m/s)
 // Friction (m/s²), how hard a slope pulls (per unit of slope), the fastest a ball drops in (m/s), how much of its speed a ball
 // keeps off a rail, how long a putt may roll (s), the height grid's spacing and the outline's (m).
@@ -105,12 +108,43 @@ export function make(difficulty, seed) {
     things.push(o);
   }
   const bumps = Array.from({ length: 1 + Math.floor(3 * d) }, () => ({ x: between(AREA.x0, AREA.x1), z: between(AREA.z0, AREA.z1), r: between(0.35, 0.85), a: (r() < 0.5 ? -1 : 1) * (0.035 + 0.07 * d) }));
+  const features = obstacles(d, rng(seed * 31 + 17), { poly, rects, tee, cup, things, inner, clear });
   const lean = d < 0.1 ? 0 : 0.022 * d, dir = r() * Math.PI * 2;
   const walls = [...poly.map((p, i) => [...p, ...poly[(i + 1) % poly.length]]), ...wedges.flatMap(([p, q, s]) => [[...p, ...q], [...q, ...s]]), ...inner];
-  const c = { difficulty, seed, outline: poly, wedges, inner, things, walls, tee, cup, bumps, tilt: { x: Math.cos(dir) * lean, z: Math.sin(dir) * lean } };
+  const c = { difficulty, seed, outline: poly, wedges, inner, things, features, walls, tee, cup, bumps, tilt: { x: Math.cos(dir) * lean, z: Math.sin(dir) * lean } };
   c.grid = grid(c);
   return c;
 }
+
+// Obstacles, from their own seed (so adding them never reshapes a green), more and more of them as it gets harder: bumpers
+// that kick the ball away, a coffee spill (roll in and it's a stroke's penalty, back to where you putted from), a pipe that
+// swallows the ball and spits it out somewhere else, and a windmill across a leg whose sails block its tunnel now and then.
+function obstacles(d, r, { poly, rects, tee, cup, things, inner, clear }) {
+  const between = (a, b) => a + (b - a) * r(), out = [];
+  const open = (x, z, gap) => inside(poly, x, z) && fromEdge(poly, x, z) > gap && clear({ x, z }, gap + 0.3) && things.every(o => near(o, { x, z }) > gap + 0.25) && inner.every(w => toSegment(x, z, ...w) > gap + 0.1) && out.every(f => near(f, { x, z }) > gap + 0.4 && (!f.to || near(f.to, { x, z }) > gap + 0.4));
+  if (d >= 0.5 && r() < 0.6) { // across the middle of the longest leg, the sails toward the tee
+    const [x0, z0, x1, z1] = rects.reduce((a, b) => Math.max(b[2] - b[0], b[3] - b[1]) > Math.max(a[2] - a[0], a[3] - a[1]) ? b : a), along = x1 - x0 > z1 - z0, x = (x0 + x1) / 2, z = (z0 + z1) / 2;
+    const turn = along ? 0 : Math.PI / 2, side = ((tee.x - x) * Math.cos(turn) + (tee.z - z) * Math.sin(turn)) < 0 ? -1 : 1, part = s => ({ x: x - Math.sin(turn) * 0.24 * s, z: z + Math.cos(turn) * 0.24 * s, w: 0.3, d: 0.32, turn });
+    const gx = x + Math.cos(turn) * 0.17 * side, gz = z + Math.sin(turn) * 0.17 * side;
+    if (open(x, z, 0.45)) out.push({ kind: 'windmill', x, z, turn, side, parts: [part(-1), part(1)], gate: [gx + Math.sin(turn) * 0.09, gz - Math.cos(turn) * 0.09, gx - Math.sin(turn) * 0.09, gz + Math.cos(turn) * 0.09] });
+  }
+  if (d >= 0.4 && r() < 0.5) for (let tries = 0; tries < 20; tries++) { // a pipe, coming out pointing roughly at the cup
+    const x = between(AREA.x0, AREA.x1), z = between(AREA.z0, AREA.z1), tx = between(AREA.x0, AREA.x1), tz = between(AREA.z0, AREA.z1), outward = Math.atan2(cup.z - tz, cup.x - tx) + between(-0.6, 0.6);
+    if (Math.hypot(tx - x, tz - z) < 1.2 || !open(x, z, 0.12) || !open(tx, tz, 0.15) || !inside(poly, tx + Math.cos(outward) * 0.35, tz + Math.sin(outward) * 0.35)) continue;
+    out.push({ kind: 'pipe', x, z, to: { x: tx, z: tz }, out: outward }); break;
+  }
+  for (let tries = 0, count = d < 0.25 ? 0 : Math.floor(between(0, 1.2 + d)); out.filter(f => f.kind === 'spill').length < count && tries < 20; tries++) {
+    const rx = between(0.18, 0.32), rz = between(0.12, 0.22), x = between(AREA.x0, AREA.x1), z = between(AREA.z0, AREA.z1);
+    if (open(x, z, rx + 0.05)) out.push({ kind: 'spill', x, z, rx, rz, turn: r() * Math.PI });
+  }
+  for (let tries = 0, count = d < 0.15 ? 0 : Math.floor(between(0, 1 + 3 * d)); out.filter(f => f.kind === 'bumper').length < count && tries < 30; tries++) {
+    const x = between(AREA.x0, AREA.x1), z = between(AREA.z0, AREA.z1);
+    if (open(x, z, 0.1)) out.push({ kind: 'bumper', x, z, r: 0.055 });
+  }
+  return out;
+}
+// How far round an obstacle the green is kept flat, so it sits level.
+const footprint = f => f.kind === 'windmill' ? 0.5 : f.kind === 'spill' ? Math.max(f.rx, f.rz) : f.kind === 'pipe' ? 0.12 : 0.08;
 
 // The green's height (above its base) on a GRID over the hole, and the slope's pull worked out from it: flat by the rails,
 // at the tee and round the cup.
@@ -122,7 +156,9 @@ function grid(c) {
     const x = x0 + i * GRID, z = z0 + j * GRID; if (!inside(c.outline, x, z)) continue;
     let v = c.tilt.x * (x - mx) + c.tilt.z * (z - mz);
     for (const b of c.bumps) v += b.a * Math.exp(-((x - b.x) ** 2 + (z - b.z) ** 2) / (b.r * b.r));
-    h[j * cols + i] = clamp(v, -0.12, 0.12) * smooth(0.04, 0.35, fromEdge(c.outline, x, z)) * smooth(0.1, 0.35, Math.hypot(x - c.cup.x, z - c.cup.z)) * smooth(0.05, 0.3, Math.hypot(x - c.tee.x, z - c.tee.z));
+    let flat = 1;
+    for (const f of c.features) for (const p of f.to ? [f, f.to] : [f]) flat *= smooth(footprint(f), footprint(f) + 0.2, Math.hypot(x - p.x, z - p.z));
+    h[j * cols + i] = flat * clamp(v, -0.12, 0.12) * smooth(0.04, 0.35, fromEdge(c.outline, x, z)) * smooth(0.1, 0.35, Math.hypot(x - c.cup.x, z - c.cup.z)) * smooth(0.05, 0.3, Math.hypot(x - c.tee.x, z - c.tee.z));
   }
   const px = new Float32Array(cols * rows), pz = new Float32Array(cols * rows);
   for (let j = 1; j < rows - 1; j++) for (let i = 1; i < cols - 1; i++) { const k = j * cols + i; px[k] = -PULL * (h[k + 1] - h[k - 1]) / (2 * GRID); pz[k] = -PULL * (h[k + cols] - h[k - cols]) / (2 * GRID); }
@@ -152,7 +188,8 @@ function thing(o, b) {
   else { const px = o.w / 2 - Math.abs(lx), pz = o.d / 2 - Math.abs(lz); [nx, nz, depth] = px < pz ? [Math.sign(lx) || 1, 0, px + BALL] : [0, Math.sign(lz) || 1, pz + BALL]; } // inside: out the nearest side
   hit(b, nx * cos - nz * sin, nx * sin + nz * cos, depth);
 }
-// One step of a rolling ball { x, z, vx, vz, touch }: slope, friction, walls, things, the cup. Sets b.sunk or b.rest.
+// One step of a rolling ball { x, z, vx, vz, touch, t }: slope, friction, walls, things, obstacles, the cup. Sets b.sunk,
+// b.rest or b.spilled; b.bumped or b.piped say what it hit on the way; b.t is the clock the windmill turns by.
 export function step(c, b) {
   let fx = sample(c.grid, c.grid.px, b.x, b.z), fz = sample(c.grid, c.grid.pz, b.x, b.z);
   for (const [nx, nz] of b.touch) { const into = fx * nx + fz * nz; if (into < 0) { fx -= into * nx; fz -= into * nz; } }
@@ -168,25 +205,47 @@ export function step(c, b) {
     if (d < BALL + RAIL && d > 1e-9) hit(b, ex / d, ez / d, BALL + RAIL - d);
   }
   for (const o of c.things) thing(o, b);
+  b.t += DT;
+  for (const f of c.features) {
+    if (f.kind === 'bumper') {
+      const dx = b.x - f.x, dz = b.z - f.z, d = Math.hypot(dx, dz); if (d >= f.r + BALL || d < 1e-6) continue;
+      hit(b, dx / d, dz / d, f.r + BALL - d);
+      const s = Math.hypot(b.vx, b.vz), kick = Math.max(s * 1.1, 1.4);
+      [b.vx, b.vz] = s > 1e-6 ? [b.vx / s * kick, b.vz / s * kick] : [dx / d * kick, dz / d * kick]; b.bumped = f;
+    } else if (f.kind === 'spill') {
+      const cos = Math.cos(f.turn), sin = Math.sin(f.turn), lx = (b.x - f.x) * cos + (b.z - f.z) * sin, lz = -(b.x - f.x) * sin + (b.z - f.z) * cos;
+      if ((lx / f.rx) ** 2 + (lz / f.rz) ** 2 < 1) b.spilled = true;
+    } else if (f.kind === 'pipe') {
+      if (Math.hypot(b.x - f.x, b.z - f.z) >= PIPE) continue;
+      const s = Math.max(0.7, Math.hypot(b.vx, b.vz) * 0.8), ox = Math.cos(f.out), oz = Math.sin(f.out);
+      Object.assign(b, { x: f.to.x + ox * 0.1, z: f.to.z + oz * 0.1, vx: ox * s, vz: oz * s, touch: [], piped: f });
+    } else {
+      for (const part of f.parts) thing(part, b);
+      if (!shut(b.t)) continue;
+      const [x1, z1, x2, z2] = f.gate, dx = x2 - x1, dz = z2 - z1, t = clamp(((b.x - x1) * dx + (b.z - z1) * dz) / (dx * dx + dz * dz), 0, 1), ex = b.x - x1 - dx * t, ez = b.z - z1 - dz * t, d = Math.hypot(ex, ez);
+      if (d < BALL + 0.012 && d > 1e-9) hit(b, ex / d, ez / d, BALL + 0.012 - d);
+    }
+  }
   if (Math.hypot(b.x - c.cup.x, b.z - c.cup.z) < CUP && Math.hypot(b.vx, b.vz) < CAPTURE) b.sunk = true;
   return b;
 }
-// Where a putt from `from` at (vx, vz) ends up.
-export function roll(c, from, vx, vz) {
-  const b = { x: from.x, z: from.z, vx, vz, touch: [] };
-  for (let t = 0; t < LIMIT && !b.sunk && !b.rest; t += DT) step(c, b);
+// Where a putt from `from` at (vx, vz), made at time t0 (for the windmill), ends up.
+export function roll(c, from, vx, vz, t0 = 0) {
+  const b = { x: from.x, z: from.z, vx, vz, touch: [], t: t0 };
+  for (let t = 0; t < LIMIT && !b.sunk && !b.rest && !b.spilled; t += DT) step(c, b);
   return b;
 }
 
 // Whether a hole can be made, a little at a time (a generator, so the next one can be got ready between frames): putts
-// all the way round, from straight at the cup outward, each at a range of strengths, stopping at the first that drops.
+// all the way round, from straight at the cup outward, each at a range of strengths (and, past a windmill, a few moments
+// in its turn), stopping at the first that drops. One that ends in coffee doesn't count as a place to putt again from.
 // Returns 2 if one from the tee does, 3 if one leaves a putt that does, 0 if neither.
 export function* survey(c) {
   const left = b => Math.hypot(b.x - c.cup.x, b.z - c.cup.z);
   function* putts(from, every) {
-    const out = [], toward = Math.atan2(c.cup.z - from.z, c.cup.x - from.x);
+    const out = [], toward = Math.atan2(c.cup.z - from.z, c.cup.x - from.x), moments = c.features.some(f => f.kind === 'windmill') ? [0, 0.25, 0.5] : [0];
     for (let k = 0; k * every <= Math.PI; k++) for (const a of k ? [k * every, -k * every] : [0]) {
-      for (let s = 0.4; s <= MAX; s += 0.25) { const b = roll(c, from, Math.cos(toward + a) * s, Math.sin(toward + a) * s); if (b.sunk) return null; out.push(b); }
+      for (let s = 0.4; s <= MAX; s += 0.25) for (const t0 of moments) { const b = roll(c, from, Math.cos(toward + a) * s, Math.sin(toward + a) * s, t0); if (b.sunk) return null; if (!b.spilled) out.push(b); }
       yield;
     }
     return out;
@@ -200,7 +259,7 @@ export const par = c => { const it = survey(c); for (;;) { const s = it.next(); 
 
 // The course: holes 1 to 50, harder as they go, the same for everyone, each with its par worked out ahead (a test checks
 // them), so none has to be surveyed while you play.
-export const HOLE_COUNT = 50, PARS = '22222222232232222222232333233232333222222232333322';
+export const HOLE_COUNT = 50, PARS = '22222222232232222222232333232332333232233333333322';
 export const difficulty = n => Math.min(1, (n - 1) / 45);
 export const seedOf = (n, k) => n * 7919 + k * 104729;
 export const hole = n => ({ ...make(difficulty(n), seedOf(n, 0)), n, par: Number(PARS[n - 1]) });

@@ -5,14 +5,16 @@
 // dark in hollows with a contour every centimetre, and while you play, dots drift downhill over it.
 // Holes 1 to 50 are the same for everyone; the notice board keeps your best on each, and any you've reached can be picked
 // there to play again. Endless (on the board too) deals fresh holes, harder as it goes, until you're ten over par; your
-// longest run is kept. A hole changes by sinking into the floor and the next rising out of it. With reduced motion a putt
-// finishes at once and holes swap in place.
+// longest run is kept. Bumpers flash as they kick the ball away, coffee costs a stroke and puts the ball back where it was
+// putted from, a pipe spits it out of its other end, and a windmill's sails close its tunnel as they come round. A hole
+// changes by sinking into the floor and the next rising out of it. With reduced motion a putt finishes at once and holes
+// swap in place.
 import * as THREE from 'three';
 import { mesh, once, canvasTexture, paint, painted } from './furniture.js';
 import { toonMaterial } from './toon.js';
 import { drawCall, CHALK } from './darts.js';
 import { SECRET } from './secret.js';
-import { BALL, CUP, RAIL, DT, MAX, HOLE_COUNT, PARS, hole, endless, height, slope, step, inside } from './golf-course.js';
+import { BALL, CUP, RAIL, PIPE, PERIOD, DT, MAX, HOLE_COUNT, PARS, hole, endless, height, slope, step, inside } from './golf-course.js';
 
 const BASE = 0.16, CAP = 0.06; // the green's surface over the floor; how far rails stand above it
 // Metres of pull for the hardest putt; strokes before you pick up; how far over par ends an Endless run.
@@ -120,8 +122,46 @@ function drawBoard(g, w, h, s) {
   spots.endless = [bx, by, bw, bh];
   return spots;
 }
+let pipeLook;
+// An obstacle's meshes, placed in the room's frame on the green (`y(x, z)` is its surface there). A windmill's sails come
+// back as userData.sails, a bumper's cap as userData.cap (they move and flash; the cap's material is its own).
+function obstacle(f, y) {
+  const at = (m, x, z) => { m.position.set(x, y(x, z), z); return m; }, out = new THREE.Group();
+  if (f.kind === 'bumper') {
+    out.add(at(mesh(once('golf-bumper', () => paint([[new THREE.CylinderGeometry(0.06, 0.065, 0.05, 20).translate(0, 0.025, 0), RAIL_BODY], [new THREE.TorusGeometry(0.052, 0.008, 6, 20).rotateX(Math.PI / 2).translate(0, 0.05, 0), '#f4f2ec']])), painted(), 0.004), f.x, f.z));
+    const cap = at(mesh(once('golf-bumper-cap', () => new THREE.CylinderGeometry(0.042, 0.048, 0.025, 20).translate(0, 0.062, 0)), toonMaterial(NEON[0], { emissive: '#000000' }), 0.003), f.x, f.z);
+    out.add(cap); out.userData.cap = cap;
+  } else if (f.kind === 'spill') {
+    for (const [scale, color, lift] of [[1, '#4a2a14', 0.003], [0.55, '#6e4120', 0.004]]) {
+      const pool = at(new THREE.Mesh(once('golf-spill', () => new THREE.CircleGeometry(1, 36).rotateX(-Math.PI / 2)), new THREE.MeshBasicMaterial({ color })), f.x, f.z);
+      pool.scale.set(f.rx * scale, 1, f.rz * scale); pool.rotation.y = -f.turn; pool.position.y += lift; pool.position.x += (1 - scale) * 0.03; out.add(pool);
+    }
+  } else if (f.kind === 'pipe') {
+    const green = pipeLook ??= toonMaterial('#3da35d', { side: THREE.DoubleSide });
+    out.add(at(new THREE.Mesh(new THREE.CircleGeometry(PIPE, 24).rotateX(-Math.PI / 2).translate(0, 0.003, 0), new THREE.MeshBasicMaterial({ color: '#0d0c10' })), f.x, f.z));
+    out.add(at(mesh(new THREE.TorusGeometry(PIPE + 0.01, 0.012, 8, 24).rotateX(Math.PI / 2).translate(0, 0.006, 0), green, 0.003), f.x, f.z));
+    // Its other end: a short tube lying on the green, open toward where the ball comes out.
+    const end = at(new THREE.Group(), f.to.x, f.to.z); end.rotation.y = -f.out; out.add(end);
+    end.add(mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.14, 18, 1, true).rotateZ(Math.PI / 2).translate(-0.03, 0.035, 0), green, 0.004), mesh(new THREE.TorusGeometry(0.05, 0.01, 8, 20).rotateY(Math.PI / 2).translate(0.04, 0.035, 0), green, 0.003));
+  } else { // the windmill: two blocks either side of a tunnel, a roof over both, sails in front
+    const mill = at(new THREE.Group(), f.x, f.z); mill.rotation.y = -f.turn; out.add(mill);
+    mill.add(mesh(once('golf-mill', () => paint([
+      ...[-0.24, 0.24].map(z => [new THREE.BoxGeometry(0.3, 0.24, 0.32).translate(0, 0.12, z), '#efe6d2']), [new THREE.BoxGeometry(0.3, 0.07, 0.16).translate(0, 0.205, 0), '#efe6d2'],
+      [new THREE.CylinderGeometry(0.2, 0.2, 0.86, 3).rotateX(Math.PI / 2).rotateZ(Math.PI / 2).translate(0, 0.33, 0), '#d1495b'], [new THREE.BoxGeometry(0.02, 0.08, 0.06).translate(0.151, 0.12, -0.24), '#2f3542'],
+    ])), painted(), 0.005));
+    const sails = new THREE.Group(); sails.position.set(f.side * 0.19, 0.3, 0); mill.add(sails);
+    sails.add(mesh(once('golf-sails', () => paint([...[0, 1, 2, 3].map(k => [new THREE.BoxGeometry(0.012, 0.28, 0.07).translate(0, -0.16, 0).rotateX(k * Math.PI / 2), '#f4f2ec']), [new THREE.SphereGeometry(0.03, 10, 8), '#2f3542']])), painted(), 0.003));
+    out.userData.sails = sails;
+  }
+  return out;
+}
 const verdict = (strokes, par) => strokes === 1 ? 'Hole in one!' : ['Albatross!', 'Eagle!', 'Birdie!', 'Par', 'Bogey', 'Double bogey'][strokes - par + 3] ?? `+${strokes - par}`;
 const finish = gen => { for (;;) { const s = gen.next(); if (s.done) return s.value; } };
+// An Endless hole, dealt in a worker (surveying one can take seconds); one worker a hole, gone once it answers.
+const deal = (index, seed) => new Promise(resolve => {
+  const worker = new Worker(new URL('./golf-worker.js', import.meta.url), { type: 'module' });
+  worker.onmessage = ({ data }) => { worker.terminate(); resolve(data); }; worker.postMessage({ index, seed });
+});
 
 // `camera`; `canvas` (the scene's) and `ray(event)`, the direction under a screen point; `onPlay(golf)`: the course was clicked.
 export function createGolf({ camera, canvas, ray, onPlay }) {
@@ -129,7 +169,7 @@ export function createGolf({ camera, canvas, ray, onPlay }) {
   const progress = { best: saved.best || {}, reached: saved.reached || 1, n: saved.n || 1, endlessBest: saved.endlessBest || 0 };
   const save = () => { try { localStorage.setItem(SAVE, JSON.stringify(progress)); } catch {} };
   let room = null, c = null, mode = 'holes', run = null, strokes = 0, time = 0, still = false, active = false, shown = false;
-  let ball = null, rolling = false, sunkAt = -1, acc = 0, swap = null, pull = null, swing = null, spots = null;
+  let ball = null, rolling = false, sunkAt = -1, spillAt = -1, dealing = false, acc = 0, swap = null, pull = null, swing = null, spots = null, putFrom = null, mills = [];
   let course3d, surface, rails, things = [], cup, flag, flagTexture, tee, ballMesh, shadow, club, arrow, dots, confetti, call, board, boardTexture;
   const box = { x0: 0, z0: 0, x1: 1, z1: 1 }, local = new THREE.Vector3(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0)), hitPoint = new THREE.Vector3(), rayer = new THREE.Ray();
   // The view while playing, easing after the ball: behind it along `heading` (to the cup when it last stopped).
@@ -141,15 +181,17 @@ export function createGolf({ camera, canvas, ray, onPlay }) {
 
   // Lays out hole `next` (its green, rails, things, cup and tee) in place of the one there.
   function lay(next) {
-    c = next; strokes = 0; sunkAt = -1; rolling = false; pull = swing = null;
-    ball = { x: c.tee.x, z: c.tee.z, vx: 0, vz: 0, touch: [], rest: true };
+    c = next; strokes = 0; sunkAt = spillAt = -1; rolling = dealing = false; pull = swing = null;
+    ball = { x: c.tee.x, z: c.tee.z, vx: 0, vz: 0, touch: [], rest: true, t: 0 };
     const xs = c.outline.map(p => p[0]), zs = c.outline.map(p => p[1]);
     Object.assign(box, { x0: Math.min(...xs), z0: Math.min(...zs), x1: Math.max(...xs), z1: Math.max(...zs) });
     surface.geometry.dispose(); surface.geometry = surfaceGeometry(c, box);
     surface.material.map?.dispose(); surface.material.map = canvasTexture(Math.round((box.x1 - box.x0) * 110), Math.round((box.z1 - box.z0) * 110), (g, w, h) => drawGreen(g, w, h, c, box)); surface.material.needsUpdate = true;
     rails?.removeFromParent(); rails?.geometry.dispose(); rails = mesh(paint(railParts(c)), painted(), 0.004); course3d.add(rails);
-    for (const m of things) m.removeFromParent();
+    for (const m of things) { m.removeFromParent(); m.userData.cap?.material.dispose(); }
     things = c.things.map(o => { const m = mesh(once(`golf-${o.kind}`, () => paint(thingParts[o.kind]())), painted(), 0.004); m.position.set(o.x, surfaceY(o.x, o.z), o.z); m.rotation.y = -o.turn; course3d.add(m); return m; });
+    const pieces = c.features.map(f => { const m = obstacle(f, surfaceY); m.userData.feature = f; course3d.add(m); return m; });
+    things.push(...pieces); mills = pieces.filter(m => m.userData.sails);
     cup.position.set(c.cup.x, BASE + 0.002, c.cup.z); flag.position.set(c.cup.x, BASE, c.cup.z); flagTexture.redraw(mode === 'endless' ? run.index + 1 : progress.n);
     aimAtCup(); tee.position.set(c.tee.x, BASE + 0.001, c.tee.z); tee.rotation.y = -Math.atan2(view.heading.y, view.heading.x);
     view.set = false; redraw();
@@ -157,11 +199,11 @@ export function createGolf({ camera, canvas, ray, onPlay }) {
   // A new hole: the course sinks into the floor and this one rises (or it's just swapped, unseen or with reduced motion).
   const change = next => { if (still || !shown) lay(next); else swap = { t: 0, next }; };
   const playHole = n => { mode = 'holes'; run = null; progress.n = n; save(); change(hole(n)); };
-  // Endless: the next hole is surveyed a little each frame while you play this one (finish() does the rest if it isn't ready).
-  const playEndless = () => { mode = 'endless'; run = { index: 0, seed: Math.floor(Math.random() * 1e9), over: 0 }; change(finish(endless(0, run.seed))); run.gen = endless(1, run.seed); };
+  // Endless: its first hole is quick to work out here; each next one is dealt in a worker while you play the one before.
+  const playEndless = () => { mode = 'endless'; run = { index: 0, seed: Math.floor(Math.random() * 1e9), over: 0 }; change(finish(endless(0, run.seed))); run.next = deal(1, run.seed); };
 
   const golf = {
-    get ready() { return active && !rolling && !swing && sunkAt < 0 && !swap; },
+    get ready() { return active && !rolling && !swing && sunkAt < 0 && spillAt < 0 && !dealing && !swap; },
     enter() { active = true; view.set = false; redraw(); },
     leave() { active = false; pull = null; redraw(); },
     // Where you stand when you step back (on the floor, in world space, facing the cup), and the view while playing.
@@ -210,7 +252,7 @@ export function createGolf({ camera, canvas, ray, onPlay }) {
     update(dt, at, reduced, visible) {
       time += dt; still = reduced; shown = visible;
       if (!room || !shown) return;
-      if (run?.gen) { const until = performance.now() + 3; for (;;) { const s = run.gen.next(); if (s.done) { run.ready = s.value; run.gen = null; break; } if (performance.now() > until) break; } }
+      for (const m of mills) m.userData.sails.rotation.x = 2 * Math.PI * time / PERIOD * m.userData.feature.side; // in step with shut() (golf-course.js)
       // Changing holes: down into the floor, swap, back up with a little hop.
       if (swap) {
         const t = swap.t = Math.min(1, swap.t + dt / 1.1);
@@ -222,16 +264,22 @@ export function createGolf({ camera, canvas, ray, onPlay }) {
       if (swing) {
         swing.t += dt; place(swing.dir, Math.max(-0.05, swing.back * (1 - swing.t / 0.1)));
         if (swing.t >= 0.1 && !swing.hit) {
-          swing.hit = true; Object.assign(ball, { vx: swing.dir.x * swing.speed, vz: swing.dir.y * swing.speed, rest: false, touch: [] }); rolling = true; acc = 0; strokes++; redraw();
-          if (still) { while (!ball.sunk && !ball.rest) step(c, ball); }
+          swing.hit = true; putFrom = { x: ball.x, z: ball.z };
+          Object.assign(ball, { vx: swing.dir.x * swing.speed, vz: swing.dir.y * swing.speed, rest: false, touch: [], t: time }); rolling = true; acc = 0; strokes++; redraw();
+          if (still) { while (!ball.sunk && !ball.rest && !ball.spilled) step(c, ball); }
         }
         if (swing.t > 0.45) swing = null;
       }
       if (rolling) {
-        for (acc += dt; acc >= DT && rolling; acc -= DT) { step(c, ball); if (ball.sunk || ball.rest) rolling = false; }
+        for (acc += dt; acc >= DT && rolling; acc -= DT) { step(c, ball); if (ball.sunk || ball.rest || ball.spilled) rolling = false; }
+        // A bumper it hit flashes.
+        if (ball.bumped) { const cap = things.find(m => m.userData.feature === ball.bumped)?.userData.cap; if (cap) { cap.material.emissive.set(NEON[0]); cap.userData.until = time + 0.15; } ball.bumped = null; }
         const s = Math.hypot(ball.vx, ball.vz); if (s > 0) ballMesh.rotateOnWorldAxis(local.set(ball.vz / s, 0, -ball.vx / s), s * dt / BALL);
         if (!rolling) settle();
       }
+      for (const m of things) if (m.userData.cap?.userData.until < time) { m.userData.cap.material.emissive.set('#000000'); m.userData.cap.userData.until = undefined; }
+      // In the coffee: a moment, then back where it was putted from.
+      if (spillAt >= 0 && time - spillAt > (still ? 0.3 : 1)) { spillAt = -1; Object.assign(ball, { ...putFrom, vx: 0, vz: 0, spilled: false, rest: true, touch: [] }); if (strokes >= STROKES) settle(); else aimAtCup(); }
       const down = sunkAt >= 0 && ball.sunk ? Math.min(1, (time - sunkAt) / 0.2) : 0;
       ballMesh.position.set(ball.sunk ? c.cup.x : ball.x, surfaceY(ball.x, ball.z) + BALL - down * 0.06, ball.sunk ? c.cup.z : ball.z);
       shadow.visible = !ball.sunk; shadow.position.set(ball.x, surfaceY(ball.x, ball.z) + 0.002, ball.z);
@@ -278,9 +326,11 @@ export function createGolf({ camera, canvas, ray, onPlay }) {
   }
   // Your best on hole `n`, and the next one opened.
   const score = (n, strokes) => { progress.best[n] = Math.min(progress.best[n] ?? Infinity, strokes); progress.reached = Math.max(progress.reached, Math.min(HOLE_COUNT, n + 1)); save(); };
-  // The ball stopped: in the cup, out of strokes (you pick up, scoring one more), or ready for the next putt.
+  // The ball stopped: in the cup, in coffee (a stroke's penalty), out of strokes (you pick up, scoring one more), or ready
+  // for the next putt.
   function settle() {
-    if (ball.sunk || strokes >= STROKES) {
+    if (ball.spilled) { strokes++; spillAt = time; say('Splash! +1', '#ff8a3d', ball); }
+    else if (ball.sunk || strokes >= STROKES) {
       const taken = ball.sunk ? strokes : STROKES + 1;
       sunkAt = time;
       if (mode === 'holes') score(progress.n, taken); else run.over += taken - c.par;
@@ -294,10 +344,10 @@ export function createGolf({ camera, canvas, ray, onPlay }) {
     sunkAt = -1;
     if (mode === 'holes') { playHole(progress.n < HOLE_COUNT ? progress.n + 1 : 1); return; }
     if (run.over >= OUT) { progress.endlessBest = Math.max(progress.endlessBest, run.index); save(); say(`Run over: ${run.index} holes`, '#ff8a3d'); playHole(progress.n); return; }
-    run.index++; const ready = run.ready || finish(run.gen || endless(run.index, run.seed));
-    run.ready = null; run.gen = endless(run.index + 1, run.seed); change(ready);
+    const dealt = run; dealt.index++; dealing = true;
+    dealt.next.then(next => { if (run !== dealt) return; dealt.next = deal(dealt.index + 1, dealt.seed); change(next); });
   }
-  function say(text, color) { call.material.map.redraw(text, color); call.position.set(c.cup.x, BASE + 0.55, c.cup.z); call.userData.at = time; call.visible = true; call.material.opacity = 1; }
+  function say(text, color, at = c.cup) { call.material.map.redraw(text, color); call.position.set(at.x, BASE + 0.55, at.z); call.userData.at = time; call.visible = true; call.material.opacity = 1; }
   function cheer() {
     const pos = confetti.geometry.attributes.position, v = confetti.userData.v;
     for (let i = 0; i < 150; i++) { const a = Math.random() * Math.PI * 2, s = 0.4 + Math.random() * 0.9; pos.setXYZ(i, c.cup.x, BASE + 0.05, c.cup.z); v.set([Math.cos(a) * s, 1.8 + Math.random() * 1.6, Math.sin(a) * s], i * 3); }
