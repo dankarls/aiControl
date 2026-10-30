@@ -11,9 +11,9 @@ const fingerprint = () => {
 };
 
 test('the course is the same as when its pars were worked out, and they hold', () => {
-  assert.equal(fingerprint(), 153168088, 'the holes changed: work PARS out again');
+  assert.equal(fingerprint(), -1777496914, 'the holes changed: work PARS out again');
   // Surveying every hole takes most of a minute (the windmills); a spread of the quicker ones, with every kind of obstacle.
-  for (const n of [1, 9, 14, 19, 20, 27, 32, 38, 49, 50]) {
+  for (const n of [1, 3, 8, 11, 14, 18, 20, 27, 39, 49]) {
     const c = hole(n);
     assert.equal(par(c), Number(PARS[n - 1]), `hole ${n}`);
     assert.ok(Math.abs(height(c, c.cup.x, c.cup.z)) < 1e-9, `hole ${n}: the cup sits on the flat`);

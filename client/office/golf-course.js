@@ -3,9 +3,10 @@
 //
 // A hole is a green inside AREA: one to three straight legs (straight, L or dogleg, or one wide one) joined into a single
 // outline, some corners cut off at an angle, wedges on the rails to bank off and, further on, walls and office things in the
-// way; humps, hollows and a tilt; a tee at one end, the cup at the other; and obstacles: bumpers, a coffee spill, a pipe, a
-// windmill. `difficulty` (0 to 1) sets how much of that it gets. It's makeable if some putt from the tee drops (par 2) or
-// leaves one that does (par 3).
+// way; gentle humps, hollows and a tilt; a tee at one end, the cup at the other; and obstacles: bumpers, a coffee spill, a
+// pipe, a windmill. What's in the way is put along the way, the line from the tee round the corners to the cup, so it's in
+// the way. `difficulty` (0 to 1) sets how much of all that a hole gets. It's makeable if some putt from the tee drops
+// (par 2) or leaves one that does (par 3).
 
 // In the secret room's frame (secret.js): x across from the doorway's wall, z along it.
 export const AREA = { x0: 4.6, x1: 9.3, z0: -3.45, z1: 2.55 };
@@ -81,35 +82,45 @@ export function make(difficulty, seed) {
   const poly = chamfer(outline(rects), r, 0.25 + 0.5 * d, 0.45);
   [tee, cup] = [tee, cup].map(p => { const [x, z] = at(...p); return { x, z }; });
   const clear = (p, gap) => near(p, tee) > gap && near(p, cup) > gap;
+  // The way: tee, the middle of each corner where one leg meets the next, cup. along(random, spread) is a spot on it, up to
+  // `spread` metres to either side.
+  const way = [tee, ...rects.slice(1).map((b, i) => { const a = rects[i]; return { x: (Math.max(a[0], b[0]) + Math.min(a[2], b[2])) / 2, z: (Math.max(a[1], b[1]) + Math.min(a[3], b[3])) / 2 }; }), cup];
+  const along = (random, spread) => {
+    const lengths = way.slice(1).map((p, i) => near(p, way[i])); let s = random() * lengths.reduce((a, b) => a + b, 0), i = 0;
+    while (s > lengths[i] && i < lengths.length - 1) s -= lengths[i++];
+    const a = way[i], b = way[i + 1], t = clamp(s / (lengths[i] || 1), 0, 1), off = (random() * 2 - 1) * spread;
+    return { x: a.x + (b.x - a.x) * t - (b.z - a.z) / (lengths[i] || 1) * off, z: a.z + (b.z - a.z) * t + (b.x - a.x) / (lengths[i] || 1) * off };
+  };
 
   // Wedges on the rails: a triangle on a long side, pointing in.
   const wedges = [];
-  for (let tries = 0, count = d < 0.05 ? 0 : Math.floor(between(0, 1 + 3 * d)); wedges.length < count && tries < 30; tries++) {
+  for (let tries = 0, count = d < 0.02 ? 0 : Math.floor(between(1, 2 + 3 * d)); wedges.length < count && tries < 30; tries++) {
     const k = Math.floor(r() * poly.length), [ax, az] = poly[k], [bx, bz] = poly[(k + 1) % poly.length], len = Math.hypot(bx - ax, bz - az); if (len < 0.9) continue;
     const ux = (bx - ax) / len, uz = (bz - az) / len, t = between(0.2, 0.8) * len, mid = { x: ax + ux * t, z: az + uz * t }, base = between(0.3, 0.55), deep = between(0.18, 0.32), slide = between(-0.15, 0.15);
     const n = inside(poly, mid.x - uz * 0.05, mid.z + ux * 0.05) ? [-uz, ux] : [uz, -ux], apex = { x: mid.x + n[0] * deep + ux * slide, z: mid.z + n[1] * deep + uz * slide };
     if (!clear(mid, 0.55) || !clear(apex, 0.45) || !inside(poly, apex.x, apex.z)) continue;
     wedges.push([[mid.x - ux * base / 2, mid.z - uz * base / 2], [apex.x, apex.z], [mid.x + ux * base / 2, mid.z + uz * base / 2]]);
   }
-  // Walls inside, further on.
+  // Walls across the way, further on.
   const inner = [];
-  for (let tries = 0, count = d < 0.35 ? 0 : Math.floor(between(0, 1 + 2 * (d - 0.35) / 0.65)); inner.length < count && tries < 30; tries++) {
-    const x = between(AREA.x0, AREA.x1), z = between(AREA.z0, AREA.z1), half = between(0.25, 0.5), a = r() * Math.PI, wall = [x - Math.cos(a) * half, z - Math.sin(a) * half, x + Math.cos(a) * half, z + Math.sin(a) * half];
+  for (let tries = 0, count = d < 0.2 ? 0 : Math.floor(between(0, 1.5 + 2 * d)); inner.length < count && tries < 30; tries++) {
+    const { x, z } = along(r, 0.35), half = between(0.2, 0.45), a = r() * Math.PI, wall = [x - Math.cos(a) * half, z - Math.sin(a) * half, x + Math.cos(a) * half, z + Math.sin(a) * half];
     if ([[wall[0], wall[1]], [wall[2], wall[3]]].some(([px, pz]) => !inside(poly, px, pz) || fromEdge(poly, px, pz) < 0.25)) continue;
     if ([tee, cup].some(p => toSegment(p.x, p.z, ...wall) < 0.45)) continue;
     inner.push(wall);
   }
   // Office things in the way.
   const kinds = Object.keys(SIZES), things = [];
-  for (let tries = 0, count = d < 0.2 ? 0 : Math.floor(between(0, 1 + 2.5 * d)); things.length < count && tries < 30; tries++) {
-    const kind = kinds[Math.floor(r() * kinds.length)], o = { kind, ...SIZES[kind], x: between(AREA.x0, AREA.x1), z: between(AREA.z0, AREA.z1), turn: r() * Math.PI };
+  for (let tries = 0, count = d < 0.12 ? 0 : Math.floor(between(0, 1.5 + 2.5 * d)); things.length < count && tries < 30; tries++) {
+    const kind = kinds[Math.floor(r() * kinds.length)], o = { kind, ...SIZES[kind], ...along(r, 0.4), turn: r() * Math.PI };
     const reach = o.r || Math.hypot(o.w, o.d) / 2;
     if (!inside(poly, o.x, o.z) || fromEdge(poly, o.x, o.z) < reach + 0.12 || !clear(o, reach + 0.3) || things.some(p => near(p, o) < 0.4)) continue;
     things.push(o);
   }
-  const bumps = Array.from({ length: 1 + Math.floor(3 * d) }, () => ({ x: between(AREA.x0, AREA.x1), z: between(AREA.z0, AREA.z1), r: between(0.35, 0.85), a: (r() < 0.5 ? -1 : 1) * (0.035 + 0.07 * d) }));
-  const features = obstacles(d, rng(seed * 31 + 17), { poly, rects, tee, cup, things, inner, clear });
-  const lean = d < 0.1 ? 0 : 0.022 * d, dir = r() * Math.PI * 2;
+  // Gentle humps and hollows on the way, where they bend a putt rather than sit off to the side.
+  const bumps = Array.from({ length: 1 + Math.floor(2 * d) }, () => ({ ...along(r, 0.3), r: between(0.3, 0.6), a: (r() < 0.5 ? -1 : 1) * (0.015 + 0.035 * d) }));
+  const features = obstacles(d, rng(seed * 31 + 17), { poly, rects, tee, cup, things, inner, clear, along });
+  const lean = d < 0.1 ? 0 : 0.012 * d, dir = r() * Math.PI * 2;
   const walls = [...poly.map((p, i) => [...p, ...poly[(i + 1) % poly.length]]), ...wedges.flatMap(([p, q, s]) => [[...p, ...q], [...q, ...s]]), ...inner];
   const c = { difficulty, seed, outline: poly, wedges, inner, things, features, walls, tee, cup, bumps, tilt: { x: Math.cos(dir) * lean, z: Math.sin(dir) * lean } };
   c.grid = grid(c);
@@ -119,26 +130,26 @@ export function make(difficulty, seed) {
 // Obstacles, from their own seed (so adding them never reshapes a green), more and more of them as it gets harder: bumpers
 // that kick the ball away, a coffee spill (roll in and it's a stroke's penalty, back to where you putted from), a pipe that
 // swallows the ball and spits it out somewhere else, and a windmill across a leg whose sails block its tunnel now and then.
-function obstacles(d, r, { poly, rects, tee, cup, things, inner, clear }) {
+function obstacles(d, r, { poly, rects, tee, cup, things, inner, clear, along }) {
   const between = (a, b) => a + (b - a) * r(), out = [];
   const open = (x, z, gap) => inside(poly, x, z) && fromEdge(poly, x, z) > gap && clear({ x, z }, gap + 0.3) && things.every(o => near(o, { x, z }) > gap + 0.25) && inner.every(w => toSegment(x, z, ...w) > gap + 0.1) && out.every(f => near(f, { x, z }) > gap + 0.4 && (!f.to || near(f.to, { x, z }) > gap + 0.4));
-  if (d >= 0.5 && r() < 0.6) { // across the middle of the longest leg, the sails toward the tee
+  if (d >= 0.45 && r() < 0.7) { // across the middle of the longest leg, the sails toward the tee
     const [x0, z0, x1, z1] = rects.reduce((a, b) => Math.max(b[2] - b[0], b[3] - b[1]) > Math.max(a[2] - a[0], a[3] - a[1]) ? b : a), along = x1 - x0 > z1 - z0, x = (x0 + x1) / 2, z = (z0 + z1) / 2;
     const turn = along ? 0 : Math.PI / 2, side = ((tee.x - x) * Math.cos(turn) + (tee.z - z) * Math.sin(turn)) < 0 ? -1 : 1, part = s => ({ x: x - Math.sin(turn) * 0.24 * s, z: z + Math.cos(turn) * 0.24 * s, w: 0.3, d: 0.32, turn });
     const gx = x + Math.cos(turn) * 0.17 * side, gz = z + Math.sin(turn) * 0.17 * side;
     if (open(x, z, 0.45)) out.push({ kind: 'windmill', x, z, turn, side, parts: [part(-1), part(1)], gate: [gx + Math.sin(turn) * 0.09, gz - Math.cos(turn) * 0.09, gx - Math.sin(turn) * 0.09, gz + Math.cos(turn) * 0.09] });
   }
-  if (d >= 0.4 && r() < 0.5) for (let tries = 0; tries < 20; tries++) { // a pipe, coming out pointing roughly at the cup
-    const x = between(AREA.x0, AREA.x1), z = between(AREA.z0, AREA.z1), tx = between(AREA.x0, AREA.x1), tz = between(AREA.z0, AREA.z1), outward = Math.atan2(cup.z - tz, cup.x - tx) + between(-0.6, 0.6);
+  if (d >= 0.35 && r() < 0.6) for (let tries = 0; tries < 20; tries++) { // a pipe on the way, coming out pointing roughly at the cup
+    const { x, z } = along(r, 0.3), tx = between(AREA.x0, AREA.x1), tz = between(AREA.z0, AREA.z1), outward = Math.atan2(cup.z - tz, cup.x - tx) + between(-0.6, 0.6);
     if (Math.hypot(tx - x, tz - z) < 1.2 || !open(x, z, 0.12) || !open(tx, tz, 0.15) || !inside(poly, tx + Math.cos(outward) * 0.35, tz + Math.sin(outward) * 0.35)) continue;
     out.push({ kind: 'pipe', x, z, to: { x: tx, z: tz }, out: outward }); break;
   }
-  for (let tries = 0, count = d < 0.25 ? 0 : Math.floor(between(0, 1.2 + d)); out.filter(f => f.kind === 'spill').length < count && tries < 20; tries++) {
-    const rx = between(0.18, 0.32), rz = between(0.12, 0.22), x = between(AREA.x0, AREA.x1), z = between(AREA.z0, AREA.z1);
+  for (let tries = 0, count = d < 0.2 ? 0 : Math.floor(between(0, 1.5 + d)); out.filter(f => f.kind === 'spill').length < count && tries < 20; tries++) {
+    const rx = between(0.18, 0.32), rz = between(0.12, 0.22), { x, z } = along(r, 0.45);
     if (open(x, z, rx + 0.05)) out.push({ kind: 'spill', x, z, rx, rz, turn: r() * Math.PI });
   }
-  for (let tries = 0, count = d < 0.15 ? 0 : Math.floor(between(0, 1 + 3 * d)); out.filter(f => f.kind === 'bumper').length < count && tries < 30; tries++) {
-    const x = between(AREA.x0, AREA.x1), z = between(AREA.z0, AREA.z1);
+  for (let tries = 0, count = d < 0.02 ? 0 : Math.floor(between(1, 2 + 3 * d)); out.filter(f => f.kind === 'bumper').length < count && tries < 30; tries++) {
+    const { x, z } = along(r, 0.4);
     if (open(x, z, 0.1)) out.push({ kind: 'bumper', x, z, r: 0.055 });
   }
   return out;
@@ -260,7 +271,7 @@ export const par = c => { const it = survey(c); for (;;) { const s = it.next(); 
 
 // The course: holes 1 to 50, harder as they go, the same for everyone, each with its par worked out ahead (a test checks
 // them), so none has to be surveyed while you play.
-export const HOLE_COUNT = 50, PARS = '22222222232232222222232333232332333232233333333322';
+export const HOLE_COUNT = 50, PARS = '22222222232232222232232333233332332223233333333323';
 export const difficulty = n => Math.min(1, (n - 1) / 45);
 export const seedOf = (n, k) => n * 7919 + k * 104729;
 export const hole = n => ({ ...make(difficulty(n), seedOf(n, 0)), n, par: Number(PARS[n - 1]) });

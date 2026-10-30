@@ -3,7 +3,7 @@
 // and follows the ball as it rolls. The putter's head goes where the pointer is on the green: the putt goes from there through
 // the ball, as hard as the club is drawn back (REACH for the hardest). Click to putt; a finger aims while it presses and
 // putts as it lifts. Let go with the club at the ball and nothing happens. The green rises and falls (drawn twice as high
-// as it rolls, so it shows), in shades of green from its lowest hollow to its highest crest, hill-shaded.
+// as it rolls, so it shows), plain felt lit by the room.
 // Holes 1 to 50 are the same for everyone; the notice board keeps your best on each, and any you've reached can be picked
 // there to play again. Endless (on the board too) deals fresh holes, harder as it goes, until you're ten over par; your
 // longest run is kept. Bumpers flash as they kick the ball away, coffee costs a stroke and puts the ball back where it was
@@ -77,7 +77,7 @@ function surfaceGeometry(c, box) {
       c.outline.forEach(([x1, z1], e) => { const [x2, z2] = c.outline[(e + 1) % c.outline.length], dx = x2 - x1, dz = z2 - z1, t = clamp(((x - x1) * dx + (z - z1) * dz) / (dx * dx + dz * dz), 0, 1), d = Math.hypot(x - x1 - dx * t, z - z1 - dz * t); if (d < best) { best = d; px = x1 + dx * t; pz = z1 + dz * t; } });
       x = px; z = pz;
     }
-    position.set([x, height(c, x, z) * LIFT, z], k * 3); uv.set([(x - box.x0) / (box.x1 - box.x0), 1 - (z - box.z0) / (box.z1 - box.z0)], k * 2);
+    position.set([x, height(c, x, z) * LIFT, z], k * 3); uv.set([x / FELT, z / FELT], k * 2);
   }
   for (let j = 0; j < rows - 1; j++) for (let i = 0; i < cols - 1; i++) {
     const a = j * cols + i, b = a + 1, d = a + cols, e = d + 1;
@@ -86,25 +86,18 @@ function surfaceGeometry(c, box) {
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(position, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); g.setIndex(index); g.computeVertexNormals();
   return g;
 }
-// Height as felt in seven shades of green, from the darkest in this hole's lowest hollow to the lightest on its highest crest,
-// with a darker line where one shade meets the next, like a map's, and hill shading as if lit from the back left; a flat
-// hole is one even green. Drawn unlit (the room's coloured light would muddy the shades), so the shading is baked in.
-const SHADES = ['#2b7631', '#38893b', '#479c45', '#58ae50', '#6dc05d', '#88d06f', '#aade8a'].map(hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)));
-function drawGreen(g, w, h, c, box) {
-  if (!c) return;
-  let low = Infinity, high = -Infinity; for (const v of c.grid.h) { low = Math.min(low, v); high = Math.max(high, v); }
-  const img = g.createImageData(w, h), sx = (box.x1 - box.x0) / w, sz = (box.z1 - box.z0) / h, span = high - low, light = new THREE.Vector3(-0.45, 1, -0.6).normalize(), normal = new THREE.Vector3();
-  const shade = (x, z) => span < 0.008 ? 3 : Math.min(SHADES.length - 1, Math.floor((height(c, x, z) - low) / span * SHADES.length));
-  for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
-    const x = box.x0 + (i + 0.5) * sx, z = box.z0 + (j + 0.5) * sz, here = shade(x, z), k = (j * w + i) * 4;
-    normal.set(-(height(c, x + sx, z) - height(c, x - sx, z)) / (2 * sx) * LIFT * 3, 1, -(height(c, x, z + sz) - height(c, x, z - sz)) / (2 * sz) * LIFT * 3).normalize();
-    const lit = clamp(1 + 1.6 * (normal.dot(light) - light.y), 0.6, 1.3); // sunlit slopes lighter, the far sides darker
-    const tint = (here !== shade(x + sx, z) || here !== shade(x, z + sz) ? 0.72 : 1) * lit * (0.97 + hash(i, j) * 0.06);
-    for (let n = 0; n < 3; n++) img.data[k + n] = SHADES[here][n] * tint;
-    img.data[k + 3] = 255;
-  }
-  g.putImageData(img, 0, 0);
-}
+// The felt: a fine weave in green, tiled every FELT metres and lit by the room, so slopes show in light and shade.
+const FELT = 0.5;
+let feltLook;
+const felt = () => feltLook ??= (() => {
+  const texture = canvasTexture(128, 128, g => {
+    const img = g.createImageData(128, 128);
+    for (let k = 0; k < 128 * 128; k++) { const v = 0.9 + hash(k % 128, Math.floor(k / 128)) * 0.2; img.data.set([96 * v, 196 * v, 100 * v, 255], k * 4); }
+    g.putImageData(img, 0, 0);
+  });
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  return texture;
+})();
 // The notice board: cork with the scorecard pinned on, the hole on now above it, Endless below. Returns where the holes'
 // boxes and the Endless post-it are, in canvas pixels, for clicks.
 function drawBoard(g, w, h, s) {
@@ -200,7 +193,6 @@ export function createGolf({ camera, canvas, ray, onPlay }) {
     const xs = c.outline.map(p => p[0]), zs = c.outline.map(p => p[1]);
     Object.assign(box, { x0: Math.min(...xs), z0: Math.min(...zs), x1: Math.max(...xs), z1: Math.max(...zs) });
     surface.geometry.dispose(); surface.geometry = surfaceGeometry(c, box);
-    surface.material.map?.dispose(); surface.material.map = canvasTexture(Math.round((box.x1 - box.x0) * 110), Math.round((box.z1 - box.z0) * 110), (g, w, h) => drawGreen(g, w, h, c, box)); surface.material.needsUpdate = true;
     rails?.removeFromParent(); rails?.geometry.dispose(); rails = mesh(paint(railParts(c)), painted(), 0.004); course3d.add(rails);
     for (const m of things) { m.removeFromParent(); m.userData.cap?.material.dispose(); }
     things = c.things.map(o => { const m = mesh(once(`golf-${o.kind}`, () => paint(thingParts[o.kind]())), painted(), 0.004); m.position.set(o.x, surfaceY(o.x, o.z), o.z); m.rotation.y = -o.turn; course3d.add(m); return m; });
@@ -228,7 +220,7 @@ export function createGolf({ camera, canvas, ray, onPlay }) {
       room = group;
       // The course: click any of it to play (outlined under the pointer).
       course3d = new THREE.Group(); course3d.userData.toggle = () => onPlay(golf); group.add(course3d);
-      surface = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial()); surface.position.y = BASE; course3d.add(surface);
+      surface = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshLambertMaterial({ map: felt(), emissive: '#0c2e10' })); surface.position.y = BASE; course3d.add(surface);
       cup = new THREE.Group(); course3d.add(cup);
       cup.add(new THREE.Mesh(new THREE.CircleGeometry(CUP, 28).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#141317' })), new THREE.Mesh(new THREE.RingGeometry(CUP, CUP + 0.012, 28).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#f4f2ec' })));
       flagTexture = canvasTexture(128, 96, (g, tw, th, number) => { g.clearRect(0, 0, tw, th); g.fillStyle = '#e63946'; g.beginPath(); g.moveTo(0, 0); g.lineTo(tw, th / 2); g.lineTo(0, th); g.fill(); g.fillStyle = '#ffffff'; g.font = `bold 44px ${CHALK}`; g.textBaseline = 'middle'; g.fillText(number ?? '', 8, th / 2 + 2); });
@@ -272,15 +264,21 @@ export function createGolf({ camera, canvas, ray, onPlay }) {
         course3d.position.y = t < 0.45 ? -0.35 * (t / 0.45) ** 2 : -0.35 * (1 - (t - 0.45) / 0.55) ** 2 + 0.03 * Math.sin(Math.PI * (t - 0.45) / 0.55);
         if (t === 1) { swap = null; course3d.position.y = 0; }
       }
-      // The swing: the club comes through, then the ball goes.
+      // The swing: the club speeds up into the ball and strikes it; the ball leaves faster than the club, which slows to a
+      // stop a little past where the ball was (measured from there, not from the ball, or it would ride along behind it).
       if (swing) {
-        swing.t += dt; place(swing.dir, Math.max(-0.05, swing.back * (1 - swing.t / 0.1)));
-        if (swing.t >= 0.1 && !swing.hit) {
-          swing.hit = true; putFrom = { x: ball.x, z: ball.z };
-          Object.assign(ball, { vx: swing.dir.x * swing.speed, vz: swing.dir.y * swing.speed, rest: false, touch: [], t: time }); rolling = true; acc = 0; strokes++; redraw();
-          if (still) { while (!ball.sunk && !ball.rest && !ball.spilled) step(c, ball); }
+        const s = swing; s.t += dt;
+        if (!s.hit) {
+          const e = Math.min(1, s.t / s.time); place(s.dir, s.back * (1 - e * e));
+          if (e === 1) {
+            s.hit = s.t; putFrom = { x: ball.x, z: ball.z };
+            Object.assign(ball, { vx: s.dir.x * s.speed, vz: s.dir.y * s.speed, rest: false, touch: [], t: time }); rolling = true; acc = 0; strokes++; redraw();
+            if (still) { while (!ball.sunk && !ball.rest && !ball.spilled) step(c, ball); }
+          }
+        } else {
+          const e = Math.min(1, (s.t - s.hit) / 0.12); place(s.dir, -s.follow * (1 - (1 - e) ** 2), putFrom);
+          if (s.t - s.hit > 0.4) swing = null;
         }
-        if (swing.t > 0.45) swing = null;
       }
       if (rolling) {
         for (acc += dt; acc >= DT && rolling; acc -= DT) { step(c, ball); if (ball.sunk || ball.rest || ball.spilled) rolling = false; }
@@ -313,15 +311,17 @@ export function createGolf({ camera, canvas, ray, onPlay }) {
       // pulled in); it eases after the ball, and holds still while a finger aims.
       if (!pull?.held) {
         const k = still || !view.set ? 1 : 1 - Math.exp(-dt * 2.5), y = surfaceY(ball.x, ball.z), far = Math.hypot(c.cup.x - ball.x, c.cup.z - ball.z);
-        const back = [ball.x - view.heading.x * 1.6, ball.z - view.heading.y * 1.6], [cx, cz] = within(...back, 0.3);
-        view.from.lerp(local.set(cx, y + Math.min(2.6, 1.3 + 0.25 * far + 0.7 * Math.hypot(back[0] - cx, back[1] - cz)), cz), k);
-        view.look.lerp(local.set(ball.x + (c.cup.x - ball.x) * 0.05, y, ball.z + (c.cup.z - ball.z) * 0.05), k); view.set = true; // the ball a little below the middle, room behind it to draw the club back
+        // Two metres behind, a metre and a bit up, looking ahead toward the cup: the flag in sight, the ball low in the middle
+        // with room behind it to draw the club right back.
+        const back = [ball.x - view.heading.x * 2, ball.z - view.heading.y * 2], [cx, cz] = within(...back, 0.3), ahead = Math.min(0.35 * far, 1.5);
+        view.from.lerp(local.set(cx, y + Math.min(2.4, 1 + 0.12 * far + 0.7 * Math.hypot(back[0] - cx, back[1] - cz)), cz), k);
+        view.look.lerp(local.set(ball.x + view.heading.x * ahead, y, ball.z + view.heading.y * ahead), k); view.set = true;
       }
     },
   };
-  // The club behind the ball, `back` metres off it, facing `dir` (where the putt goes).
-  function place(dir, back) {
-    const x = ball.x - dir.x * (BALL + 0.004 + back), z = ball.z - dir.y * (BALL + 0.004 + back);
+  // The club behind the ball (or where it was, `at`), `back` metres off it, facing `dir` (where the putt goes).
+  function place(dir, back, at = ball) {
+    const x = at.x - dir.x * (BALL + 0.004 + back), z = at.z - dir.y * (BALL + 0.004 + back);
     club.position.set(x, surfaceY(x, z), z); club.rotation.y = -Math.atan2(dir.y, dir.x);
   }
   // Your best on hole `n`, and the next one opened.
@@ -372,7 +372,10 @@ export function createGolf({ camera, canvas, ray, onPlay }) {
   canvas.addEventListener('pointerup', event => {
     if (!pull?.held) return;
     aimAt(event); const { dir, power, back } = pull; pull = null;
-    if (power > 0.04 && golf.ready) swing = { t: 0, dir, back, speed: power * MAX };
+    // The forward swing is quick enough to meet the ball at about two thirds of the speed it leaves at; the follow-through
+    // is short, so the club never catches it up.
+    const speed = power * MAX;
+    if (power > 0.04 && golf.ready) swing = { t: 0, dir, back, speed, time: clamp(2 * back / (0.65 * Math.max(speed, 0.3)), 0.1, 0.35), follow: Math.min(0.05, 0.03 * speed) };
   });
   canvas.addEventListener('pointercancel', () => { pull = null; });
   return golf;
