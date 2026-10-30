@@ -169,8 +169,6 @@ const sample = (g, field, x, z) => {
   return (field[k] * (1 - a) + field[k + 1] * a) * (1 - b) + (field[k + g.cols] * (1 - a) + field[k + g.cols + 1] * a) * b;
 };
 export const height = (c, x, z) => sample(c.grid, c.grid.h, x, z);
-// Which way and how hard the slope pulls a ball at (x, z) (m/s²).
-export const slope = (c, x, z) => [sample(c.grid, c.grid.px, x, z), sample(c.grid, c.grid.pz, x, z)];
 
 // A ball touching something: pushed out along (nx, nz) and bounced; the push is remembered, so next step a slope can't
 // press it on into what it rests against.

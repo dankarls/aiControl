@@ -1,8 +1,8 @@
 // The putting green in the secret room: holes from golf-course.js, built, drawn and played here.
 // Click the course (or the notice board beside it) to play: the view moves behind the ball, raised enough to see the cup,
 // and follows the ball as it rolls. Press and pull back away from the ball, like drawing back a putter, and let go: the ball
-// goes the other way, as hard as you pulled (pull back to the ball to call it off). The green is shaded light on crests and
-// dark in hollows with a contour every centimetre, and while you play, dots drift downhill over it.
+// goes the other way, as hard as you pulled (pull back to the ball to call it off). The green's height is in shades of green,
+// darkest in its lowest hollow and lightest on its highest crest.
 // Holes 1 to 50 are the same for everyone; the notice board keeps your best on each, and any you've reached can be picked
 // there to play again. Endless (on the board too) deals fresh holes, harder as it goes, until you're ten over par; your
 // longest run is kept. Bumpers flash as they kick the ball away, coffee costs a stroke and puts the ball back where it was
@@ -14,7 +14,7 @@ import { mesh, once, canvasTexture, paint, painted } from './furniture.js';
 import { toonMaterial } from './toon.js';
 import { drawCall, CHALK } from './darts.js';
 import { SECRET } from './secret.js';
-import { BALL, CUP, RAIL, PIPE, PERIOD, DT, MAX, HOLE_COUNT, PARS, hole, endless, height, slope, step, inside } from './golf-course.js';
+import { BALL, CUP, RAIL, PIPE, PERIOD, DT, MAX, HOLE_COUNT, PARS, hole, endless, height, step, inside } from './golf-course.js';
 
 const BASE = 0.16, CAP = 0.06; // the green's surface over the floor; how far rails stand above it
 // Metres of pull for the hardest putt; strokes before you pick up; how far over par ends an Endless run.
@@ -80,14 +80,20 @@ function surfaceGeometry(c, box) {
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(position, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); g.setIndex(index); g.computeVertexNormals();
   return g;
 }
-// Felt, light on crests and dark in hollows, a darker line every centimetre of height.
+// Height as felt in seven shades of green, from the darkest in this hole's lowest hollow to the lightest on its highest crest,
+// with a darker line where one shade meets the next, like a map's; a flat hole is one even green. Drawn unlit (the room's
+// coloured light would muddy the shades).
+const SHADES = ['#2b7631', '#38893b', '#479c45', '#58ae50', '#6dc05d', '#88d06f', '#aade8a'].map(hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)));
 function drawGreen(g, w, h, c, box) {
   if (!c) return;
-  const img = g.createImageData(w, h), sx = (box.x1 - box.x0) / w, sz = (box.z1 - box.z0) / h, level = (x, z) => Math.floor(height(c, x, z) / 0.01);
+  let low = Infinity, high = -Infinity; for (const v of c.grid.h) { low = Math.min(low, v); high = Math.max(high, v); }
+  const img = g.createImageData(w, h), sx = (box.x1 - box.x0) / w, sz = (box.z1 - box.z0) / h, span = high - low;
+  const shade = (x, z) => span < 0.008 ? 3 : Math.min(SHADES.length - 1, Math.floor((height(c, x, z) - low) / span * SHADES.length));
   for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
-    const x = box.x0 + (i + 0.5) * sx, z = box.z0 + (j + 0.5) * sz, t = clamp(0.5 + height(c, x, z) / 0.2, 0, 1), here = level(x, z);
-    const shade = (here !== level(x + sx, z) || here !== level(x, z + sz) ? 0.7 : 1) * (0.97 + hash(i, j) * 0.06), k = (j * w + i) * 4;
-    img.data[k] = (46 + 104 * t) * shade; img.data[k + 1] = (122 + 96 * t) * shade; img.data[k + 2] = (60 + 40 * t) * shade; img.data[k + 3] = 255;
+    const x = box.x0 + (i + 0.5) * sx, z = box.z0 + (j + 0.5) * sz, here = shade(x, z), k = (j * w + i) * 4;
+    const tint = (here !== shade(x + sx, z) || here !== shade(x, z + sz) ? 0.72 : 1) * (0.97 + hash(i, j) * 0.06);
+    for (let n = 0; n < 3; n++) img.data[k + n] = SHADES[here][n] * tint;
+    img.data[k + 3] = 255;
   }
   g.putImageData(img, 0, 0);
 }
@@ -170,7 +176,7 @@ export function createGolf({ camera, canvas, ray, onPlay }) {
   const save = () => { try { localStorage.setItem(SAVE, JSON.stringify(progress)); } catch {} };
   let room = null, c = null, mode = 'holes', run = null, strokes = 0, time = 0, still = false, active = false, shown = false;
   let ball = null, rolling = false, sunkAt = -1, spillAt = -1, dealing = false, acc = 0, swap = null, pull = null, swing = null, spots = null, putFrom = null, mills = [];
-  let course3d, surface, rails, things = [], cup, flag, flagTexture, tee, ballMesh, shadow, club, arrow, dots, confetti, call, board, boardTexture;
+  let course3d, surface, rails, things = [], cup, flag, flagTexture, tee, ballMesh, shadow, club, arrow, confetti, call, board, boardTexture;
   const box = { x0: 0, z0: 0, x1: 1, z1: 1 }, local = new THREE.Vector3(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0)), hitPoint = new THREE.Vector3(), rayer = new THREE.Ray();
   // The view while playing, easing after the ball: behind it along `heading` (to the cup when it last stopped).
   const view = { from: new THREE.Vector3(), look: new THREE.Vector3(), heading: new THREE.Vector2(1, 0), set: false };
@@ -214,7 +220,7 @@ export function createGolf({ camera, canvas, ray, onPlay }) {
       room = group;
       // The course: click any of it to play (outlined under the pointer).
       course3d = new THREE.Group(); course3d.userData.toggle = () => onPlay(golf); group.add(course3d);
-      surface = new THREE.Mesh(new THREE.BufferGeometry(), toonMaterial('#ffffff', { map: null })); surface.position.y = BASE; course3d.add(surface);
+      surface = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial()); surface.position.y = BASE; course3d.add(surface);
       cup = new THREE.Group(); course3d.add(cup);
       cup.add(new THREE.Mesh(new THREE.CircleGeometry(CUP, 28).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#141317' })), new THREE.Mesh(new THREE.RingGeometry(CUP, CUP + 0.012, 28).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#f4f2ec' })));
       flagTexture = canvasTexture(128, 96, (g, tw, th, number) => { g.clearRect(0, 0, tw, th); g.fillStyle = '#e63946'; g.beginPath(); g.moveTo(0, 0); g.lineTo(tw, th / 2); g.lineTo(0, th); g.fill(); g.fillStyle = '#ffffff'; g.font = `bold 44px ${CHALK}`; g.textBaseline = 'middle'; g.fillText(number ?? '', 8, th / 2 + 2); });
@@ -228,8 +234,6 @@ export function createGolf({ camera, canvas, ray, onPlay }) {
       // The aim arrow, flat over the green and always on top: as long and as hot as the pull is hard.
       const arrowShape = new THREE.Shape([[0, -0.018], [0.8, -0.018], [0.8, -0.045], [1, 0], [0.8, 0.045], [0.8, 0.018], [0, 0.018]].map(([x, y]) => new THREE.Vector2(x, y)));
       arrow = new THREE.Mesh(new THREE.ShapeGeometry(arrowShape).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#7dff6b', transparent: true, opacity: 0.85, depthTest: false })); arrow.renderOrder = 3; arrow.visible = false; arrow.raycast = () => {}; room.add(arrow);
-      dots = new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(160 * 3), 3)), new THREE.PointsMaterial({ color: '#ffffff', size: 0.016, transparent: true, opacity: 0.6, depthWrite: false }));
-      dots.userData.age = new Float32Array(160).fill(99); dots.visible = false; dots.raycast = () => {}; room.add(dots);
       const colors = new Float32Array(150 * 3); for (let i = 0; i < 150; i++) new THREE.Color(NEON[i % NEON.length]).toArray(colors, i * 3);
       confetti = new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(150 * 3), 3)).setAttribute('color', new THREE.BufferAttribute(colors, 3)), new THREE.PointsMaterial({ size: 0.03, vertexColors: true }));
       confetti.userData.v = new Float32Array(150 * 3); confetti.visible = false; confetti.raycast = () => {}; room.add(confetti);
@@ -291,18 +295,6 @@ export function createGolf({ camera, canvas, ray, onPlay }) {
       club.visible = golf.ready || !!swing;
       arrow.visible = !!pull && pull.power > 0.03;
       if (arrow.visible) { arrow.position.set(ball.x, surfaceY(ball.x, ball.z) + 0.012, ball.z); arrow.rotation.y = -Math.atan2(pull.dir.y, pull.dir.x); arrow.scale.set(0.25 + 1.4 * pull.power, 1, 1); arrow.material.color.setHSL(0.33 * (1 - pull.power), 1, 0.6); }
-      // Downhill dots, while playing: each drifts with the slope for a while, then starts again somewhere sloping.
-      dots.visible = active && !still;
-      if (dots.visible) {
-        const pos = dots.geometry.attributes.position, age = dots.userData.age;
-        for (let i = 0; i < age.length; i++) {
-          let x = pos.getX(i), z = pos.getZ(i); const [fx, fz] = slope(c, x, z);
-          age[i] += dt; x += fx * 0.05 * dt; z += fz * 0.05 * dt;
-          if (age[i] > 2.5 || Math.hypot(fx, fz) < 0.12 || !inside(c.outline, x, z)) { age[i] = Math.random() * 1.5; x = box.x0 + Math.random() * (box.x1 - box.x0); z = box.z0 + Math.random() * (box.z1 - box.z0); }
-          pos.setXYZ(i, x, surfaceY(x, z) + 0.006, z);
-        }
-        pos.needsUpdate = true;
-      }
       if (confetti.visible) {
         const pos = confetti.geometry.attributes.position, v = confetti.userData.v;
         for (let i = 0; i < 150; i++) { v[i * 3 + 1] -= 3 * dt; pos.setXYZ(i, pos.getX(i) + v[i * 3] * dt, Math.max(BASE, pos.getY(i) + v[i * 3 + 1] * dt), pos.getZ(i) + v[i * 3 + 2] * dt); }
