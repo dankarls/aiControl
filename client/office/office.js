@@ -16,6 +16,7 @@ import { createProps, REACH } from './props.js';
 import { createScreenshots } from './screenshots.js';
 import { createDarts } from './darts.js';
 import { createGolf } from './golf.js';
+import { createPinball } from './pinball.js';
 import { createGoose, GOOSE } from './goose.js';
 import { walkGrid, gridKey, findPath } from './path.js';
 import { hireChoices } from '../hire.js';
@@ -98,9 +99,9 @@ export function mountOffice(container, hooks) {
   room.onCoffee = () => { if (!props.fill()) player.walkTo(props.machineSpot, () => props.fill(), 0.3, true); };
   // The secret shelf's right book: pressed from where you stand if you can reach it, else you walk over first.
   room.onSecret = () => { const spot = room.secret.spot; if (player.position.clone().setY(0).distanceTo(spot) < 1.6) room.secret.toggle(); else player.walkTo(spot, () => room.secret.toggle(), 0.3, true); };
-  // Darts and the putting green in the secret room. Clicking either (from near enough, else you walk over first) puts you in
-  // its game: it has the view and the clicks, aimed where the mouse is, until Esc, ✕, a walking key or the overview; then you
-  // stand where it says, facing it.
+  // Darts, the putting green and the pinball in the secret room. Clicking one (from near enough, else you walk over first)
+  // puts you in its game: it has the view and the clicks, aimed where the mouse is, until Esc, ✕, a walking key or the
+  // overview; then you stand where it says, facing it.
   const aim = () => rayAt(dot ? player.centre : mouse || player.centre, renderer.domElement, camera);
   let playing = null;
   const play = game => {
@@ -116,7 +117,8 @@ export function mountOffice(container, hooks) {
     else player.walkTo(spot, () => { player.place(player.position.x, player.position.z, yaw); play(game); }, 0.3, true);
   };
   const darts = createDarts({ hands: view.hands, camera, aim, onPlay }), golf = createGolf({ camera, canvas: renderer.domElement, ray: at => rayAt(at, renderer.domElement, camera), onPlay });
-  room.secret.add(darts); room.secret.add(golf);
+  const pinball = createPinball({ canvas: renderer.domElement, camera, onPlay });
+  room.secret.add(darts); room.secret.add(golf); room.secret.add(pinball);
   const boards = createBoards(room);
   const bubbles = new Bubbles(container, id => office.talkTo(id));
   // It lets you be in the overview and on your way to someone.
@@ -160,10 +162,11 @@ export function mountOffice(container, hooks) {
   // link it keeps moving focus). E throws what you hold or picks up the outlined thing, else talks to whoever is outlined (or
   // looks at their screen, goes to the board, flips a toggle, or opens a pod sign's menu), else to whoever is in front of you.
   // F, held, pours. Moving takes the mouse back if the browser wouldn't hand it back by itself (see `free`). Playing a game,
-  // E plays (where the mouse is), and Esc or a walking key steps back.
+  // E plays (where the mouse is), and Esc or a walking key steps back; a game's own keys (the pinball's flippers) are its.
   listen(document, 'keydown', event => {
     if (!officeHasKeys(event)) return;
     if (playing && event.key !== 'Tab') {
+      if (playing.key?.(event.code, true)) { event.preventDefault(); return; }
       if (event.key === 'Escape' || /^(Key[WASD]|Arrow\w+|Space)$/.test(event.code)) { event.preventDefault(); play(null); }
       else if (event.code === 'KeyE') { event.preventDefault(); playing.click(aim()); }
       return;
@@ -178,8 +181,8 @@ export function mountOffice(container, hooks) {
     }
     else if (event.code === 'KeyF' && !view.overview && !office.talking) { event.preventDefault(); if (!event.repeat) props.pour(true); }
   });
-  listen(document, 'keyup', event => { if (event.code === 'KeyF') props.pour(false); });
-  listen(window, 'blur', () => props.pour(false));
+  listen(document, 'keyup', event => { if (event.code === 'KeyF') props.pour(false); playing?.key?.(event.code, false); });
+  listen(window, 'blur', () => { props.pour(false); playing?.blur?.(); });
   // Outline whatever a click (or E) would get, with its card: under the dot when aiming with it, else under the mouse
   // (the scene or a bubble, not the buttons). Ten times a second is plenty.
   let mouse = null, hovered = null, aimed = null, monitor = null, board = null, hire = null, toggle = null, togglePoint = null, prop = null, dot = false, hoverIn = 0;
