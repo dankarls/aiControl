@@ -172,18 +172,31 @@ export class Player {
 }
 
 // Moves on x, then z, undoing an axis that would push the body into a collider it wasn't already in, so you slide along
-// walls and desks, and a desk that appears on top of you can't trap you. Then keeps you inside the room.
+// walls and desks, and a desk that appears on top of you can't trap you. Then keeps you inside the room; a round room says so
+// itself (`room.inside`), one axis at a time so you slide along it too.
 const inside = (p, box) => p.x > box.min.x - RADIUS && p.x < box.max.x + RADIUS && p.z > box.min.z - RADIUS && p.z < box.max.z + RADIUS;
 export function resolveStep(position, delta, colliders, room) {
   const p = position.clone(), already = new Set(colliders.filter(box => inside(p, box)));
+  const hits = () => colliders.some(box => !already.has(box) && inside(p, box));
   for (const axis of ['x', 'z']) {
     if (!delta[axis]) continue;
     const before = p[axis];
     p[axis] += delta[axis];
-    if (colliders.some(box => !already.has(box) && inside(p, box))) p[axis] = before;
+    if (hits() || room?.inside?.(p) === false && !slide(p, axis, delta[axis], room, hits)) p[axis] = before;
   }
   if (room) { p.x = THREE.MathUtils.clamp(p.x, RADIUS, room.width - RADIUS); p.z = THREE.MathUtils.clamp(p.z, RADIUS, room.depth - RADIUS); }
   return p;
+}
+
+// A curved wall can turn both axes away at once: giving up a little of the other one carries you on along it.
+function slide(p, axis, amount, room, hits) {
+  const other = axis === 'x' ? 'z' : 'x', at = p[other];
+  for (const part of [0.05, 0.1, 0.2, 0.5]) for (const sign of [-1, 1]) {
+    p[other] = at + sign * part * Math.abs(amount);
+    if (room.inside(p) && !hits()) return true;
+  }
+  p[other] = at;
+  return false;
 }
 
 // Where to stand to talk to someone: `distance` from them, as near the side you come from as desks and walls allow; null if boxed in.
@@ -204,7 +217,7 @@ export function standBefore(point, normal, distance, colliders, room) {
   }
   return null;
 }
-export const free = (p, colliders, room) => (!room || (p.x >= RADIUS && p.x <= room.width - RADIUS && p.z >= RADIUS && p.z <= room.depth - RADIUS)) && !colliders.some(box => inside(p, box));
+export const free = (p, colliders, room) => (!room || (p.x >= RADIUS && p.x <= room.width - RADIUS && p.z >= RADIUS && p.z <= room.depth - RADIUS)) && room?.inside?.(p) !== false && !colliders.some(box => inside(p, box));
 
 // What's under a screen point: a character (by session id), a desk's monitor (userData.monitor: whose), a board on the wall
 // (userData.board), a pod's sign (userData.hire: { cwd, name }), a toggle (the light switch, the coffee machine), something to

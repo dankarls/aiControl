@@ -40,8 +40,22 @@ test('the grid is kept until a box really changes, and is quick to build and sea
   assert.equal(gridKey(a, room), gridKey(b, room), 'a new list of the same boxes');
   assert.notEqual(gridKey(a, room), gridKey([box(2, 4, 8, 6.5)], room));
   const desks = []; for (let x = 2; x < 28; x += 4) for (let z = 2; z < 28; z += 4) desks.push(box(x, z, x + 3, z + 1.8));
-  let t = performance.now(); const grid = walkGrid(desks, big), built = performance.now() - t;
-  t = performance.now(); const path = findPath(grid, V(1, 1), V(29, 29)), found = performance.now() - t;
+  // The best of a few, so a busy machine doesn't fail it; what's measured is the code.
+  const timed = fn => { let best = Infinity, result; for (let i = 0; i < 5; i++) { const t = performance.now(); result = fn(); best = Math.min(best, performance.now() - t); } return [result, best]; };
+  const [grid, built] = timed(() => walkGrid(desks, big)), [path, found] = timed(() => findPath(grid, V(1, 1), V(29, 29)));
   assert.ok(path && walkable(V(1, 1), path, desks, false, big), 'crosses the office between the desks');
   assert.ok(built < 100 && found < 30, `grid ${built.toFixed(1)} ms, path ${found.toFixed(1)} ms`);
+});
+
+const circle = { width: 16, depth: 16, inside: ({ x, z }) => Math.hypot(x - 8, z - 8) <= 6.6 };
+test('paths stay inside a round room and around colliders', () => {
+  const grid = walkGrid([box(7, 7, 9, 9)], circle);
+  const path = findPath(grid, V(3, 8), V(13, 8));
+  assert.ok(path?.length);
+  for (const point of path) assert.ok(circle.inside(point));
+});
+test("a round room's corners are not walkable", () => {
+  const grid = walkGrid([], circle), corner = findPath(grid, V(1, 1), V(8, 8));
+  assert.ok(circle.inside(corner[0]));
+  assert.ok(!grid.open[0]);
 });

@@ -11,7 +11,7 @@ const SIGNAL_COLOUR = { need: RED, working: TEAL, idle: BLUE };
 const LABELS = { question: 'HAILING', permission: 'AUTHORIZE', working: 'ON DUTY', idle: 'STANDBY', error: 'FAULT', offline: 'OFFLINE' };
 const GLYPHS = { claude: '✳', codex: '⌘' };
 const LIVE_MS = 100, MAX_LIMIT_ROWS = 6, MAX_PROJECTS = 6, MAX_SHUTTLES = 3;
-const font = (weight, size) => `${weight} ${size}px Antonio, 'Arial Narrow', 'Liberation Sans Narrow', sans-serif`;
+export const font = (weight, size) => `${weight} ${size}px Antonio, 'Arial Narrow', 'Liberation Sans Narrow', sans-serif`;
 const graphemes = text => [...new Intl.Segmenter().segment(text)].map(part => part.segment);
 
 // One line that fits `width`, cut on whole characters so an emoji is never split.

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { DECK, PIT, R, STATION_ANGLES, WALL } from './deck.js';
 import { LIGHT_SCALE } from './lights.js';
-import { PALETTES, SIGNALS } from './palettes.js';
+import { SIGNALS } from './palettes.js';
 import { C, STD, add as place, box, canvas, canvasTexture, lit, seeded } from './parts.js';
 
 const DEG = Math.PI / 180, HW = R * Math.sin(12 * DEG), UP = Math.PI / 2;
@@ -27,7 +27,7 @@ function noiseTexture(size, base, spread, repeat) {
 }
 const additive = extra => new THREE.MeshBasicMaterial({ blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, ...extra });
 
-// The hull, deck, rails, ceiling, door, chairs and stations, in a group centred on the room.
+// The hull, deck, ceiling, door, chairs and stations, in a group centred on the room.
 export function buildRoom(world, still = false) {
   const group = new THREE.Group(), overhead = new THREE.Group(); world.add(group); group.add(overhead);
   const add = (geometry, material, parent, ...rest) => place(geometry, material, parent || group, ...rest);
@@ -78,10 +78,8 @@ export function buildRoom(world, still = false) {
   }
 
   // Floors: the pit with its dark outline, the raised deck, the two steps up.
-  add(new THREE.CircleGeometry(PIT, 72), MAT.carpet, null, 0, 0, 0, -UP);
-  add(new THREE.RingGeometry(PIT - .22, PIT + .01, 72), MAT.outline, null, 0, .02, 0, -UP);
-  add(new THREE.RingGeometry(PIT, R + .4, 72), MAT.deck, null, 0, DECK, 0, -UP);
-  add(new THREE.CylinderGeometry(PIT, PIT, DECK, 72, 1, true), MAT.step, null, 0, DECK / 2);
+  for (const floor of [add(new THREE.CircleGeometry(PIT, 72), MAT.carpet, null, 0, 0, 0, -UP), add(new THREE.RingGeometry(PIT - .22, PIT + .01, 72), MAT.outline, null, 0, .02, 0, -UP),
+    add(new THREE.RingGeometry(PIT, R + .4, 72), MAT.deck, null, 0, DECK, 0, -UP), add(new THREE.CylinderGeometry(PIT, PIT, DECK, 72, 1, true), MAT.step, null, 0, DECK / 2)]) floor.userData.floor = true;
   for (const r of [6.12, PIT + .12]) { add(new THREE.TorusGeometry(r, .022, 6, 160), glow.chase, null, 0, DECK + .02, 0, UP); glowRing(r, .9, DECK + .025); }
   // Whatever the walls don't close off, apart from the bay.
   add(new THREE.CylinderGeometry(R + .35, R + .35, 3.9, 64, 1, true, Math.PI + 36 * DEG, 288 * DEG), MAT.far, null, 0, 1.95);
@@ -96,17 +94,7 @@ export function buildRoom(world, still = false) {
   for (let i = 0; i < 18; i++) add(box(.09, .07, 6.25), MAT.body, around(i * 20, 4.42, overhead), 0, 3.83 - .03, 0, -slope);
   for (let i = 0; i < 24; i++) { const g = around(i * 15 + 7.5, 4.7, overhead); add(box(1.02, .04, .32), MAT.black, g, 0, 3.78, 0, -slope); add(box(.9, .03, .22), glow.recess, g, 0, 3.755, 0, -slope); }
 
-  // Curved rails on angled posts, broken for the steps and the way to the window.
-  function railArc(from, to) {
-    const shape = new THREE.Shape(), inner = PIT - .1, outer = PIT + .2, steps = Math.round((to - from) / 5), pts = [];
-    for (let i = 0; i <= steps; i++) { const t = (from + (to - from) * i / steps) * DEG; pts.push([Math.sin(t) * outer, Math.cos(t) * outer]); }
-    for (let i = steps; i >= 0; i--) { const t = (from + (to - from) * i / steps) * DEG; pts.push([Math.sin(t) * inner, Math.cos(t) * inner]); }
-    pts.forEach(([x, y], i) => i ? shape.lineTo(x, y) : shape.moveTo(x, y)); shape.closePath();
-    add(new THREE.ExtrudeGeometry(shape, { depth: .07, bevelEnabled: true, bevelSize: .025, bevelThickness: .025, bevelSegments: 2 }), MAT.rail, null, 0, 1.2, 0, -UP);
-    for (let a = from + 4; a <= to - 2; a += Math.max(14, (to - from - 6) / Math.round((to - from - 6) / 16))) add(box(.07, .86, .3), MAT.black, around(a, PIT + .05), 0, .78, 0, -.14);
-  }
-  for (const sign of [-1, 1]) { const [a, b] = sign > 0 ? [20, 108] : [-108, -20], [c, d] = sign > 0 ? [126, 168] : [-168, -126]; railArc(a, b); railArc(c, d); }
-  for (const theta of [-117, 117]) { const g = around(theta, PIT); add(box(1.3, .12, .34), MAT.trim, g, 0, .06, .32); add(box(1.3, .24, .3), MAT.trim, g, 0, .12, .02); }
+  for (const theta of [-117, 117]) { const g = around(theta, PIT); add(box(1.3, .12, .34), MAT.trim, g, 0, .06, .32).userData.floor = true; add(box(1.3, .24, .3), MAT.trim, g, 0, .12, .02).userData.floor = true; }
 
   // The window bay: a deep opening with its own walls and ledge, and three panes bowed out at the far end.
   {
@@ -163,7 +151,7 @@ export function buildRoom(world, still = false) {
     const rnd = seeded(seed);
     for (let r = 0; r < 4; r++) { const n = 5 + r * 2; for (let i = 0; i < n; i++) { const a = (15 + 150 * i / (n - 1)) * DEG, rad = .12 + r * .065; if (rnd() < .12) continue; jewel(desk, cx + Math.cos(a) * rad * 1.5, .035, .23 - Math.sin(a) * rad * 1.2, Math.floor(rnd() * 3), .7, rnd, rnd() > .6 ? 1 : 0, owner); } }
   }
-  // The bays around the wall. Each has a console, a row of lit tiles, an alcove above it, a cove light and a block under the rail.
+  // The bays around the wall. Each has a console, a row of lit tiles, an alcove above it, a cove light and a row of tiles in the step.
   const stations = STATION_ANGLES.map((theta, index) => {
     const g = around(theta, WALL), width = 2 * HW, seed = `bay${theta}`, [upperName, upperGain, live] = UPPER[index];
     const station = { index, angle: theta, group: g, status: null, lamps: [] };
@@ -187,12 +175,12 @@ export function buildRoom(world, still = false) {
     add(box(width, .07, .3), MAT.trim, g, 0, 1.94, .14);
     station.chair = chair(g, 0, DECK, 1.34); station.chair.visible = false;
     rib(theta + 12);
-    // Coved light in the ceiling, and a lit block under the rail: both show the session's state.
+    // Coved light in the ceiling, and lit tiles in the step down to the pit: both show the session's state.
     const cove = around(theta, 6.42, overhead), coveMat = lit('#000');
     add(box(1.9, .06, .44), MAT.black, cove, 0, 3.54, 0, .3); add(box(1.7, .025, .26), coveMat, cove, 0, 3.505, .01, .3);
     const block = around(theta, PIT + .03), blockMat = lit('#120d10');
-    for (let i = 0; i < 4; i++) add(box(.24, .26, .05), blockMat, block, -.39 + i * .26, .66, .06);
-    add(box(1.15, .34, .04), MAT.black, block, 0, .66, .02);
+    for (let i = 0; i < 4; i++) add(box(.24, .2, .05), blockMat, block, -.39 + i * .26, .18, .06);
+    add(box(1.15, .28, .04), MAT.black, block, 0, .18, .02);
     const pool = additive({ color: 0, map: glowTexture });
     add(new THREE.PlaneGeometry(2.4, 1.3), pool, block, 0, .03, .75, -UP);
     // The status bar on the window's ledge, and a lamp above the left panel.
@@ -238,14 +226,14 @@ export function buildRoom(world, still = false) {
   }
 
   // The captain's chair: a stepped plinth, a tall shell, and two arm pods.
-  add(new THREE.CylinderGeometry(1.3, 1.36, .15, 8), MAT.black, null, 0, .075, CHAIR_Z, 0, Math.PI / 8);
-  add(new THREE.CylinderGeometry(.95, 1, .15, 8), MAT.trim, null, 0, .225, CHAIR_Z, 0, Math.PI / 8);
+  add(new THREE.CylinderGeometry(1.3, 1.36, .15, 8), MAT.black, null, 0, .075, CHAIR_Z, 0, Math.PI / 8).userData.floor = true;
+  add(new THREE.CylinderGeometry(.95, 1, .15, 8), MAT.trim, null, 0, .225, CHAIR_Z, 0, Math.PI / 8).userData.floor = true;
   add(new THREE.CylinderGeometry(.22, .3, .34, 16), MAT.metal, null, 0, .47, CHAIR_Z);
   const shell = new THREE.Group(); shell.position.set(0, .3, CHAIR_Z); group.add(shell);
   add(box(.66, .14, .62), MAT.seatTop, shell, 0, .46); add(box(.78, 1.12, .1), MAT.shell, shell, 0, 1.02, .33, .08); add(box(.82, .06, .14), MAT.trim, shell, 0, 1.6, .37, .08);
   const pods = new THREE.Group(); group.add(pods);
   const podBase = box(.38, .06, .36), bigLamps = [], crystals = [], hidden = new THREE.MeshBasicMaterial({ visible: false });
-  let colourButtons = [];
+  let projector = null;
   for (const s of [-1, 1]) {
     // The arm runs forward from the seat and ends in a pod angled at the eye.
     add(box(.1, .1, .86), MAT.trim, pods, s * .48, .96, CHAIR_Z - .3);
@@ -254,16 +242,14 @@ export function buildRoom(world, still = false) {
     add(podBase, MAT.black, pod);
     if (s < 0) {
       screen(panel('arm', 420, 170, 1.45), .32, .13, pod, 0, .035, .1, -UP);
+      add(box(.34, .06, .17), hidden, pod, 0, .05, .1).userData.hologram = 'waiting';
       for (let i = 0; i < 3; i++) { const m = lit('#e4eaff', .9), mesh = add(box(.075, .035, .15), m, pod, -.1 + i * .1, .05, -.08); crystals.push({ mesh, material: m, color: C('#e4eaff', .9), near: C(SIGNALS.near), full: C(SIGNALS.need), off: C('#e4eaff', .12) }); }
     } else {
       [[SIGNALS.need, 'need'], [SIGNALS.working, 'work'], [SIGNALS.idle, 'calm']].forEach(([color, role], i) => { const m = lit(color); add(new THREE.CylinderGeometry(.052, .06, .05, 18), m, pod, -.115 + i * .115, .05, -.07); add(new THREE.CylinderGeometry(.068, .07, .025, 18), MAT.metal, pod, -.115 + i * .115, .03, -.07); bigLamps.push({ material: m, color: C(color), role }); });
-      // The room's colours: a button for each, with a generous invisible target over it.
-      colourButtons = Object.keys(PALETTES).map((name, i, all) => {
-        const material = lit('#000'), x = (i - (all.length - 1) / 2) * .115;
-        add(new THREE.CylinderGeometry(.04, .046, .03, 18), material, pod, x, .05, .1); add(new THREE.CylinderGeometry(.054, .056, .02, 18), MAT.metal, pod, x, .035, .1);
-        add(box(.11, .06, .13), hidden, pod, x, .05, .1).userData.colour = name;
-        return { name, material };
-      });
+      // One button opens the room's colours as a hologram; it lights in the colour chosen. A generous invisible target lies over it.
+      projector = lit('#000');
+      add(new THREE.CylinderGeometry(.045, .05, .025, 24), projector, pod, 0, .045, .1); add(new THREE.CylinderGeometry(.06, .062, .02, 24), MAT.metal, pod, 0, .035, .1);
+      add(box(.24, .06, .17), hidden, pod, 0, .05, .1).userData.hologram = 'colour';
     }
   }
 
@@ -285,6 +271,7 @@ export function buildRoom(world, still = false) {
   group.position.set(8, 0, 8);
 
   let palette = null, hail = false, limit = false, offline = false, warp = 0, started = false, dim = 1, commY = 4.3, jewelClock = 0;
+  const paintRow = station => { station.row.gain = (station.status ? 1.3 : .75) * (station.marked ? 1.7 : station.marked === false ? .45 : 1); };
   const tmp = new THREE.Color(), off = new THREE.Color(), seat = new THREE.Vector3(), mark = new THREE.Vector3(), SIGNAL = { need: C(SIGNALS.need), working: C(SIGNALS.working), idle: C(SIGNALS.idle) };
   const paintJewel = j => { j.base.copy(C(palette.tones[j.color])).multiplyScalar(j.bright * .7); j.mesh.setColorAt(j.index, j.on ? j.base : tmp.copy(j.base).multiplyScalar(.07)); j.mesh.instanceColor.needsUpdate = true; };
   return {
@@ -298,23 +285,26 @@ export function buildRoom(world, still = false) {
       MAT.carpet.color.copy(C(next.pit, 1.7)); MAT.deck.color.copy(C(next.deck, 1.7));
       flankBars.forEach((material, i) => material.color.copy(C(next.tones[i % 3], .55)));
       for (const j of jewels) paintJewel(j);
-      for (const { name, material } of colourButtons) material.color.copy(C(PALETTES[name].lamp, PALETTES[name] === next ? 1.2 : .2));
+      projector.color.copy(C(next.lamp, .6));
     },
     // `status` is 'need', 'working', 'idle', or null for an empty station.
     // Signals stop at full brightness: pushed past it their channels clip, and red turns the orange of a near limit.
     setStation(index, status) {
       const station = stations[index]; if (station.status === status) return;
-      station.status = status; station.chair.visible = !!status; station.row.gain = status ? 1.3 : .75;
+      station.status = status; station.chair.visible = !!status; paintRow(station);
       for (const j of jewels) if (j.owner === station) { j.bright = status ? 1.5 : .7; if (palette) paintJewel(j); }
     },
+    // A sidebar filter: true for a station it takes in, false for one it leaves out, null with no filter.
+    setMarked(index, marked) { const station = stations[index]; station.marked = marked; paintRow(station); },
     setMode(state) {
       limit = state.mode === 'limit'; hail = state.mode === 'hail'; offline = state.offline; warp = state.warp;
       if (!started) { started = true; dim = limit || offline ? .3 : 1; commY = hail || limit ? 2.25 : 4.3; }
     },
     // The colour button under a ray, unless something of the chair is in the way.
-    colourAt(ray) {
+    // Which hologram's button the ray lands on, if any.
+    hologramAt(ray) {
       if (!pods.visible) return null;
-      return ray.intersectObjects(shell.visible ? [pods, shell, helm] : [pods, helm], true)[0]?.object.userData.colour || null;
+      return ray.intersectObjects(shell.visible ? [pods, shell, helm] : [pods, helm], true)[0]?.object.userData.hologram || null;
     },
     tick(dt, t, camera) {
       const pulse = still ? 1 : .5 + .5 * Math.sin(t * 3.4);
@@ -322,7 +312,7 @@ export function buildRoom(world, still = false) {
       for (const station of stations) for (const lamp of station.lamps) {
         if (!station.status) { lamp.material.color.copy(lamp.vacant).multiplyScalar(dim); continue; }
         const level = station.status === 'need' ? .3 + pulse * 1.2 : station.status === 'working' ? 1 : .45;
-        lamp.material.color.copy(SIGNAL[station.status]).multiplyScalar(Math.min(1, lamp.gain * level * dim));
+        lamp.material.color.copy(SIGNAL[station.status]).multiplyScalar(Math.min(1, lamp.gain * level * dim) * (station.marked === false ? .25 : 1));
       }
       for (const p of Object.values(panels)) p.material.color.setScalar(p.gain * (limit || offline ? .55 : 1));
       for (const lamp of bigLamps) {

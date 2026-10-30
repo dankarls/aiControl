@@ -1,3 +1,9 @@
 #bridge { position: relative; isolation: isolate; width: 100%; height: 100%; overflow: hidden; background: #070716; touch-action: none; }
 #bridge > canvas { display: block; width: 100%; height: 100%; }
 @media (max-width: 640px) { :root[data-theme=bridge]:not([data-scene-fallback], [data-scene-list]) .main-content { height: calc(100dvh - var(--topbar-height, 56px)); } }
+.bridge-overlay { position: absolute; z-index: 2; top: 10px; right: 10px; display: flex; gap: 6px; }
+.bridge-overlay button { min-width: 36px; height: 36px; padding: 0 8px; border: 1px solid var(--bridge-accent, #4d6be0); border-radius: 6px; background: #05060fd9; color: #e4eaff; font: 700 16px/1 Antonio, sans-serif; cursor: pointer; }
+.bridge-overlay button[hidden] { display: none; }
+.bridge-overlay button:hover, .bridge-overlay button:focus-visible, .bridge-overlay button[aria-pressed=true] { background: var(--bridge-accent, #4d6be0); outline: none; }
+.bridge-overlay .bridge-next { border-color: #ff4a33; color: #ff4a33; }
+.bridge-overlay .bridge-next:hover, .bridge-overlay .bridge-next:focus-visible { background: #ff4a33; color: #05060f; }

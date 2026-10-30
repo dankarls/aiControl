@@ -20,11 +20,11 @@ function limitsOf(usage, now) {
 
 export function shipState(snapshot, now) {
   const sessions = snapshot?.sessions || [], limits = limitsOf(snapshot?.usage, now);
-  const waiting = sessions.filter(isWaiting), working = sessions.filter(session => session.status === 'working' && !session.parentId).length;
+  const waiting = sessions.filter(isWaiting).sort(compareSessions), working = sessions.filter(session => session.status === 'working' && !session.parentId).length;
   const limit = limits.some(item => item.full);
   return {
     mode: limit ? 'limit' : waiting.length ? 'hail' : working ? 'warp' : 'orbit',
-    warp: limit ? 0 : working, waiting: waiting.length, next: [...waiting].sort(compareSessions)[0] || null, limits,
+    warp: limit ? 0 : working, waiting: waiting.length, next: waiting[0] || null, queue: waiting, limits,
   };
 }
 

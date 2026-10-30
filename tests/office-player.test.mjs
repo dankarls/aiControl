@@ -132,3 +132,24 @@ test('untouched, the view turns to face the way it walks; a twitch of the mouse 
   run(0.6);
   assert.ok(Math.abs(Math.sin(player.yaw)) < 0.05 && Math.cos(player.yaw) > 0.95, `yaw ${player.yaw}`);
 });
+
+const circle = { width: 16, depth: 16, inside: ({ x, z }) => Math.hypot(x - 8, z - 8) <= 6.6 };
+test('a round room stops you at its edge', () => {
+  let p = new THREE.Vector3(14.5, 1.5, 8);
+  for (let i = 0; i < 20; i++) p = resolveStep(p, new THREE.Vector3(.2, 0, 0), [], circle);
+  assert.ok(circle.inside(p));
+});
+test('walking into a round wall at an angle slides along it', () => {
+  let p = new THREE.Vector3(14.5, 1.5, 8);
+  for (let i = 0; i < 10; i++) p = resolveStep(p, new THREE.Vector3(.1, 0, .2), [], circle);
+  assert.ok(circle.inside(p));
+  assert.ok(p.z > 8.5);
+});
+test('a round room still has colliders', () => {
+  assert.equal(free(new THREE.Vector3(8, 1.5, 8), [box(7.5, 7.5, 8.5, 8.5)], circle), false);
+});
+test('a rectangular room is unchanged', () => {
+  const p = resolveStep(new THREE.Vector3(9.9, 1.5, 5), new THREE.Vector3(1, 0, 0), [], { width: 10, depth: 10 });
+  assert.ok(p.x < 10);
+  assert.equal(free(new THREE.Vector3(5, 1.5, 5), [], { width: 10, depth: 10 }), true);
+});
