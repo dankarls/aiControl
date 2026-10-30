@@ -10,7 +10,7 @@ import { createSlacking } from './slack.js';
 import { createWindows } from './windows.js';
 import { createScreens, SCREEN_W, SCREEN_H } from './screens.js';
 import { createSecret, DOOR } from './secret.js';
-import { DESK_W, DESK_D, coffeeSpot } from './layout.js';
+import { DESK_W, DESK_D, COFFEE_X } from './layout.js';
 import {
   WALL_H, WALL_T, shared, once, rounded, mesh, canvasTexture, paint, painted, piece, deskItem, coffeeCup, plant, picture, sofa, armchair, lowTable, floorLamp, rug,
   counter, coffeeMachine, mugShelf, waterCooler, bookshelf, printer, filingCabinet, coatRack, extinguisher, glowTexture, floorShadow,
@@ -435,7 +435,7 @@ export function createRoom(scene, renderer) {
     const count = Math.max(1, Math.floor(width / 4)), xs = Array.from({ length: count }, (_, i) => -width / 2 + (i + 0.5) * width / count);
     const windows = createWindows(xs); back.add(windows);
     for (const [i, x] of xs.entries()) {
-      if (i > 1) { hang(back, picture(i - 1, 0.7, 0.95), x - width / count / 2, 1.75); if (i % 2) place(plant('bush'), x - width / count / 2 + width / 2, 0.45); }
+      if (i) { hang(back, picture(i - 1, 0.7, 0.95), x - width / count / 2, 1.75); if (i % 2) place(plant('bush'), x - width / count / 2 + width / 2, 0.45); }
     }
     place(plant('tree'), 0.5, 0.5); place(plant('snake'), width - 0.5, 0.5);
 
@@ -470,19 +470,19 @@ export function createRoom(scene, renderer) {
     const along = z => depth / 2 - z;
     place(bookshelf(), 0.2, 1.45, Math.PI / 2); shadowUnder(0.25, 1.45, 0.5, 1);
     if (depth / 2 - 1.6 - 1.95 > 1.1) hang(left, picture(1, 0.8, 0.6), along((1.95 + depth / 2 - 1.6) / 2), 1.7);
-    // The coffee corner is on the back wall, between the first two windows.
-    const spot = coffeeSpot(width);
-    place(counter(), spot, 0.32); shadowUnder(spot, 0.35, 2.1, 0.7);
+    // The coffee corner is in the front corner of the door wall, beside the kitchen doorway.
+    const spot = COFFEE_X, row = depth - 0.32;
+    place(counter(), spot, row, Math.PI); shadowUnder(spot, depth - 0.35, 2.1, 0.7);
     // E or a click on the machine fills the boss's mug (room.onCoffee, from office.js).
-    room.coffeeMachine = place(coffeeMachine(), spot, 0.32, 0, false); room.coffeeMachine.userData.toggle = () => room.onCoffee?.();
+    room.coffeeMachine = place(coffeeMachine(), spot, row, Math.PI, false); room.coffeeMachine.userData.toggle = () => room.onCoffee?.();
     // Taped over its front while a usage window is used up, with its light gone red; boards.js writes on it and shows it.
     const sign = new THREE.Group(); sign.visible = false; sign.position.set(-0.535, 1.23, 0.122); room.coffeeMachine.add(sign);
     sign.userData.face = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 0.135), dims(new THREE.MeshBasicMaterial({ color: '#ffffff' }))); sign.userData.face.rotation.z = 0.06;
     const led = new THREE.Mesh(new THREE.SphereGeometry(0.017, 10, 8), new THREE.MeshBasicMaterial({ color: '#ff3b30' })); led.position.set(0.135, -0.01, -0.006);
     sign.add(sign.userData.face, led); room.coffeeSign = sign;
-    hang(back, mugShelf(), spot - width / 2, 1.75, 0.11);
-    hang(back, notes('coffee', [[0, 0.05, 0.08, NOTE.yellow], [0.07, -0.05, -0.12, NOTE.green]]), spot - width / 2 + 0.85, 1.25, 0.004);
-    bin('#3a3d46', spot + 1.3, 0.3);
+    hang(front, mugShelf(), spot - width / 2, 1.75, 0.11);
+    hang(front, notes('coffee', [[0, 0.05, 0.08, NOTE.yellow], [0.07, -0.05, -0.12, NOTE.green]]), spot - 0.75 - width / 2, 1.25, 0.004);
+    bin('#3a3d46', spot + 1.3, depth - 0.3);
     if (depth - 3.05 > depth / 2 + 1.65) place(waterCooler(), 0.24, depth - 3.05, Math.PI / 2);
     if (depth - 3.65 > depth / 2 + 1.65) place(plant('bush'), 0.42, depth - 3.65);
 
@@ -502,8 +502,8 @@ export function createRoom(scene, renderer) {
     place(floorLamp(), width - 0.38, depth - 0.38);
     if (lx - 1.3 > door.x + 1.4) place(plant('snake'), lx - 1.3, depth - 0.45);
     hang(front, picture(0, 1.2, 0.8), lx - width / 2, 1.85);
-    // Front wall left of the boards: a picture and a plant when there's room.
-    if (door.x - 2.2 > 2) { hang(front, picture(5, 0.8, 0.8), (door.x - 2.2) / 2 + 0.4 - width / 2, 1.7); place(plant('bush'), door.x - 2.6, depth - 0.45); }
+    // Front wall between the coffee corner and the boards: a picture and a plant when there's room.
+    if (door.x - 2.2 > 3.4) { hang(front, picture(5, 0.8, 0.8), (2.6 + door.x - 2.2) / 2 - width / 2, 1.7); place(plant('bush'), door.x - 2.6, depth - 0.45); }
 
     // Ceiling tiles and round lamps, each with a soft glow; hidden as one group in the overview.
     const tiles = canvasTexture(128, 128, g => { g.fillStyle = '#fbfbfa'; g.fillRect(0, 0, 128, 128); g.strokeStyle = '#d8dce2'; g.lineWidth = 4; g.strokeRect(0, 0, 128, 128); });

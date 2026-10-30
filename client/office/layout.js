@@ -7,9 +7,9 @@ export const DESK_W = 1.6, DESK_D = 0.9, AISLE = 1.9, MAX_SUBAGENTS = 3, VACANT_
 // The first column sits a little nearer the left wall (bookshelf and the kitchen doorway) than AISLE, leaving more room by the lounge.
 const CHAIR = 0.9, START = 2.6, MIN_ROOM = 8, CELL_PAIRS = 3, LEFT = 1.5;
 
-// Where the coffee counter stands on the back wall (the boundary between two windows, world x), and the kitchen doorway in the left wall (world z).
-export const KITCHEN_DOOR_W = 1.5;
-export const coffeeSpot = width => width / Math.max(1, Math.floor(width / 4)), kitchenDoor = depth => depth - 1.5;
+// Where the coffee counter stands along the door wall (world x), and the kitchen doorway in the left wall (world z).
+export const KITCHEN_DOOR_W = 1.5, COFFEE_X = 1.05;
+export const kitchenDoor = depth => depth - 1.5;
 
 const podKey = session => session.cwd || session.project || 'Unknown';
 
