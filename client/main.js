@@ -85,8 +85,6 @@ const icons = {
   down: '<path d="m5 9 7 7 7-7"/>',
   close: '<path d="m6 6 12 12M6 18 18 6"/>',
   file: '<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/>',
-  expand: '<path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5"/>',
-  collapse: '<path d="M4 9h5V4M20 9h-5V4M4 15h5v5M20 15h-5v5"/>',
   search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>',
   activity: '<path d="M2 12h5l3-8 4 16 3-8h5"/>',
   moon: '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z"/>',
@@ -861,19 +859,13 @@ function linkDocuments(root, documents, cwd, open) {
   }
 }
 const viewerButton = (content, label, action) => { const b = el('button', 'shot-button'); b.type = 'button'; b.append(content); b.setAttribute('aria-label', label); b.title = label; b.onclick = action; return b; };
-// Fills the window, within AI Control; the choice lasts as long as the viewer.
-function viewerExpand(dialog, full = false) {
-  const b = viewerButton('', '', () => set(!dialog.classList.contains('viewer-full')));
-  const set = on => { dialog.classList.toggle('viewer-full', on); b.replaceChildren(icon(on ? 'collapse' : 'expand')); const label = on ? 'Exit full screen' : 'Full screen'; b.setAttribute('aria-label', label); b.title = label; };
-  set(full); return b;
-}
-// One document, as it is on disk now. A document it links to opens over it, the same size. Esc or the backdrop closes.
-function showDocument(session, documentId, full = false) {
+// One document, as it is on disk now. A document it links to opens over it. Esc or the backdrop closes.
+function showDocument(session, documentId) {
   const listed = () => docs.get(session.id)?.items || [], known = listed().find(doc => doc.id === documentId);
   const dialog = el('dialog', 'shot-viewer doc-viewer'); dialog.setAttribute('aria-label', 'Document');
   const bar = el('div', 'shot-bar'), meta = el('span', 'shot-meta', known?.name || 'Document'), body = el('div', 'doc-body message-text', 'Loading…');
   meta.title = known?.path || '';
-  bar.append(meta, viewerExpand(dialog, full), viewerButton('✕', 'Close (Esc)', () => dialog.close()));
+  bar.append(meta, viewerButton('✕', 'Close (Esc)', () => dialog.close()));
   dialog.append(bar, body);
   // Only a press on the backdrop: dragging a text selection off the page ends with a click here too.
   let pressed = null;
@@ -883,7 +875,7 @@ function showDocument(session, documentId, full = false) {
   app.append(dialog); dialog.showModal();
   api(`sessions/${encodeURIComponent(session.id)}/documents/${encodeURIComponent(documentId)}`).then(({ name, path, text }) => {
     meta.textContent = name; meta.title = path; body.innerHTML = renderDocument(text); body.scrollTop = 0;
-    linkDocuments(body, listed(), session.cwd, doc => showDocument(session, doc.id, dialog.classList.contains('viewer-full')));
+    linkDocuments(body, listed(), session.cwd, doc => showDocument(session, doc.id));
   }, error => { body.textContent = error.message; });
 }
 function shotStrip(id, { shots: group, user }) {
@@ -896,7 +888,7 @@ function shotStrip(id, { shots: group, user }) {
   }
   return strip;
 }
-// One screenshot big; ‹ ›, ←/→ or a swipe step through the session's others, the picture opens full size, Esc or the backdrop closes.
+// One screenshot big over a strip of them all; a thumbnail, ‹ ›, ←/→ or a swipe step through them, the picture opens full size, Esc or the backdrop closes.
 function showShot(id, imageId, images = shots.get(id)?.items || [], closed) {
   let at = Math.max(0, images.findIndex(image => image.id === imageId));
   if (!images.length) return;
@@ -907,17 +899,26 @@ function showShot(id, imageId, images = shots.get(id)?.items || [], closed) {
   const step = by => { at = Math.max(0, Math.min(images.length - 1, at + by)); show(); };
   const prev = viewerButton('‹', 'Previous (←)', () => step(-1)), next = viewerButton('›', 'Next (→)', () => step(1));
   bar.append(prev, meta, next, viewerButton('✕', 'Close (Esc)', () => dialog.close()));
+  const thumbs = images.map((image, n) => {
+    const thumb = el('button', 'shot-thumb'); thumb.type = 'button'; thumb.setAttribute('aria-label', `Screenshot ${n + 1}`);
+    thumb.title = [image.agent, image.at && age(image.at)].filter(Boolean).join(' · ');
+    const img = el('img'); img.alt = ''; img.loading = 'lazy'; img.decoding = 'async'; img.src = shotUrl(id, image.id);
+    thumb.append(img); thumb.onclick = () => { at = n; show(); }; return thumb;
+  });
+  const strip = el('div', 'shot-strip'); strip.append(...thumbs);
   const show = () => {
     const image = images[at]; picture.src = link.href = shotUrl(id, image.id);
+    thumbs.forEach((thumb, n) => thumb.classList.toggle('current', n === at)); thumbs[at].scrollIntoView({ block: 'nearest', inline: 'nearest' });
     meta.textContent = [`${at + 1}/${images.length}`, image.agent, image.at && age(image.at)].filter(Boolean).join(' · ');
     prev.disabled = at === 0; next.disabled = at === images.length - 1;
   };
-  dialog.append(link, bar);
+  dialog.classList.toggle('has-strip', images.length > 1);
+  dialog.append(...(images.length > 1 ? [link, strip, bar] : [link, bar]));
   dialog.addEventListener('keydown', event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); step(event.key === 'ArrowLeft' ? -1 : 1); } });
   // A swipe steps; the picture follows the finger, and a second finger (pinch-zoom) calls the swipe off.
   let from = null, swiped = false;
   dialog.addEventListener('pointerdown', event => {
-    if (event.pointerType === 'mouse') return;
+    if (event.pointerType === 'mouse' || strip.contains(event.target)) return;
     if (from) { from = null; picture.style.transform = ''; return; }
     from = { id: event.pointerId, x: event.clientX, y: event.clientY };
   });
@@ -935,7 +936,7 @@ function showShot(id, imageId, images = shots.get(id)?.items || [], closed) {
     if (event.target === dialog) dialog.close();
   }, true);
   dialog.onclose = () => { dialog.remove(); closed?.(); };
-  app.append(dialog); show(); dialog.showModal();
+  app.append(dialog); dialog.showModal(); show();
 }
 // Older pages end where the live window starts, so polling keeps the newest part current.
 function mergeHistory(earlier = [], recent) {

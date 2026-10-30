@@ -492,13 +492,18 @@ input:is([type=checkbox], [type=radio]) { width: 18px; height: 18px; margin: 0; 
 /* Horizontal drags are swipes between screenshots, not the browser's back gesture; pinch-zoom still works. */
 .shot-viewer { touch-action: pinch-zoom; }
 .shot-full { position: relative; display: block; width: fit-content; margin-inline: auto; cursor: zoom-in; }
-.shot-full img { display: block; max-width: calc(100vw - 46px); max-height: calc(100svh - 92px); margin-inline: auto; object-fit: contain; border-radius: 6px; }
+.shot-viewer.has-strip { --strip: 70px; }
+.shot-full img { display: block; max-width: calc(100vw - 46px); max-height: calc(100svh - 92px - var(--strip, 0px)); margin-inline: auto; object-fit: contain; border-radius: 6px; }
+/* No wider than the picture above it: the zero width keeps a long strip from stretching the viewer. The padding keeps a thumbnail's ring from being clipped. */
+.shot-strip { display: flex; justify-content: safe center; gap: 6px; box-sizing: border-box; width: 0; min-width: 100%; margin-top: 4px; padding: 4px; overflow-x: auto; scrollbar-width: thin; touch-action: pan-x pinch-zoom; }
+.shot-thumb { flex: none; width: 76px; height: 48px; padding: 0; overflow: hidden; border: 2px solid #ffffff2e; border-radius: 7px; background: #000; opacity: .7; cursor: pointer; }
+.shot-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.shot-thumb:hover, .shot-thumb:focus-visible { opacity: 1; }
+.shot-thumb.current { border-color: var(--accent); opacity: 1; }
 .shot-bar { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .shot-meta { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; color: #b9bfcc; }
 .shot-button { min-width: 36px; height: 32px; padding: 0 10px; border: 1px solid #ffffff2e; border-radius: 8px; background: #ffffff14; color: inherit; font: inherit; font-size: 16px; cursor: pointer; }
 .shot-button:disabled { opacity: .35; cursor: default; }
-.shot-button .icon { display: block; width: 16px; height: 16px; margin: auto; }
-.shot-button .icon svg { display: block; }
 /* Markdown files a session wrote sit in history as a file would in a chat; their names in messages open them too. */
 .history-docs { flex: none; align-self: stretch; display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; margin: 10px 0 0; }
 .doc-chip { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; min-width: 0; min-height: 34px; padding: 5px 11px 5px 8px; border: 1px solid var(--line-2); border-radius: var(--radius-sm); background: var(--sunken); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
