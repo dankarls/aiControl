@@ -44,6 +44,7 @@
 .office-overlay { position: absolute; top: 12px; right: 12px; display: flex; gap: 8px; }
 .office-overlay button { min-width: 44px; height: 44px; padding: 0 12px; border: 2.5px solid #1b1a1f; border-radius: 14px; background: #fffdf7; color: #1b1a1f; font: 700 16px system-ui, sans-serif; box-shadow: 0 3px 0 #1b1a1f; cursor: pointer; }
 .office-overlay .office-waiting { background: #ffd166; }
+.office-overlay .office-leave { background: #ff8f7a; }
 .office-overlay .office-usage { background: #ff8f7a; cursor: default; }
 .office-overlay .office-eye { touch-action: none; user-select: none; -webkit-user-select: none; }
 .office-overlay .office-eye[aria-pressed=true] { background: #ffd166; }

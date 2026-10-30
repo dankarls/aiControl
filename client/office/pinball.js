@@ -1,8 +1,8 @@
-// Pinball in the secret room: Tutti Frutti, a wide-body fruit table against the far wall, facing the doorway. Click the
-// cabinet to step up: the view looks down the playfield, steeper on a narrow screen so all of it fits. Flippers: ← →, A D,
-// Z M or the Shifts, or press the left or right half of the screen (a finger each works); the plunger: hold Space, S or ↓,
-// or either half while a ball waits in the lane, and let go; nudge: ↑ or W (three in a few seconds is a tilt). A flip
-// starts a game; leaving pauses it.
+// Pinball in the secret room: Tutti Frutti, a wide-body fruit table against the front wall between the beanbags and the
+// green (the far end is the green's). Click the cabinet to step up: the view looks down the playfield, steeper on a narrow
+// screen so all of it fits. Flippers: ← →, A D, Z M or the Shifts, or press the left or right half of the screen (a finger
+// each works); the plunger: hold Space, S or ↓, or either half while a ball waits in the lane, and let go; nudge: ↑ or W
+// (three in a few seconds is a tilt). A flip starts a game; leaving pauses it.
 // Three balls, and shots that flow: both wire ramps drop the ball back into an inlane, onto a flipper, so they chain into
 // combos. Each shot holds a fruit (the orbit a banana, the ramps a strawberry and grapes, the juicer an orange, the drop
 // targets a lemon, the J-U-I-C-E lanes cherries); collect all six for Fruit Salad, thirty seconds of triple scoring. The
@@ -25,7 +25,8 @@ export const R = 0.0135, G = 1.6, DT = 1 / 1000, BALLS = 3; // ball radius (m), 
 const SAVE = 8, SKILL = 4, COMBO = 3, SALAD = 30, PULL = 0.9, TOP = 5, LIFT = 8, BLEND = 9;
 // The lane a ball is served into (its middle, inner wall and outer wall), the left wall, and the arc over the top.
 export const LANE = { x: 0.3025, wall: 0.28, out: 0.325, top: 0.82 }, LEFT = -0.28, ARC = { x: 0.0225, y: 0.8475, r: 0.3025 };
-export const FLIP = { len: 0.085, base: 0.011, tip: 0.006, up: 40, down: 18, e: 0.5 }; // m; rad/s up and back; bounce
+// m; rad/s up and back; bounce off a swinging flipper, and off a still one (dead rubber, so the ball can be caught).
+export const FLIP = { len: 0.085, base: 0.011, tip: 0.006, up: 40, down: 18, e: 0.5, dead: 0.15 };
 // What each shot collects: the orbit, the left ramp, the right ramp, the juicer, the drop targets, the lanes.
 export const FRUITS = ['banana', 'strawberry', 'grape', 'orange', 'lemon', 'cherry'];
 
@@ -52,12 +53,13 @@ export const TABLE = (() => {
   for (let i = 0; i < 36; i++) { const a = Math.PI * i / 36, b = Math.PI * (i + 1) / 36; wall(ARC.x + ARC.r * Math.cos(a), ARC.y + ARC.r * Math.sin(a), ARC.x + ARC.r * Math.cos(b), ARC.y + ARC.r * Math.sin(b), 0.004); }
   wall(LEFT, ARC.y, LEFT, 0, 0.004);
   wall(LANE.wall, -0.06, LANE.wall, LANE.top, 0.004); post(LANE.wall, LANE.top);
-  // Each side, the left as written and the right mirrored: the outlane's divider, the inlane's floor down onto the flipper,
-  // and the slingshot (its face, a to c, kicks).
+  // Each side, the left as written and the right mirrored: the outlane's divider, the inlane's floor down onto the flipper
+  // (aimed past the pivot, so a ball rolling off it meets the flipper's base along its curve, not head on), and the
+  // slingshot (its face, a to c, kicks).
   for (const s of [1, -1]) {
     const X = x => x * s, i = slings.length;
     wall(X(-0.238), 0.4, X(-0.238), 0.29); post(X(-0.238), 0.4);
-    wall(X(-0.238), 0.29, X(-0.112), 0.162);
+    wall(X(-0.238), 0.29, X(-0.103), 0.1637);
     const a = [X(-0.195), 0.39], b = [X(-0.195), 0.305], c = [X(-0.135), 0.255];
     wall(...a, ...b, 0.003, 0.35, i); wall(...b, ...c, 0.003, 0.35, i); wall(...a, ...c, 0.003, 0.3, i, true); for (const p of [a, b, c]) post(...p, 0.005);
     slings.push([a, b, c]);
@@ -255,7 +257,7 @@ function move(t, b) {
     const c = Math.cos(f.a), s = Math.sin(f.a), k = nearest(b.x, b.y, f.x, f.y, f.x + c * FLIP.len, f.y + s * FLIP.len), r = FLIP.base + (FLIP.tip - FLIP.base) * k;
     const dx = b.x - P.x, dy = b.y - P.y, d = Math.hypot(dx, dy);
     // Where it meets the flipper's edge moves at ω × its distance from the pivot.
-    if (d < R + r && d > 1e-9) { const ex = P.x + dx / d * r - f.x, ey = P.y + dy / d * r - f.y; touch(b, P.x, P.y, R + r, FLIP.e, -f.w * ey, f.w * ex); }
+    if (d < R + r && d > 1e-9) { const ex = P.x + dx / d * r - f.x, ey = P.y + dy / d * r - f.y; touch(b, P.x, P.y, R + r, f.w ? FLIP.e : FLIP.dead, -f.w * ey, f.w * ex); }
   }
   // Rolling over a top lane lights it (the flashing one first thing after a launch is the skill shot); all five lit go up
   // a multiplier and collect the cherries.
@@ -291,10 +293,11 @@ function move(t, b) {
   if (b.y < 0.02 && b.x < LANE.wall || !(Math.abs(b.x) < 0.4 && b.y > -0.2 && b.y < 1.2)) b.gone = true; // down the drain (or, somehow, off the table)
 }
 
-// In the secret room's frame: the cabinet's back to the far wall, beside the neon sign, facing the doorway. The playfield
-// tilts up TILT (radians) away from you, its bottom HEIGHT above the floor and FRONT out from the wall, which leaves room
-// behind its top end for the backbox.
-const CAB = { x: SECRET.w - 0.02, z: 1.75 }, TILT = 0.115, HEIGHT = 0.86, FRONT = 1.43, FOV = 50, BEST = 'ai-control-pinball-best';
+// In the secret room's frame: the cabinet's back to the front wall, between the beanbags and the green, facing into the
+// room. The playfield tilts up TILT (radians) away from you, its bottom HEIGHT above the floor and FRONT out from the
+// wall, which leaves room behind its top end for the backbox.
+const CAB = { x: 4.2, z: SECRET.front - 0.02 }, TILT = 0.115, HEIGHT = 0.86, FRONT = 1.43, FOV = 50, BEST = 'ai-control-pinball-best';
+const PACE = 0.8; // the table plays at 80% of its speed: full speed is too quick to follow on a screen
 // What the playfield's art covers (table metres) and its pixels to a metre; the body's middle across.
 const FIELD = { x0: LEFT - 0.02, x1: LANE.out + 0.02, y0: -0.07, y1: ARC.y + ARC.r + 0.02 }, PPM = 1400, MIDDLE = (FIELD.x0 + FIELD.x1) / 2;
 const BUMPERS = ['orange', 'lime', 'cherry', 'lemon'], JUICE = ['#ff9a1f', '#9be25a', '#ff2d55', '#ffe14f'];
@@ -498,11 +501,11 @@ export function createPinball({ canvas, camera, onPlay }) {
 
   const pinball = {
     // Where the cabinet stands, so nobody walks through it (secret.js), in the room's frame.
-    blocks: [new THREE.Box3(new THREE.Vector3(CAB.x - 1.55, 0, CAB.z - 0.39), new THREE.Vector3(CAB.x + 0.02, 1.9, CAB.z + 0.39))],
+    blocks: [new THREE.Box3(new THREE.Vector3(CAB.x - 0.39, 0, CAB.z - 1.55), new THREE.Vector3(CAB.x + 0.39, 1.9, CAB.z + 0.02))],
     enter() { active = true; },
     leave() { active = false; release(); },
     blur: release, // the window lost focus: no key-ups are coming
-    stand() { const p = room.localToWorld(new THREE.Vector3(CAB.x - 1.95, 0, CAB.z)); return { x: p.x, z: p.z, yaw: Math.PI / 2 }; },
+    stand() { const p = room.localToWorld(new THREE.Vector3(CAB.x, 0, CAB.z - 1.95)); return { x: p.x, z: p.z, yaw: 0 }; },
     pose() {
       const height = camera.userData.canvas?.clientHeight || 0;
       if (fit.aspect !== camera.aspect || fit.height !== height) frame(camera.aspect, height);
@@ -513,7 +516,7 @@ export function createPinball({ canvas, camera, onPlay }) {
     key(code, down) { const k = KEYS[code]; if (!k || !active) return false; keys[k] = down; if (down) hear(); return true; },
     build(group) {
       room = group; fit.aspect = 0;
-      const cab = new THREE.Group(); cab.position.set(CAB.x, 0, CAB.z); cab.rotation.y = -Math.PI / 2; cab.userData.toggle = () => onPlay(pinball); group.add(cab);
+      const cab = new THREE.Group(); cab.position.set(CAB.x, 0, CAB.z); cab.rotation.y = Math.PI; cab.userData.toggle = () => onPlay(pinball); group.add(cab);
       const deck = new THREE.Group(); deck.position.set(0, HEIGHT, FRONT); deck.rotation.x = TILT; cab.add(deck);
       table = new THREE.Group(); table.position.x = -MIDDLE; deck.add(table);
       dmd = canvasTexture(512, 128, drawDots);
@@ -527,7 +530,7 @@ export function createPinball({ canvas, camera, onPlay }) {
         const sides = [...pointers.values()];
         t.input.left = keys.left || sides.includes('left'); t.input.right = keys.right || sides.includes('right'); t.input.nudge = keys.nudge;
         t.input.plunge = keys.plunge || (pointers.size > 0 && waiting(t));
-        for (acc += dt; acc >= DT; acc -= DT) step(t);
+        for (acc += dt * PACE; acc >= DT; acc -= DT) step(t);
       }
       react(dt); draw(dt);
     },

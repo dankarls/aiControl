@@ -12,10 +12,11 @@ test('a flip starts a game with a ball on the plunger; a full pull sends it roun
   assert.deepEqual([t.mode, t.ball, t.balls.length, waiting(t)], ['play', 1, 1, true]);
   plunge(t, 0.1); run(t, 1);
   assert.ok(waiting(t), 'a tap does nothing');
-  plunge(t, 1); let top = 0, out = false;
+  plunge(t, 1); run(t, 0.01);
+  assert.ok(t.saveUntil > t.time, 'the ball save is on');
+  let top = 0, out = false;
   run(t, 2, t => { const b = t.balls[0]; if (b) { top = Math.max(top, b.y); out ||= b.x < LANE.wall - 0.05; } });
   assert.ok(top > 1.05 && out, `went round the arc into the playfield (top ${top.toFixed(2)})`);
-  assert.ok(t.saveUntil > t.time, 'and the ball save is on');
   assert.ok(!t.fruits[0], "a launch round the arc isn't an orbit shot");
 });
 
@@ -30,6 +31,14 @@ test('balls let loose anywhere drain in the end, never stuck or off the table', 
       for (const b of t.balls) assert.ok(b.ramp || b.x > LEFT - R && b.x < LANE.out && b.y < ARC.y + ARC.r, `ball ${n} escaped at ${b.x}, ${b.y}`);
     }
     assert.equal(t.mode, 'over', `ball ${n} never drained: ${JSON.stringify(t.balls)}`);
+  }
+});
+
+test('a ball rolling down an inlane goes onto the flipper without bouncing off its pivot', () => {
+  for (const s of [1, -1]) {
+    const t = loose(-0.2165 * s, 0.36, 0, -0.3); let up = 0;
+    run(t, 1.5, t => { const b = t.balls[0]; if (b && Math.hypot(b.x + 0.1 * s, b.y - 0.15) < 0.04) up = Math.max(up, b.vy); });
+    assert.ok(up < 0.05, `bounced up at ${up.toFixed(2)} m/s`);
   }
 });
 
