@@ -21,7 +21,7 @@ import { createGoose, GOOSE } from './goose.js';
 import { walkGrid, gridKey, findPath } from './path.js';
 import { hireChoices } from '../hire.js';
 
-const FIRED = { pose: 'slumped', expression: 'sad', bubble: { icon: '📦', text: 'Fired', highlight: false } };
+const FIRED = { pose: 'crying', expression: 'crying', bubble: { icon: '📦', text: 'Fired', highlight: false } };
 
 export function webglAvailable() {
   // three.js needs WebGL 2; the probe's context is released straight away.
@@ -260,7 +260,7 @@ export function mountOffice(container, hooks) {
       layout = layoutOffice(snapshot.sessions, layout || savedSeats()); view.setLayout(layout); saveSeats();
       cast.frozen = !!error;
       office.statuses = new Map(snapshot.sessions.map(session => [session.id, { ...officeStatus(session), identity: identity(session.id), monitor: monitorLines(session) }]));
-      // The fired slump at their desks, then trudge out carrying a box.
+      // The fired cry at their desks, hands over their faces, then run out like that.
       for (const [id, at] of fired) if (Date.now() - at > VACANT_MS + 10_000) fired.delete(id); else office.statuses.set(id, { ...office.statuses.get(id), ...FIRED });
       room.sync(layout, office.statuses);
       shots.sync(snapshot.sessions.filter(session => session.provider === 'claude' && !session.parentId && layout.desks.has(session.id)));

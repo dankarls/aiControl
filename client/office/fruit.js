@@ -332,6 +332,8 @@ export function createFruit({ fruit, color, accessories = [], trim = '#ff5d8f' }
       frown: { brows: [-0.02, 0.01], mouth: [-0.02, 0.012], width: 0.11 },
       // Fired: brows up in the middle, the mouth well down at the corners.
       sad: { brows: [0.03, -0.018], mouth: [-0.03, 0.016], width: 0.12 },
+      // Fired and leaving: sad, with tears running down from both eyes.
+      crying: { brows: [0.035, -0.02], mouth: [-0.035, 0.02], width: 0.13, tears: true },
       neutral: { brows: [0, 0], mouth: [0, -0.008], width: 0.09 },
       // One brow up, a small flat mouth pushed to one side and slanted: "hmm".
       thinking: { brows: [-0.01, 0.004], raise: 0.03, mouth: [0, 0], width: 0.06, shift: 0.1, slant: 0.012 },
@@ -346,6 +348,7 @@ export function createFruit({ fruit, color, accessories = [], trim = '#ff5d8f' }
       line([onSkin(side * (s - 0.07), browY + inner + raise), onSkin(side * s, browY + 0.012 + (inner + outer) / 2 + raise), onSkin(side * (s + 0.07), browY + outer + raise)], 0.006);
     }
     eyes.visible = name !== 'asleep' && name !== 'squeezed';
+    if (shapes.tears) for (const side of [-1, 1]) line([0.04, 0.1, 0.17].map((drop, i) => onSkin(side * (s + 0.012 * i), faceY - drop)), 0.011, '#5fb8ff');
     // Screwed shut: > < , each from two straight strokes so the point stays sharp.
     if (name === 'squeezed') for (const side of [-1, 1]) {
       const tip = onSkin(side * (s - 0.04), faceY), stroke = dy => { const end = [side * (s + 0.045), faceY + dy]; line([onSkin(...end), onSkin(side * (s + 0.0025), faceY + dy / 2), tip], 0.009); };

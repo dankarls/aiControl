@@ -11,7 +11,7 @@ const SETTLED = 0.7;    // seconds after a pose change, after which the pose is 
 // The sitter's root sits a little forward of the chair; standing, they step out behind it.
 const SEAT_FORWARD = 0.06, STAND_BACK = -0.8, STANDING = new Set(['waving', 'raising', 'impatient']);
 const KEYS = KEYS_Z - CHAIR_Z - SEAT_FORWARD; // the keyboard, from the sitter's root (the mouse's x is the same from either)
-const LOOK_RANGE = 4, WALK_SPEED = 2, GOODBYE = 1.2, STARTLED = 2.5, FINISHED = 2.5, WORKING = new Set(['typing', 'thinking', 'squeezing']);
+const LOOK_RANGE = 4, WALK_SPEED = 2, RUN_SPEED = 4, GOODBYE = 1.2, STARTLED = 2.5, FINISHED = 2.5, WORKING = new Set(['typing', 'thinking', 'squeezing']);
 // Waiting on you gets louder: a raised hand, then after a couple of minutes both arms waving, after ten a tapping foot.
 const WAVE_AFTER = 2 * 60_000, TAP_AFTER = 10 * 60_000;
 // Neighbours within NEAR metres react: a thumbs up for a finish, and every GLANCE_EVERY seconds a GLANCE_FOR look at a red desk.
@@ -111,6 +111,17 @@ export function poseTargets(pose, t, seed, fruit, wear = 0, habit = '') {
       return { ...seated(-0.12, Math.abs(s(t * 15)) * 0.01 * chuckle), limbs: {
         leftHand: V(0.24, DESK_H + 0.03, KEYS - 0.1), rightHand: V(MOUSE_X, DESK_H + 0.045, KEYS + wave(0.6) * 0.015), ...feetUnder } };
     }
+    // Fired: hunched over and sobbing, both hands over the eyes; then running for the door like that ('fleeing', Cast.#walk).
+    case 'crying': case 'fleeing': {
+      const fleeing = pose === 'fleeing', lean = fleeing ? 0.2 : 0.3, sob = Math.abs(s(t * 9 + seed));
+      const base = fleeing ? { ...standing(Math.abs(wave(14)) * 0.05), z: 0 } : seated(lean, sob * 0.012);
+      base.body.lean = lean;
+      // A point on the face (eye height, just off the skin), where the lean has carried it.
+      const faceY = fruit.faceY ?? h * 0.6, out = fruit.surface(faceY).r + 0.06, y = base.body.y + faceY * Math.cos(lean) - out * Math.sin(lean) + sob * 0.008;
+      const palm = side => V(side * (0.075 + s(t * 23 + seed + side) * 0.004), y, faceY * Math.sin(lean) + out * Math.cos(lean));
+      const feet = fleeing ? { leftFoot: V(0.11, 0.03 + Math.max(0, wave(14)) * 0.1, -wave(14) * 0.22), rightFoot: V(-0.11, 0.03 + Math.max(0, -wave(14)) * 0.1, wave(14) * 0.22) } : feetUnder;
+      return { ...base, limbs: { leftHand: palm(1), rightHand: palm(-1), ...feet } };
+    }
     case 'slumped': return { ...seated(0.55), limbs: {
       leftHand: V(0.3, DESK_H + 0.03, KEYS - 0.06), rightHand: V(-0.3, DESK_H + 0.03, KEYS - 0.06), ...feetUnder } };
     // Talking to you: turned in the chair, sitting up, hands resting in the lap, nodding now and then.
@@ -167,7 +178,8 @@ export class Cast {
   // Who's turned toward you right now (the one you're talking to), or null.
   greet(id) { this.facingYou = id; }
   // Just above the character's head, in world space.
-  positionOf(id) { const c = this.characters.get(id); if (!c?.fruit) return null; const p = c.fruit.body.getWorldPosition(new THREE.Vector3()); p.y += c.fruit.height * c.scale + 0.08; return p; }
+  // Where to hang a bubble over someone; none once they've gone out of the door.
+  positionOf(id) { const c = this.characters.get(id); if (!c?.fruit || !c.root.visible) return null; const p = c.fruit.body.getWorldPosition(new THREE.Vector3()); p.y += c.fruit.height * c.scale + 0.08; return p; }
 
   sync(layout, sessions, room, statuses, { animate = true } = {}) {
     const seen = new Set(), still = this.reducedMotion();
@@ -248,7 +260,7 @@ export class Cast {
     // and anyone typing or thinking near a red desk keeps glancing over.
     const sitters = [...this.characters.values()].filter(c => !c.plus && c.anchor && !c.trip && !c.leaving), fans = new Map();
     const nearest = (c, ok) => { let best = null, d = NEAR; for (const o of sitters) if (o !== c && ok(o)) { const e = o.root.position.distanceTo(c.root.position); if (e < d) [best, d] = [o, e]; } return best; };
-    const red = still ? [] : sitters.filter(o => o.pose === 'slumped');
+    const red = still ? [] : sitters.filter(o => o.pose === 'slumped' || o.pose === 'crying');
     if (!still) for (const f of sitters) if (this.time - f.finished < FINISHED) {
       if (f.fan === undefined) f.fan = nearest(f, o => ['typing', 'thinking', 'sleeping'].includes(o.pose) && !(this.time - o.finished < FINISHED) && this.facingYou !== o.id && !fans.has(o.id))?.id ?? null;
       if (f.fan) fans.set(f.fan, f);
@@ -260,7 +272,7 @@ export class Cast {
       // A working or idle sitter may be slacking off (room.js and slack.js have it), or just caught at it.
       const talking = this.facingYou === c.id && !STANDING.has(c.pose), busy = ['typing', 'thinking', 'sleeping'].includes(c.pose), slack = c.anchor.slack;
       const finishing = this.time - c.finished < FINISHED, cheer = c.habits.finish, cheering = fans.get(c.id);
-      const worry = red.length && ['typing', 'thinking'].includes(c.pose) && (this.time + c.seed) % GLANCE_EVERY < GLANCE_FOR ? nearest(c, o => o.pose === 'slumped') : null;
+      const worry = red.length && ['typing', 'thinking'].includes(c.pose) && (this.time + c.seed) % GLANCE_EVERY < GLANCE_FOR ? nearest(c, o => o.pose === 'slumped' || o.pose === 'crying') : null;
       const pose = talking ? 'listening' : finishing ? cheer : cheering ? 'thumbsup' : busy && slack?.show ? 'slacking' : busy && slack?.busted ? 'busted'
         : worry ? 'concerned' : STANDING.has(c.pose) && c.since ? waitingPose(c.since) : c.pose;
       const since = this.time - c.startled, startled = since < STARTLED;
@@ -313,8 +325,10 @@ export class Cast {
       if (trip.to === 'door') c.root.visible = false;
       return trip.to === 'door';
     }
-    trip.at.addScaledVector(to.normalize(), Math.min(distance, WALK_SPEED * dt));
-    const target = poseTargets('walking', t, c.seed, fruit);
+    // The fired run for it.
+    const fleeing = trip.to === 'door' && c.pose === 'crying';
+    trip.at.addScaledVector(to.normalize(), Math.min(distance, (fleeing ? RUN_SPEED : WALK_SPEED) * dt));
+    const target = poseTargets(fleeing ? 'fleeing' : 'walking', t, c.seed, fruit);
     if (!c.current) c.current = clonePose(target); else blendPose(c.current, target, k);
     const yaw = c.root.rotation.y, turn = Math.atan2(to.x, to.z) - yaw; // turning the corners rather than snapping round
     c.root.position.copy(trip.at); c.root.rotation.y = yaw + Math.atan2(Math.sin(turn), Math.cos(turn)) * Math.min(1, dt * 10);

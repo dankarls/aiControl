@@ -57,3 +57,13 @@ test('neighbours: a thumbs up goes up beside the head on their side; a worried l
   const [hand, fist] = [handGeometry(), fistGeometry()];
   assert.ok(fist.attributes.position.count === hand.attributes.position.count && fist.index.count === hand.index.count, 'the fist swaps in for the hand in place');
 });
+
+test('the fired sob with their hands over their eyes, sitting and then running for the door', () => {
+  for (const pose of ['crying', 'fleeing']) {
+    // The eyes, where leaning forward has carried them.
+    const p = poseTargets(pose, 0.4, 1, fruit), eyes = p.body.y + fruit.height * 0.6 * Math.cos(p.body.lean) - fruit.surface().r * Math.sin(p.body.lean);
+    for (const hand of [p.limbs.leftHand, p.limbs.rightHand]) assert.ok(Math.abs(hand.y - eyes) < 0.08 && hand.z > fruit.surface().r && Math.abs(hand.x) < 0.12, `${pose}: a hand on the face`);
+  }
+  const strides = Array.from({ length: 30 }, (_, i) => poseTargets('fleeing', i / 30, 1, fruit).limbs.leftFoot.z), walk = Array.from({ length: 30 }, (_, i) => poseTargets('walking', i / 30, 1, fruit).limbs.leftFoot.z);
+  assert.ok(Math.max(...strides) - Math.min(...strides) > Math.max(...walk) - Math.min(...walk), 'longer strides than a walk');
+});
