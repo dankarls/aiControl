@@ -23,7 +23,8 @@ const BASE = 0.32, CAP = 0.06, LIFT = 2.5;
 // How far back the club is drawn for the hardest putt (m); strokes before you pick up; how far over par ends an Endless run.
 const REACH = 0.6, STROKES = 8, OUT = 10, SAVE = 'ai-control-golf';
 const NEON = ['#ff4fd8', '#38f2ff', '#ffe14f', '#7dff6b', '#ff8a3d'], RAIL_BODY = '#2b2346';
-const BOARD = { x: SECRET.w - 0.03, y: 1.55, z: -2.55, w: 1.7, h: 1.2 }; // the notice board, on the far wall
+// The notice board: on the back wall behind the course (where it stays however wide the room gets), facing into the room.
+const BOARD = { x: 7, y: 1.55, z: -SECRET.back + 0.03, w: 1.7, h: 1.2 };
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const hash = (i, j) => { const v = Math.sin(i * 12.9898 + j * 78.233) * 43758.5453; return v - Math.floor(v); };
 // A spot kept `inset` metres inside the secret room's walls.
@@ -245,7 +246,7 @@ export function createGolf({ camera, canvas, ray, onPlay }) {
       call = new THREE.Sprite(new THREE.SpriteMaterial({ map: canvasTexture(512, 128, drawCall), transparent: true, depthTest: false })); call.scale.set(1.2, 0.3, 1); call.renderOrder = 3; call.visible = false; room.add(call);
       // The notice board: a click on a hole you've reached plays it; on Endless, starts a run; anywhere else, plays on.
       boardTexture = canvasTexture(1024, 720, (g, w, h, s) => { if (s) spots = drawBoard(g, w, h, s); });
-      board = new THREE.Group(); board.position.set(BOARD.x, BOARD.y, BOARD.z); board.rotation.y = -Math.PI / 2; room.add(board);
+      board = new THREE.Group(); board.position.set(BOARD.x, BOARD.y, BOARD.z); room.add(board);
       board.add(mesh(new THREE.BoxGeometry(BOARD.w + 0.08, BOARD.h + 0.08, 0.03).translate(0, 0, -0.015), toonMaterial('#7a4e2d'), 0.006), new THREE.Mesh(new THREE.PlaneGeometry(BOARD.w, BOARD.h).translate(0, 0, 0.002), new THREE.MeshBasicMaterial({ map: boardTexture })));
       board.userData.toggle = point => {
         if (point && spots) {
