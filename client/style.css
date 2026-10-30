@@ -497,6 +497,20 @@ input:is([type=checkbox], [type=radio]) { width: 18px; height: 18px; margin: 0; 
 .shot-meta { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; color: #b9bfcc; }
 .shot-button { min-width: 36px; height: 32px; padding: 0 10px; border: 1px solid #ffffff2e; border-radius: 8px; background: #ffffff14; color: inherit; font: inherit; font-size: 16px; cursor: pointer; }
 .shot-button:disabled { opacity: .35; cursor: default; }
+.shot-button .icon { display: block; width: 16px; height: 16px; margin: auto; }
+.shot-button .icon svg { display: block; }
+/* Markdown files a session wrote sit in history as a file would in a chat; their names in messages open them too. */
+.history-docs { flex: none; align-self: stretch; display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; margin: 10px 0 0; }
+.doc-chip { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; min-width: 0; min-height: 34px; padding: 5px 11px 5px 8px; border: 1px solid var(--line-2); border-radius: var(--radius-sm); background: var(--sunken); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
+.doc-chip span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-chip .icon { flex: none; width: 17px; height: 17px; color: var(--accent); }
+.doc-chip:hover, .doc-chip:focus-visible { border-color: var(--accent); }
+.doc-link { display: inline; min-width: 0; min-height: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; color: var(--accent); font: inherit; letter-spacing: inherit; text-align: start; text-transform: none; text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; cursor: pointer; }
+.doc-viewer { width: min(860px, calc(100vw - 24px)); height: calc(100svh - 24px); touch-action: auto; }
+.doc-viewer[open] { display: flex; flex-direction: column; }
+.doc-viewer .shot-bar { flex: none; margin: 0 0 8px; }
+.doc-viewer .shot-meta { text-align: start; font-weight: 600; }
+.doc-body { flex: 1; min-height: 0; padding: 16px 20px; overflow: auto; overscroll-behavior: contain; border-radius: 8px; background: var(--panel); color: var(--text); }
 .tool-run { flex: none; margin: 10px 32px 0 10px; padding-left: 12px; border-left: 2px solid var(--line); }
 .tool-run > summary { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12px; color: var(--text-3); cursor: pointer; }
 .tool-run > summary::before { content: '▸'; font-size: 10px; transition: transform .15s; }

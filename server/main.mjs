@@ -49,6 +49,8 @@ export async function startServer({ host, hostname, tls = null }) {
     // Only Claude transcripts are scanned; Codex history comes from its app server a page at a time.
     images: id => claudeId(id) ? claude.imageList(id) : { images: [] },
     image: (id, imageId) => claudeId(id) ? claude.image(id, imageId) : Promise.reject(fail('Image not found.', 404)),
+    documents: id => claudeId(id) ? claude.documentList(id) : codex.documentList(messageTarget(id)),
+    document: (id, documentId) => claudeId(id) ? claude.document(id, documentId) : codex.document(messageTarget(id), documentId),
   };
   // Any existing directory (~ expands). Claude starts under the account asked for, or the one the project last used.
   const spawn = ({ cwd, provider, account: label } = {}) => {

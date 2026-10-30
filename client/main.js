@@ -12,7 +12,8 @@ import { SessionActivity, compareSessions, compareProjects } from './session-ord
 import { messagingUnavailableReason } from './messaging-status.js';
 import { ComposerInput, followKeyboard } from './composer-input.js';
 import { LiveRender } from './live-render.js';
-import { renderMessageMarkdown } from './message-markdown.js';
+import { renderMessageMarkdown, renderDocument } from './message-markdown.js';
+import { documentSegments, matchDocument } from './document-links.js';
 import { renderUsage } from './usage.js';
 import { renderThemeConsole } from './theme-console.js';
 import { hireChoices } from './hire.js';
@@ -28,23 +29,28 @@ const statValues = new Map();
 const previousStatuses = new Map();
 // Older history fetched for an open panel: session id → { limit, messages, more }.
 const older = new Map();
-// Screenshots a Claude session and its subagents looked at (server/images.mjs), listed again while its panel is open and it changes.
-const shots = new Map(); // session id → { images, changed, fetched }
-const shotUrl = (id, imageId) => `/api/sessions/${encodeURIComponent(id)}/images/${encodeURIComponent(imageId)}`;
-function sessionShots(session) {
-  if (session.provider !== 'claude') return [];
-  let entry = shots.get(session.id);
-  if (!entry) shots.set(session.id, entry = { images: [], changed: null, fetched: 0 });
+// What an open panel lists from the server, listed again while its session changes.
+function sessionList(cache, session, kind) {
+  let entry = cache.get(session.id);
+  if (!entry) cache.set(session.id, entry = { items: [], changed: null, fetched: 0 });
   if (entry.changed !== session.updatedAt && Date.now() - entry.fetched > 10_000) {
     entry.changed = session.updatedAt; entry.fetched = Date.now();
-    api(`sessions/${encodeURIComponent(session.id)}/images`).then(({ images = [] }) => {
-      if (JSON.stringify(images) === JSON.stringify(entry.images)) return;
-      entry.images = images;
+    api(`sessions/${encodeURIComponent(session.id)}/${kind}`).then(result => {
+      const items = result[kind] || [];
+      if (JSON.stringify(items) === JSON.stringify(entry.items)) return;
+      entry.items = items;
       if (state.selected === session.id && state.snapshot) renderPanel();
     }, () => {});
   }
-  return entry.images;
+  return entry.items;
 }
+// Screenshots a Claude session and its subagents looked at (server/images.mjs).
+const shots = new Map(); // session id → { items, changed, fetched }
+const shotUrl = (id, imageId) => `/api/sessions/${encodeURIComponent(id)}/images/${encodeURIComponent(imageId)}`;
+const sessionShots = session => session.provider === 'claude' ? sessionList(shots, session, 'images') : [];
+// Markdown files a session wrote or named (server/documents.mjs).
+const docs = new Map(); // session id → { items, changed, fetched }
+const sessionDocs = session => sessionList(docs, session, 'documents');
 // Effort chosen here for Claude, shown until its transcript reports it.
 const pendingEffort = new Map();
 // When each session was last opened, so finished work you haven't looked at gets a dot.
@@ -78,6 +84,9 @@ const icons = {
   back: '<path d="m15 5-7 7 7 7"/>',
   down: '<path d="m5 9 7 7 7-7"/>',
   close: '<path d="m6 6 12 12M6 18 18 6"/>',
+  file: '<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/>',
+  expand: '<path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5"/>',
+  collapse: '<path d="M4 9h5V4M20 9h-5V4M4 15h5v5M20 15h-5v5"/>',
   search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>',
   activity: '<path d="M2 12h5l3-8 4 16 3-8h5"/>',
   moon: '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z"/>',
@@ -184,7 +193,7 @@ async function api(path, body, options = {}) {
 function showLogin(message = '') {
   disposeHistory();
   disposeComposer(); liveRender.cancel();
-  messageDrafts.clear(); shots.clear();
+  messageDrafts.clear(); shots.clear(); docs.clear();
   clearTimeout(activityTimer); activityTimer = null;
   clearInterval(poll); office?.unmount(); office = null; state.csrf = ''; state.snapshot = null; state.selected = null; panelSignature = ''; document.body.classList.remove('panel-open');
   app.replaceChildren(); document.documentElement.removeAttribute('data-attention'); document.documentElement.removeAttribute('data-working');
@@ -291,7 +300,7 @@ function syncOffice() {
   if (!officeModule.webglAvailable()) { fallBack('Office needs WebGL 2; showing the list'); return; }
   const box = el('div'); box.id = 'office'; main.append(box);
   try {
-    office = officeModule.mountOffice(box, { openPanel, nextWaiting: () => nextWaiting(), showList: () => setOfficeList(true), isUnread: unread, describe: sessionFacts, spawn: spawnAgent });
+    office = officeModule.mountOffice(box, { openPanel, nextWaiting: () => nextWaiting(), showList: () => setOfficeList(true), isUnread: unread, describe: sessionFacts, spawn: spawnAgent, showShots: (id, images, closed) => images.length ? showShot(id, images.at(-1).id, images, closed) : closed() });
     if (state.snapshot) office.update(state.snapshot, { error: state.error });
     office.pick(picked(), false);
   } catch (error) { console.error(error); office?.unmount(); office = null; fallBack('Office could not start; showing the list'); }
@@ -797,9 +806,9 @@ function renderRecentMessages(session, savedPosition) {
     delete region.dataset.signature;
   }
   const flow = region.historyScroll;
-  const extra = older.get(session.id), messages = mergeHistory(extra?.messages, session.messages || []), images = sessionShots(session);
+  const extra = older.get(session.id), messages = mergeHistory(extra?.messages, session.messages || []), images = sessionShots(session), documents = sessionDocs(session);
   const moreAvailable = extra ? extra.more : (session.messages || []).filter(m => !m.tool).length >= 20;
-  const signature = JSON.stringify([messages, images, session.messagesState, moreAvailable, !!extra?.loading]);
+  const signature = JSON.stringify([messages, images, documents, session.messagesState, moreAvailable, !!extra?.loading]);
   if (region.dataset.signature === signature) { if (savedPosition) flow.restore(savedPosition); return; }
   const saved = savedPosition || flow.capture();
   const content = region.querySelector('.history-content');
@@ -818,16 +827,64 @@ function renderRecentMessages(session, savedPosition) {
     const run = entries.at(-1);
     if (message.tool && Array.isArray(run) && run[0].tool) run.push(message); else entries.push(message.tool ? [message] : message);
   }
-  for (const entry of placeShots(entries.flatMap(item => Array.isArray(item) && (item.length < 3 || session.parentId) ? item : [item]), images)) {
-    const id = entry.shots ? `shots:${entry.shots[0].id}` : Array.isArray(entry) ? `run:${entry[0].id}` : entry.id, previous = existing.get(id), entrySignature = JSON.stringify(entry);
+  for (const entry of placeShots(entries.flatMap(item => Array.isArray(item) && (item.length < 3 || session.parentId) ? item : [item]), images, documents.filter(document => document.written))) {
+    const id = entry.docs ? `docs:${entry.docs[0].id}` : entry.shots ? `shots:${entry.shots[0].id}` : Array.isArray(entry) ? `run:${entry[0].id}` : entry.id, previous = existing.get(id), entrySignature = JSON.stringify(entry);
     if (previous?.dataset.signature === entrySignature) { children.push(previous); continue; }
-    const node = entry.shots ? shotStrip(session.id, entry) : Array.isArray(entry) ? toolRun(entry, !!previous?.open) : messageNode(entry, session, previous);
+    const node = entry.docs ? docStrip(session, entry.docs) : entry.shots ? shotStrip(session.id, entry) : Array.isArray(entry) ? toolRun(entry, !!previous?.open) : messageNode(entry, session, previous);
     node.dataset.messageId = id; node.dataset.signature = entrySignature; children.push(node);
   }
   // Keep unchanged messages mounted so expanded text and keyboard focus survive polling.
   for (const node of [...content.children]) if (!children.includes(node)) node.remove();
   children.forEach((node, index) => { if (content.children[index] !== node) content.insertBefore(node, content.children[index] || null); });
+  linkDocuments(content, documents, session.cwd, doc => showDocument(session, doc.id));
   flow.restore(saved);
+}
+function docStrip(session, group) {
+  const strip = el('div', 'history-docs');
+  for (const doc of group) {
+    const chip = el('button', 'doc-chip'); chip.type = 'button';
+    chip.title = [doc.path, doc.agent, doc.at && new Date(doc.at).toLocaleString()].filter(Boolean).join(' · ');
+    chip.append(icon('file'), el('span', '', doc.name)); chip.onclick = () => showDocument(session, doc.id); strip.append(chip);
+  }
+  return strip;
+}
+// The names of a session's documents in rendered text open them. Text already linked is left alone, so this can run again as documents turn up.
+function linkDocuments(root, documents, cwd, open) {
+  if (!documents.length) return;
+  const link = (doc, content) => { const b = el('button', 'doc-link'); b.type = 'button'; b.title = doc.path; b.append(...content); b.onclick = () => open(doc); return b; };
+  for (const span of root.querySelectorAll('[data-doc-path]')) { const doc = matchDocument(span.dataset.docPath, documents, cwd); if (doc) span.replaceWith(link(doc, [...span.childNodes])); }
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT), texts = [];
+  while (walker.nextNode()) if (walker.currentNode.nodeValue.includes('.md') && walker.currentNode.parentElement.closest('.message-text') && !walker.currentNode.parentElement.closest('a, button, pre')) texts.push(walker.currentNode);
+  for (const text of texts) {
+    const segments = documentSegments(text.nodeValue, documents, cwd);
+    if (segments.some(segment => segment.document)) text.replaceWith(...segments.map(segment => segment.document ? link(segment.document, [segment.text]) : segment.text));
+  }
+}
+const viewerButton = (content, label, action) => { const b = el('button', 'shot-button'); b.type = 'button'; b.append(content); b.setAttribute('aria-label', label); b.title = label; b.onclick = action; return b; };
+// Fills the window, within AI Control; the choice lasts as long as the viewer.
+function viewerExpand(dialog, full = false) {
+  const b = viewerButton('', '', () => set(!dialog.classList.contains('viewer-full')));
+  const set = on => { dialog.classList.toggle('viewer-full', on); b.replaceChildren(icon(on ? 'collapse' : 'expand')); const label = on ? 'Exit full screen' : 'Full screen'; b.setAttribute('aria-label', label); b.title = label; };
+  set(full); return b;
+}
+// One document, as it is on disk now. A document it links to opens over it, the same size. Esc or the backdrop closes.
+function showDocument(session, documentId, full = false) {
+  const listed = () => docs.get(session.id)?.items || [], known = listed().find(doc => doc.id === documentId);
+  const dialog = el('dialog', 'shot-viewer doc-viewer'); dialog.setAttribute('aria-label', 'Document');
+  const bar = el('div', 'shot-bar'), meta = el('span', 'shot-meta', known?.name || 'Document'), body = el('div', 'doc-body message-text', 'Loading…');
+  meta.title = known?.path || '';
+  bar.append(meta, viewerExpand(dialog, full), viewerButton('✕', 'Close (Esc)', () => dialog.close()));
+  dialog.append(bar, body);
+  // Only a press on the backdrop: dragging a text selection off the page ends with a click here too.
+  let pressed = null;
+  dialog.addEventListener('pointerdown', event => { pressed = event.target; });
+  dialog.addEventListener('click', event => { if (event.target === dialog && pressed === dialog) dialog.close(); });
+  dialog.onclose = () => dialog.remove();
+  app.append(dialog); dialog.showModal();
+  api(`sessions/${encodeURIComponent(session.id)}/documents/${encodeURIComponent(documentId)}`).then(({ name, path, text }) => {
+    meta.textContent = name; meta.title = path; body.innerHTML = renderDocument(text); body.scrollTop = 0;
+    linkDocuments(body, listed(), session.cwd, doc => showDocument(session, doc.id, dialog.classList.contains('viewer-full')));
+  }, error => { body.textContent = error.message; });
 }
 function shotStrip(id, { shots: group, user }) {
   const strip = el('div', `history-shots${user ? ' user' : ''}`);
@@ -840,17 +897,16 @@ function shotStrip(id, { shots: group, user }) {
   return strip;
 }
 // One screenshot big; ‹ ›, ←/→ or a swipe step through the session's others, the picture opens full size, Esc or the backdrop closes.
-function showShot(id, imageId) {
-  const images = shots.get(id)?.images || []; let at = Math.max(0, images.findIndex(image => image.id === imageId));
+function showShot(id, imageId, images = shots.get(id)?.items || [], closed) {
+  let at = Math.max(0, images.findIndex(image => image.id === imageId));
   if (!images.length) return;
   const dialog = el('dialog', 'shot-viewer'); dialog.setAttribute('aria-label', 'Screenshot');
   const link = el('a', 'shot-full'); link.target = '_blank'; link.rel = 'noopener'; link.title = 'Full size';
   const picture = el('img'); picture.alt = ''; link.append(picture);
   const bar = el('div', 'shot-bar'), meta = el('span', 'shot-meta');
-  const control = (text, label, action) => { const b = el('button', 'shot-button', text); b.type = 'button'; b.setAttribute('aria-label', label); b.title = label; b.onclick = action; return b; };
   const step = by => { at = Math.max(0, Math.min(images.length - 1, at + by)); show(); };
-  const prev = control('‹', 'Previous (←)', () => step(-1)), next = control('›', 'Next (→)', () => step(1));
-  bar.append(prev, meta, next, control('✕', 'Close (Esc)', () => dialog.close()));
+  const prev = viewerButton('‹', 'Previous (←)', () => step(-1)), next = viewerButton('›', 'Next (→)', () => step(1));
+  bar.append(prev, meta, next, viewerButton('✕', 'Close (Esc)', () => dialog.close()));
   const show = () => {
     const image = images[at]; picture.src = link.href = shotUrl(id, image.id);
     meta.textContent = [`${at + 1}/${images.length}`, image.agent, image.at && age(image.at)].filter(Boolean).join(' · ');
@@ -878,7 +934,7 @@ function showShot(id, imageId) {
     if (swiped) { swiped = false; event.preventDefault(); return; }
     if (event.target === dialog) dialog.close();
   }, true);
-  dialog.onclose = () => dialog.remove();
+  dialog.onclose = () => { dialog.remove(); closed?.(); };
   app.append(dialog); show(); dialog.showModal();
 }
 // Older pages end where the live window starts, so polling keeps the newest part current.
@@ -990,7 +1046,8 @@ document.addEventListener('keydown', event => {
   if (event.key === 'Escape' && openTheme) { openTheme.open = false; openTheme.querySelector('summary').focus(); return; }
   const menu = document.querySelector('#agent-filter-menu');
   if (event.key === 'Escape' && menu?.open) { menu.open = false; menu.querySelector('summary').focus(); return; }
-  if (event.key === 'Escape' && state.selected) closePanel();
+  // Esc in a dialog closes that dialog, not the panel behind it.
+  if (event.key === 'Escape' && state.selected && !event.target.closest?.('dialog')) closePanel();
   if (event.key === 'Tab' && state.selected) {
     const controls = [...document.querySelector('#panel').querySelectorAll('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), summary, a[href], [tabindex]:not([tabindex="-1"])')].filter(node => node.getClientRects().length);
     const first = controls[0], last = controls.at(-1);

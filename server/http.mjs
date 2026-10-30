@@ -72,6 +72,14 @@ export function createHandler({ auth, store, snapshot, origin, vite, messages, s
         const { type, data } = await messages.image(id, imageId);
         res.statusCode = 200; res.setHeader('Content-Type', type); res.setHeader('Content-Length', data.length); res.setHeader('Content-Security-Policy', "default-src 'none'"); res.end(data); return;
       }
+      // A session's Markdown files: the list, or one file's text.
+      const documentRoute = /^\/api\/sessions\/([^/]+)\/documents(?:\/([^/]+))?$/.exec(path);
+      if (documentRoute && req.method === 'GET') {
+        if (!messages?.documents) throw fail('Documents are not available.', 503);
+        let id, documentId;
+        try { id = decodeURIComponent(documentRoute[1]); documentId = documentRoute[2] && decodeURIComponent(documentRoute[2]); } catch { throw fail('Invalid session ID.'); }
+        json(res, 200, await (documentId ? messages.document(id, documentId) : messages.documents(id))); return;
+      }
       const sessionRoute = /^\/api\/sessions\/([^/]+)\/(messages|interrupt|fire|effort|history|queue\/([^/]+)\/cancel)$/.exec(path);
       if (sessionRoute && req.method === (sessionRoute[2] === 'history' ? 'GET' : 'POST')) {
         if (!messages) throw fail('Messaging is not available.', 503);

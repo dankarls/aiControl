@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { fail } from './requests.mjs';
 import { TranscriptReader, claudeSessionTitle, claudeActivity, turnTool } from './messages.mjs';
 import { TranscriptImages, imageLimit } from './images.mjs';
+import { TranscriptDocuments, readableDocuments, readDocument } from './documents.mjs';
 import { ClaudeMessaging, claudeEfforts } from './claude-messaging.mjs';
 
 // Must match the PermissionRequest hook timeout in scripts/install-hooks.mjs.
@@ -66,7 +67,8 @@ export class ClaudeAdapter {
   stoppedAgents = new Set();
   connected = false;
   detail = 'Discovering local Claude Code sessions…';
-  constructor(store, socketPath, { sessionsDir = join(homedir(), '.claude/sessions'), projectsDir = join(homedir(), '.claude/projects'), accounts = [{ label: '', sessionsDir, projectsDir }], alive = processMatches, messaging } = {}) { this.store = store; this.socketPath = socketPath; this.accounts = accounts; this.transcripts = new TranscriptReader(accounts.map(account => account.projectsDir)); this.images = new TranscriptImages(); this.agentTitles = new Map(); this.alive = alive; this.messaging = messaging || new ClaudeMessaging({ alive }); }
+  constructor(store, socketPath, { sessionsDir = join(homedir(), '.claude/sessions'), projectsDir = join(homedir(), '.claude/projects'), accounts = [{ label: '', sessionsDir, projectsDir }], alive = processMatches, messaging } = {}) { this.store = store; this.socketPath = socketPath; this.accounts = accounts; this.transcripts = new TranscriptReader(accounts.map(account => account.projectsDir)); this.images = new TranscriptImages();
+  this.documents = new TranscriptDocuments(); this.agentTitles = new Map(); this.alive = alive; this.messaging = messaging || new ClaudeMessaging({ alive }); }
   async start() {
     // The tmux/start guard prevents duplicate servers; only remove our stale socket.
     try { if ((await lstat(this.socketPath)).isSocket()) await unlink(this.socketPath); else throw new Error('Hook socket path is occupied by a file.'); } catch (e) { if (e.code !== 'ENOENT') throw e; }
@@ -282,6 +284,19 @@ export class ClaudeAdapter {
     const image = path && await this.images.get(path, transcript.sessionId, own);
     if (!image) throw fail('Image not found.', 404);
     return image;
+  }
+  // Markdown files a session wrote or named, and those its subagents wrote (what a subagent only mentions isn't for you).
+  async documentList(id) {
+    const { sessionId, agentId, path } = await this.transcript(id), own = await this.documents.list(path, sessionId);
+    const agents = agentId !== undefined ? [] : await Promise.all((await this.agentTranscripts(path)).map(async agent => (await this.documents.list(agent.path, sessionId).catch(() => []))
+      .filter(document => document.written).map(document => ({ ...document, agent: agent.title }))));
+    return { documents: await readableDocuments([...own, ...agents.flat()]) };
+  }
+  async document(id, documentId) {
+    const found = (await this.documentList(id)).documents.find(document => document.id === documentId);
+    const document = found && await readDocument(found);
+    if (!document) throw fail('Document not found.', 404);
+    return document;
   }
   async transcript(id) {
     const [sessionId, agentId] = id.slice(7).split(':');

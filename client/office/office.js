@@ -137,7 +137,7 @@ export function mountOffice(container, hooks) {
     sleepers: () => cast.sleepers(), wake: (id, line) => { cast.startle(id, goose.root.position); bubbles.say(id, '😱', line); } });
   const card = createCard(container);
   const menu = createMenu(container, (cwd, choice, item) => hooks.spawn?.(cwd, choice, item));
-  const shots = createScreenshots(container, { room, onClose: () => office.panelClosed(), onSession: id => hooks.openPanel(id) });
+  const shots = createScreenshots({ room });
   // It stays by the spot on the desk you picked as the view moves, and closes once that's off the screen.
   let dismissed = false; const menuAt = new THREE.Vector3(), onScreen = new THREE.Vector3();
   const follow = () => {
@@ -147,11 +147,7 @@ export function mountOffice(container, hooks) {
     const r = renderer.domElement.getBoundingClientRect();
     menu.move({ clientX: r.left + (onScreen.x + 1) / 2 * r.width, clientY: r.top + (1 - onScreen.y) / 2 * r.height });
   };
-  // The screenshots close the same way.
-  listen(document, 'pointerdown', event => {
-    const outside = [menu, shots].filter(open => open.open && !open.contains(event.target));
-    dismissed = outside.length > 0; for (const open of outside) open.close();
-  }, true);
+  listen(document, 'pointerdown', event => { dismissed = menu.open && !menu.contains(event.target); if (dismissed) menu.close(); }, true);
   // The overview frees the mouse to click around; leaving it captures the mouse again if it was (see `free`).
   const overview = on => {
     if (on === view.overview) return;
@@ -335,7 +331,7 @@ export function mountOffice(container, hooks) {
       const arrive = () => {
         if (office.talking !== token) return;
         view.focus(centre);
-        setTimeout(() => { if (office.talking === token) { if (side) shots.show(id); else hooks.openPanel(id); } }, reducedMotion?.matches ? 0 : 400);
+        setTimeout(() => { if (office.talking === token) { if (side) hooks.showShots(id, shots.images(id), () => office.panelClosed()); else hooks.openPanel(id); } }, reducedMotion?.matches ? 0 : 400);
       };
       const spot = standBefore(shoulder, normal, Math.max(0.8, 1.9 * scale), room.colliders, layout?.room);
       if (spot) player.flyTo(spot, centre, arrive, !!reducedMotion?.matches, Math.atan2(rise, Math.hypot(centre.x - spot.x, centre.z - spot.z))); else arrive();

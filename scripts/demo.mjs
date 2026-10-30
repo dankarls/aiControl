@@ -12,7 +12,7 @@ import { claudeRequest } from '../server/claude.mjs';
 import { codexRequest } from '../server/codex.mjs';
 import { root } from '../server/config.mjs';
 
-const port = 47842, pin = '1234', now = Date.now(), min = 60_000, home = '/home/demo/code';
+const port = Number(process.env.DEMO_PORT) || 47842, pin = '1234', now = Date.now(), min = 60_000, home = '/home/demo/code';
 const ago = minutes => now - minutes * min;
 let n = 0;
 const msg = (role, text, minutes, extra = {}) => ({ id: `m${++n}`, role, text, truncated: false, timestamp: ago(minutes), ...extra });
@@ -34,7 +34,7 @@ const weather = claude('7f3c2a10-5b9e-4d21-a8c4-0e6f1b2d3c4a', 'weather-station'
   msg('assistant', "I'll split this up: one agent maps the sensor pipeline, another drafts the alert rules. Meanwhile I'll add the threshold config.", 13),
   msg('assistant', 'Threshold config:\n\n```ts\nexport const humidityAlert = { above: 70, forMinutes: 10 };\n```', 3),
   tool('Read · src/config/alerts.ts', 2.9), tool('Edit · src/config/alerts.ts', 2.8), tool('Bash · Type-check', 2.6, { failed: true }), tool('Edit · src/config/alerts.ts', 2.4), tool('Bash · Type-check', 2.2),
-  msg('assistant', 'Config is in place. Running the sensor tests next.', 2),
+  msg('assistant', 'Config is in place, and the plan is written up in `docs/humidity-alerts-plan.md`. Running the sensor tests next.', 2),
 ], { branch: 'feat/humidity-alerts', effort: 'xhigh', permissionMode: 'acceptEdits', context: { used: 207_000 }, lastTurnMs: 324_000, cost: { usd: 1.84, added: 96, removed: 12 },
   plan: steps(2, 'Map the sensor pipeline', 'Add threshold config', 'Run the sensor tests', 'Push notification', 'Dashboard banner') });
 const sessions = [
@@ -105,6 +105,35 @@ const shots = {
   'claude:7f3c2a10-5b9e-4d21-a8c4-0e6f1b2d3c4a': [['weather-before', 12, 'Map the sensor pipeline'], ['weather-settings', 10, 'Draft alert rules'], ['weather-phone', 6], ['weather-alert', 2.5], ['weather-push', 1]],
   'claude:5e7a9c1b-3d5f-4a6b-8c0d-2e4f6a8b0c1d': [['garden-seasons', 15], ['garden-winter', 2]],
 };
+const plan = `# Humidity alerts
+
+Warn when humidity stays above **70%** for more than 10 minutes.
+
+## Steps
+
+1. Map the sensor pipeline
+2. Add the threshold config in \`src/config/alerts.ts\`
+3. Run the sensor tests
+4. Send a push notification
+5. Show a banner on the dashboard
+
+## Decisions
+
+| Question | Answer |
+| --- | --- |
+| Where does it run? | Per-minute averages, in \`aggregate.ts\` |
+| What clears it? | Below 65% for 5 minutes |
+
+\`\`\`ts
+export const humidityAlert = { above: 70, forMinutes: 10 };
+\`\`\`
+
+Rules are drafted in docs/alert-rules.md.
+`;
+const rules = '# Alert rules\n\n- Warn above 70% for 10 minutes\n- Clear below 65% for 5 minutes\n\nBack to the plan: docs/humidity-alerts-plan.md\n';
+const docs = {
+  'claude:7f3c2a10-5b9e-4d21-a8c4-0e6f1b2d3c4a': [['humidity-alerts-plan.md', 2.2, plan], ['alert-rules.md', 2.1, rules, 'Draft alert rules']],
+};
 const messages = {
   send: async (id, body) => { sessions.find(s => s.id === id)?.messages.push(msg('user', body.text, 0)); return { status: 'sent', clientMessageId: body.clientMessageId }; },
   cancel: async () => ({ ok: true }),
@@ -113,6 +142,12 @@ const messages = {
   effort: async (id, body) => { const s = sessions.find(s => s.id === id); if (s) s.effort = body.effort; return { ok: true }; },
   history: async id => ({ messages: [msg('user', 'An older request from earlier today.', 400), msg('assistant', 'Older reply.', 399), ...(sessions.find(s => s.id === id)?.messages || [])], more: false }),
   images: async id => ({ images: (shots[id] || []).map(([, minutes, agent], n) => ({ id: `${agent ? 'a1b2c3.' : ''}0000000${n}-0000-4000-8000-000000000000:0`, type: 'image/webp', at: ago(minutes), tool: true, ...(agent && { agent }) })) }),
+  documents: async id => ({ documents: (docs[id] || []).map(([name, minutes, , agent], n) => ({ id: `doc${n}`, name, path: `${home}/weather-station/docs/${name}`, at: ago(minutes), written: true, ...(agent && { agent }) })) }),
+  document: async (id, documentId) => {
+    const found = (docs[id] || [])[Number(documentId.slice(3))];
+    if (!found) throw fail('Document not found.', 404);
+    return { name: found[0], path: `${home}/weather-station/docs/${found[0]}`, text: found[2] };
+  },
   image: async (id, imageId) => {
     const shot = (shots[id] || [])[Number(/0000000(\d)/.exec(imageId)?.[1])];
     if (!shot) throw fail('Image not found.', 404);

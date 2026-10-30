@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { fail, slashCommand } from './requests.mjs';
 import { codexMessage, messageLimit, recentMessages, textContent, planSteps } from './messages.mjs';
 import { UsagePoller, codexUsageWindows } from './usage.mjs';
+import { itemDocuments, readableDocuments, readDocument } from './documents.mjs';
 
 export const codexSocketPath = () => join(process.env.CODEX_HOME || join(homedir(), '.codex'), 'app-server-control', 'app-server-control.sock');
 export function connectCodexSocket(path, connectionOptions = {}) {
@@ -66,6 +67,7 @@ export function codexRequest(message, items = new Map()) {
   return null;
 }
 
+const documentPages = 30;
 const codexGoal = goal => goal && { objective: String(goal.objective || '').slice(0, 500), status: goal.status, tokensUsed: goal.tokensUsed, tokenBudget: goal.tokenBudget ?? null, timeUsedSeconds: goal.timeUsedSeconds };
 
 export class CodexAdapter {
@@ -231,6 +233,29 @@ export class CodexAdapter {
   async history(threadId, limit) {
     this.requireMessaging(threadId);
     return await this.readMessages(threadId, limit) ?? { messages: [], more: false };
+  }
+  // Markdown files in the thread's recent items, newest page first, so the first write of a path seen is its latest.
+  async documentList(threadId) {
+    const session = this.sessions.get(threadId);
+    if (!session) throw fail('Session is no longer available.', 409);
+    const found = new Map(); let cursor;
+    try {
+      for (let pageNumber = 0; pageNumber < documentPages; pageNumber++) {
+        const page = await this.rpc('thread/items/list', { threadId, limit: 10, sortDirection: 'desc', ...(cursor ? { cursor } : {}) });
+        for (const entry of page.data) for (const document of itemDocuments(entry.item ?? entry, session.cwd, entry.completedAtMs ?? entry.startedAtMs ?? null)) {
+          const known = found.get(document.path);
+          if (!known || (document.written && !known.written)) found.set(document.path, document);
+        }
+        cursor = page.nextCursor; if (!cursor) break;
+      }
+    } catch { return { documents: [] }; }
+    return { documents: await readableDocuments([...found.values()]) };
+  }
+  async document(threadId, documentId) {
+    const found = (await this.documentList(threadId)).documents.find(document => document.id === documentId);
+    const document = found && await readDocument(found);
+    if (!document) throw fail('Document not found.', 404);
+    return document;
   }
   queueView(entry) {
     return { id: entry.id, text: textContent(entry.input).slice(0, 12_000), clientMessageId: entry.clientUserMessageId, hasAttachments: entry.input?.some(item => item.type !== 'text') || false };
