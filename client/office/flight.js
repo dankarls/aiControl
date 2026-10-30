@@ -4,15 +4,16 @@ import * as THREE from 'three';
 // document, no window), so a whole shot can be simulated ahead in Node or the browser and replayed frame by frame to the same spot.
 export const STEP = 1 / 240, GRAVITY = 9.8, MOST = 24, REST = 0.1; // seconds per step; most steps in a frame; quiet time before rest
 const { Vector3, Quaternion, Euler } = THREE;
-const UP = new Vector3(0, 1, 0), normal = new Vector3(), near = new Vector3(), local = new Vector3(), speed = new Vector3(), mid = new Vector3(), half = new Vector3();
-const floor = new Vector3(0, 1, 0), ceiling = new Vector3(0, -1, 0), tmpQ = new Quaternion(), event = { surface: '', box: null, speed: 0 }; // `event` is reused: copy what you keep
+const normal = new Vector3(), near = new Vector3(), local = new Vector3(), speed = new Vector3(), mid = new Vector3(), half = new Vector3();
+const floor = new Vector3(0, 1, 0), ceiling = new Vector3(0, -1, 0), event = { surface: '', box: null, speed: 0 }; // `event` is reused: copy what you keep
 
 // A box turned by Euler angles (x, y, z). Same duck type as Box3: min/max are its world AABB, plus owner and surface.
 export class TiltedBox {
   constructor({ centre, half, rotation = [0, 0, 0], surface, owner }) {
     this.centre = new Vector3(...centre); this.half = new Vector3(...half); this.surface = surface; this.owner = owner;
-    this.quaternion = new Quaternion().setFromEuler(new Euler(...rotation)); this.inverse = this.quaternion.clone().invert();
-    const e = new Euler(...rotation), m = new THREE.Matrix4().makeRotationFromEuler(e).elements; // world extent: |R| · half
+    const e = new Euler(...rotation);
+    this.quaternion = new Quaternion().setFromEuler(e); this.inverse = this.quaternion.clone().invert();
+    const m = new THREE.Matrix4().makeRotationFromEuler(e).elements; // world extent: |R| · half
     const reach = i => Math.abs(m[i]) * this.half.x + Math.abs(m[i + 4]) * this.half.y + Math.abs(m[i + 8]) * this.half.z;
     this.min = new Vector3(this.centre.x - reach(0), this.centre.y - reach(1), this.centre.z - reach(2));
     this.max = new Vector3(this.centre.x + reach(0), this.centre.y + reach(1), this.centre.z + reach(2));
@@ -39,28 +40,38 @@ const contact = (b, world, n, surface, box) => {
 };
 
 // The centre is inside the box: out through the face the velocity came in by (the nearest would send a ball through the far
-// side of a thin plate), or the nearest face when it's still. Sets `normal`, returns the (negative) gap along it.
+// side of a thin plate), if it can only just have got in; otherwise the nearest face. Never the bottom, which would put it
+// under the floor. Sets `normal`, returns the (negative) gap along it.
+let axis = 0, sign = 1, best = Infinity;
+function choose(timed) { // timed: by time since entering along the velocity; else by depth
+  best = Infinity;
+  for (let i = 0; i < 3; i++) {
+    const l = local.getComponent(i), v = speed.getComponent(i), h = half.getComponent(i);
+    if (timed && Math.abs(v) < 1e-9) continue;
+    for (let k = 0; k < 2; k++) {
+      const s = timed ? (v >= 0 ? 1 : -1) : (k ? -1 : 1); // s: the way it was heading; it came in by the face at -s
+      if (timed && k) break;
+      if (i === 1 && s === 1) continue; // that would leave through the bottom
+      const depth = h + s * l, t = timed ? depth / Math.abs(v) : depth;
+      if (t < best) { best = t; axis = i; sign = s; }
+    }
+  }
+}
 function leave(b, box) {
   const q = box.inverse; box.getCenter?.(mid); half.copy(box.half ?? (box.getSize(half).multiplyScalar(0.5)));
   const c = box.centre ?? mid;
   local.copy(b.pos).sub(c); speed.copy(b.vel);
   if (q) { local.applyQuaternion(q); speed.applyQuaternion(q); }
-  let axis = 0, sign = 1, best = Infinity; const still = speed.lengthSq() < 1e-12;
-  for (let i = 0; i < 3; i++) {
-    const l = local.getComponent(i), v = speed.getComponent(i), h = half.getComponent(i);
-    for (const s of still ? [1, -1] : [v >= 0 ? 1 : -1]) { // s: the way it was heading; it came in by the face at -s
-      if (!still && Math.abs(v) < 1e-9) continue;
-      const depth = h + s * l, t = still ? depth : depth / Math.abs(v);
-      if (t < best) { best = t; axis = i; sign = s; }
-    }
-  }
+  choose(true);
+  if (!(best <= 2 * STEP)) choose(false); // it didn't just arrive (or isn't moving): gravity alone says nothing about where from
   normal.set(0, 0, 0).setComponent(axis, -sign);
   const depth = half.getComponent(axis) + sign * local.getComponent(axis);
   if (q) normal.applyQuaternion(box.quaternion);
   return -depth;
 }
 
-// One STEP. Port of the old props.js step, without the room's walls (they're colliders now) and without knocking owners.
+// One STEP. ponytail: a paper ball (r 4.5 cm) can step over a 2 cm plate above about 15.6 m/s (0/200 at 15, 6/200 at 16); 12 m/s plus a fall from the ceiling is safe.
+// Port of the old props.js step, without the room's walls (they're colliders now) and without knocking owners.
 export function stepBody(b, world) {
   if (b.rest) return;
   const h = STEP, { radius: r, low, roll, drag, upright } = b.kind;
