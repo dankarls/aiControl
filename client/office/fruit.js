@@ -168,8 +168,9 @@ function wearable(material) {
     shader.fragmentShader = `uniform sampler2D bruiseMap;\nuniform sampler2D tipMap;\nuniform vec3 tests, spotColor, rotColor, tipColor, greyColor;\nuniform float grey;\nvarying vec2 vSkinUv;\n${shader.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
       diffuseColor.rgb = mix(diffuseColor.rgb, greyColor, grey);
       // Each layer is a 90% coat with the texture as its alpha, shown where that alpha passes the layer's test. Mixed in
-      // screen space (gamma 2.2) like blended overlays, or faint freckles vanish into a bright skin.
-      float bruise = texture2D(bruiseMap, vSkinUv * vec2(2.5, 1.5)).g * 0.9, tip = texture2D(tipMap, vSkinUv).g * 0.9;
+      // screen space (gamma 2.2) like blended overlays, or faint freckles vanish into a bright skin. Whole repeats both ways, so
+      // there's no seam where the uvs wrap round (u on a lathe body, v on the banana).
+      float bruise = texture2D(bruiseMap, vSkinUv * vec2(3.0, 2.0)).g * 0.9, tip = texture2D(tipMap, vSkinUv).g * 0.9;
       vec3 shown = pow(diffuseColor.rgb, vec3(1.0 / 2.2));
       shown = mix(shown, pow(spotColor, vec3(1.0 / 2.2)), step(tests.x, bruise) * bruise);
       shown = mix(shown, pow(rotColor, vec3(1.0 / 2.2)), step(tests.y, bruise) * bruise);
