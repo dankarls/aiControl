@@ -173,11 +173,12 @@ export class Cast {
     const seen = new Set(), still = this.reducedMotion();
     this.door = new THREE.Vector3(layout.door.x, 0, layout.door.z - 0.6);
     const firstSync = !this.synced; this.synced = true;
-    const place = (id, make) => {
+    // Someone on their way out (gone, or a helper that's done) waves.
+    const place = (id, make, going = false) => {
       seen.add(id);
       let c = this.characters.get(id);
       if (!c) { c = make(); this.characters.set(id, c); this.scene.add(c.root); }
-      const status = statuses.get(id) || { pose: 'waving', expression: 'smile' };
+      const status = !going && statuses.get(id) || { pose: 'waving', expression: 'smile' };
       c.expression = status.expression; c.since = status.since;
       // Done: a sitter going from work to idle stretches or punches the air before nodding off (not on a page load).
       if (c.pose !== status.pose && !firstSync && !still && WORKING.has(c.pose) && status.pose === 'sleeping') { c.finished = this.time; c.fan = undefined; }
@@ -186,17 +187,25 @@ export class Cast {
       if (c.shades !== (status.mode === 'bypass')) { c.shades = status.mode === 'bypass'; c.fruit.setShades(c.shades); }
       return c;
     };
+    // Waves goodbye, then walks out (with reduced motion just vanishes); or, back after all, goes back to the desk.
+    const leave = (c, going) => {
+      if (!going && c.leaving) { c.leaving = false; c.root.visible = true; c.trip = still ? null : { to: 'desk' }; }
+      if (going && !c.leaving) { c.leaving = true; c.trip = still ? null : { wait: GOODBYE, to: 'door' }; c.root.visible = !still; }
+    };
     for (const [id, desk] of layout.desks) {
       const anchor = room.deskAnchor(id); if (!anchor) continue;
       const isNew = !this.characters.has(id), c = place(id, () => this.#character(id, 1));
       c.anchor = anchor;
       // Newcomers walk in from the door (not on the first load, when everyone is simply there).
       if (isNew && !firstSync && animate && !still) c.trip = { at: this.door.clone(), to: 'desk' };
-      // Ended sessions say goodbye, then walk out; with reduced motion they just vanish.
-      if (desk.vacantSince === undefined && c.leaving) { c.leaving = false; c.root.visible = true; c.trip = still ? null : { to: 'desk' }; }
-      if (desk.vacantSince !== undefined && !c.leaving) { c.leaving = true; c.trip = still ? null : { wait: GOODBYE, to: 'door' }; c.root.visible = !still; }
-      // Helpers sit at their own tiny desks beside the parent's; more than fit show as a +N above the last one.
-      desk.subagents.forEach((kid, i) => { const k = place(kid, () => this.#character(kid, HELPER_SCALE)); k.anchor = anchor.helpers[i]; });
+      leave(c, desk.vacantSince !== undefined);
+      // Helpers sit at their own tiny desks beside the parent's, and leave like anyone else once done (layout.js); moved up a
+      // seat when one before them has gone, they walk over. More than fit show as a +N above the last one.
+      desk.subagents.forEach((kid, i) => {
+        const going = desk.leaving.includes(kid), k = place(kid, () => this.#character(kid, HELPER_SCALE), going), seat = anchor.helpers[i];
+        if (k.anchor && !k.leaving && animate && !still && k.anchor.seat.distanceTo(seat.seat) > 0.05) k.trip = { to: 'desk' };
+        k.anchor = seat; leave(k, going);
+      });
       let plus = this.characters.get(`${id}#plus`);
       if (desk.overflow && (!plus || plus.count !== desk.overflow)) {
         if (plus) { plus.root.removeFromParent(); plus.root.material.map.dispose(); plus.root.material.dispose(); }

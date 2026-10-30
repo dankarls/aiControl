@@ -3,7 +3,7 @@
 // Everything is anchored at the back-left corner, pods keep their grid cell once placed, and the room only grows,
 // so nobody already seated moves when projects come and go.
 // ponytail: cells fit CELL_PAIRS pairs; a pod bigger than that widens every cell and shifts later columns once.
-export const DESK_W = 1.6, DESK_D = 0.9, AISLE = 1.9, MAX_SUBAGENTS = 3, VACANT_MS = 30_000;
+export const DESK_W = 1.6, DESK_D = 0.9, AISLE = 1.9, MAX_SUBAGENTS = 3, VACANT_MS = 30_000, DONE_MS = 60_000;
 // The first column sits a little nearer the left wall (bookshelf and coffee corner) than AISLE, leaving more room by the lounge.
 const CHAIR = 0.9, START = 2.6, MIN_ROOM = 8, CELL_PAIRS = 3, LEFT = 1.5;
 
@@ -73,10 +73,12 @@ export function layoutOffice(sessions, previous, now = Date.now()) {
   const width = Math.max(MIN_ROOM, previous?.room.width || 0, cols * cellW + AISLE), depth = Math.max(MIN_ROOM, previous?.room.depth || 0, rows * cellD + AISLE + START);
 
   const vacant = new Map(top.filter(s => s.vacantSince !== undefined).map(s => [s.id, s.vacantSince]));
-  const kids = new Map();
-  for (const session of sessions) if (session.parentId && ids.has(session.parentId)) {
+  // A helper that's finished (idle since it last wrote) sits DONE_MS, then walks out (`leaving`) and is gone VACANT_MS later.
+  // One already done when first seen never sits down.
+  const kids = new Map(), done = session => session.status === 'idle' ? now - (session.updatedAt ?? now) : -Infinity;
+  for (const session of sessions) if (session.parentId && ids.has(session.parentId) && done(session) < DONE_MS + VACANT_MS) {
     if (!kids.has(session.parentId)) kids.set(session.parentId, []);
-    kids.get(session.parentId).push(session.id);
+    kids.get(session.parentId).push(session);
   }
 
   const desks = new Map();
@@ -86,10 +88,12 @@ export function layoutOffice(sessions, previous, now = Date.now()) {
     pod.z = AISLE + pod.row * cellD + pod.depth / 2;
     pod.slots.forEach((id, slot) => {
       if (id === undefined) return;
-      const children = kids.get(id) || [];
+      // Helpers keep the seats they had, newcomers after them in the order they came.
+      const before = previous?.desks.get(id)?.subagents || [], rank = kid => { const i = before.indexOf(kid.id); return i < 0 ? before.length : i; };
+      const children = (kids.get(id) || []).filter(kid => done(kid) < DONE_MS || before.includes(kid.id)).sort((a, b) => rank(a) - rank(b)), seated = children.slice(0, MAX_SUBAGENTS);
       desks.set(id, {
         sessionId: id, podKey: pod.key, slot, ...seat(pod, slot),
-        subagents: children.slice(0, MAX_SUBAGENTS), overflow: Math.max(0, children.length - MAX_SUBAGENTS),
+        subagents: seated.map(kid => kid.id), leaving: seated.filter(kid => done(kid) >= DONE_MS).map(kid => kid.id), overflow: Math.max(0, children.length - MAX_SUBAGENTS),
         ...(vacant.has(id) && { vacantSince: vacant.get(id) }),
       });
     });
