@@ -1,8 +1,9 @@
 // The putting green in the secret room: holes from golf-course.js, built, drawn and played here.
 // Click the course (or the notice board beside it) to play: the view moves behind the ball, raised enough to see the cup,
-// and follows the ball as it rolls. Press anywhere and drag back, like drawing back a putter, and let go: the ball goes the
-// other way, as hard as you dragged (drag back to where you pressed to call it off). The green's height is in shades of green,
-// darkest in its lowest hollow and lightest on its highest crest.
+// and follows the ball as it rolls. The putter's head goes where the pointer is on the green: the putt goes from there through
+// the ball, as hard as the club is drawn back (REACH for the hardest). Click to putt; a finger aims while it presses and
+// putts as it lifts. Let go with the club at the ball and nothing happens. The green rises and falls (drawn twice as high
+// as it rolls, so it shows), in shades of green from its lowest hollow to its highest crest, hill-shaded.
 // Holes 1 to 50 are the same for everyone; the notice board keeps your best on each, and any you've reached can be picked
 // there to play again. Endless (on the board too) deals fresh holes, harder as it goes, until you're ten over par; your
 // longest run is kept. Bumpers flash as they kick the ball away, coffee costs a stroke and puts the ball back where it was
@@ -16,10 +17,11 @@ import { drawCall, CHALK } from './darts.js';
 import { SECRET } from './secret.js';
 import { BALL, CUP, RAIL, PIPE, PERIOD, DT, MAX, HOLE_COUNT, PARS, hole, endless, height, step, inside } from './golf-course.js';
 
-const BASE = 0.16, CAP = 0.06; // the green's surface over the floor; how far rails stand above it
-// How far a drag goes for the hardest putt (a share of the scene's height); strokes before you pick up; how far over par
-// ends an Endless run.
-const PULL = 0.3, STROKES = 8, OUT = 10, SAVE = 'ai-control-golf';
+// The green's surface over the floor (high enough that its deepest hollow stays above it); how far rails stand above it;
+// how much higher than it rolls the green is drawn, so its humps and hollows show.
+const BASE = 0.26, CAP = 0.06, LIFT = 2;
+// How far back the club is drawn for the hardest putt (m); strokes before you pick up; how far over par ends an Endless run.
+const REACH = 0.6, STROKES = 8, OUT = 10, SAVE = 'ai-control-golf';
 const NEON = ['#ff4fd8', '#38f2ff', '#ffe14f', '#7dff6b', '#ff8a3d'], RAIL_BODY = '#2b2346';
 const BOARD = { x: SECRET.w - 0.03, y: 1.55, z: -2.55, w: 1.7, h: 1.2 }; // the notice board, on the far wall
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
@@ -43,21 +45,24 @@ function putterParts() {
     [along(new THREE.CylinderGeometry(0.005, 0.005, 0.62, 8), heel, 0.62), '#aab0bb'], [along(new THREE.CylinderGeometry(0.0095, 0.008, 0.24, 10), heel.clone().addScaledVector(lean, 0.6), 0.24), '#1b1a1f'],
   ];
 }
-// The rails, posts, wedges and inner walls of hole `c` in one painted geometry: dark bodies under coloured caps.
+// The rails, posts, wedges and inner walls of hole `c` in one painted geometry: dark bodies from the floor up to where the
+// green is highest along them, under coloured caps.
 function railParts(c) {
-  const parts = [], post = (x, z, bottom) => parts.push([new THREE.CylinderGeometry(RAIL * 1.3, RAIL * 1.3, BASE + CAP + 0.012 - bottom, 12).translate(x, (BASE + CAP + 0.012 + bottom) / 2, z), '#f4f2ec']);
-  const bar = ([x1, z1, x2, z2], bottom, color) => {
-    const length = Math.hypot(x2 - x1, z2 - z1) + 0.004, turn = -Math.atan2(z2 - z1, x2 - x1), x = (x1 + x2) / 2, z = (z1 + z2) / 2;
-    parts.push([new THREE.BoxGeometry(length, BASE - bottom, RAIL * 2).rotateY(turn).translate(x, (BASE + bottom) / 2, z), RAIL_BODY]);
-    parts.push([new THREE.BoxGeometry(length, CAP, RAIL * 2 + 0.006).rotateY(turn).translate(x, BASE + CAP / 2, z), color]);
+  const parts = [], green = (x1, z1, x2 = x1, z2 = z1) => { let top = 0; for (let i = 0; i <= 8; i++) top = Math.max(top, height(c, x1 + (x2 - x1) * i / 8, z1 + (z2 - z1) * i / 8)); return BASE + top * LIFT; };
+  const post = (x, z, top = green(x, z)) => parts.push([new THREE.CylinderGeometry(RAIL * 1.3, RAIL * 1.3, top + CAP + 0.012, 12).translate(x, (top + CAP + 0.012) / 2, z), '#f4f2ec']);
+  const bar = ([x1, z1, x2, z2], color) => {
+    const length = Math.hypot(x2 - x1, z2 - z1) + 0.004, turn = -Math.atan2(z2 - z1, x2 - x1), x = (x1 + x2) / 2, z = (z1 + z2) / 2, top = green(x1, z1, x2, z2);
+    parts.push([new THREE.BoxGeometry(length, top, RAIL * 2).rotateY(turn).translate(x, top / 2, z), RAIL_BODY]);
+    parts.push([new THREE.BoxGeometry(length, CAP, RAIL * 2 + 0.006).rotateY(turn).translate(x, top + CAP / 2, z), color]);
+    return top;
   };
-  c.outline.forEach((p, i) => { bar([...p, ...c.outline[(i + 1) % c.outline.length]], 0, NEON[i % NEON.length]); post(...p, 0); });
-  // A wedge stands on the green: its two inner sides as rails, its top filled in.
+  c.outline.forEach((p, i) => { bar([...p, ...c.outline[(i + 1) % c.outline.length]], NEON[i % NEON.length]); post(...p); });
+  // A wedge: its two inner sides as rails, its top filled in level with the higher.
   for (const [p, q, s] of c.wedges) {
-    bar([...p, ...q], BASE - 0.03, NEON[1]); bar([...q, ...s], BASE - 0.03, NEON[1]); post(...q, BASE - 0.03);
-    parts.push([new THREE.ShapeGeometry(new THREE.Shape([p, q, s].map(([x, z]) => new THREE.Vector2(x, -z)))).rotateX(-Math.PI / 2).translate(0, BASE + CAP, 0), NEON[1]]);
+    const top = Math.max(bar([...p, ...q], NEON[1]), bar([...q, ...s], NEON[1])); post(...q, top);
+    parts.push([new THREE.ShapeGeometry(new THREE.Shape([p, q, s].map(([x, z]) => new THREE.Vector2(x, -z)))).rotateX(-Math.PI / 2).translate(0, top + CAP, 0), NEON[1]]);
   }
-  for (const wall of c.inner) { bar(wall, BASE - 0.03, NEON[2]); post(wall[0], wall[1], BASE - 0.03); post(wall[2], wall[3], BASE - 0.03); }
+  for (const wall of c.inner) { const top = bar(wall, NEON[2]); post(wall[0], wall[1], top); post(wall[2], wall[3], top); }
   return parts;
 }
 // The green's top: a 5 cm grid over the hole, the vertices outside the outline pulled onto it, raised by the slopes.
@@ -72,7 +77,7 @@ function surfaceGeometry(c, box) {
       c.outline.forEach(([x1, z1], e) => { const [x2, z2] = c.outline[(e + 1) % c.outline.length], dx = x2 - x1, dz = z2 - z1, t = clamp(((x - x1) * dx + (z - z1) * dz) / (dx * dx + dz * dz), 0, 1), d = Math.hypot(x - x1 - dx * t, z - z1 - dz * t); if (d < best) { best = d; px = x1 + dx * t; pz = z1 + dz * t; } });
       x = px; z = pz;
     }
-    position.set([x, height(c, x, z), z], k * 3); uv.set([(x - box.x0) / (box.x1 - box.x0), 1 - (z - box.z0) / (box.z1 - box.z0)], k * 2);
+    position.set([x, height(c, x, z) * LIFT, z], k * 3); uv.set([(x - box.x0) / (box.x1 - box.x0), 1 - (z - box.z0) / (box.z1 - box.z0)], k * 2);
   }
   for (let j = 0; j < rows - 1; j++) for (let i = 0; i < cols - 1; i++) {
     const a = j * cols + i, b = a + 1, d = a + cols, e = d + 1;
@@ -82,17 +87,19 @@ function surfaceGeometry(c, box) {
   return g;
 }
 // Height as felt in seven shades of green, from the darkest in this hole's lowest hollow to the lightest on its highest crest,
-// with a darker line where one shade meets the next, like a map's; a flat hole is one even green. Drawn unlit (the room's
-// coloured light would muddy the shades).
+// with a darker line where one shade meets the next, like a map's, and hill shading as if lit from the back left; a flat
+// hole is one even green. Drawn unlit (the room's coloured light would muddy the shades), so the shading is baked in.
 const SHADES = ['#2b7631', '#38893b', '#479c45', '#58ae50', '#6dc05d', '#88d06f', '#aade8a'].map(hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)));
 function drawGreen(g, w, h, c, box) {
   if (!c) return;
   let low = Infinity, high = -Infinity; for (const v of c.grid.h) { low = Math.min(low, v); high = Math.max(high, v); }
-  const img = g.createImageData(w, h), sx = (box.x1 - box.x0) / w, sz = (box.z1 - box.z0) / h, span = high - low;
+  const img = g.createImageData(w, h), sx = (box.x1 - box.x0) / w, sz = (box.z1 - box.z0) / h, span = high - low, light = new THREE.Vector3(-0.45, 1, -0.6).normalize(), normal = new THREE.Vector3();
   const shade = (x, z) => span < 0.008 ? 3 : Math.min(SHADES.length - 1, Math.floor((height(c, x, z) - low) / span * SHADES.length));
   for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
     const x = box.x0 + (i + 0.5) * sx, z = box.z0 + (j + 0.5) * sz, here = shade(x, z), k = (j * w + i) * 4;
-    const tint = (here !== shade(x + sx, z) || here !== shade(x, z + sz) ? 0.72 : 1) * (0.97 + hash(i, j) * 0.06);
+    normal.set(-(height(c, x + sx, z) - height(c, x - sx, z)) / (2 * sx) * LIFT * 3, 1, -(height(c, x, z + sz) - height(c, x, z - sz)) / (2 * sz) * LIFT * 3).normalize();
+    const lit = clamp(1 + 1.6 * (normal.dot(light) - light.y), 0.6, 1.3); // sunlit slopes lighter, the far sides darker
+    const tint = (here !== shade(x + sx, z) || here !== shade(x, z + sz) ? 0.72 : 1) * lit * (0.97 + hash(i, j) * 0.06);
     for (let n = 0; n < 3; n++) img.data[k + n] = SHADES[here][n] * tint;
     img.data[k + 3] = 255;
   }
@@ -181,8 +188,8 @@ export function createGolf({ camera, canvas, ray, onPlay }) {
   const box = { x0: 0, z0: 0, x1: 1, z1: 1 }, local = new THREE.Vector3(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0)), hitPoint = new THREE.Vector3(), rayer = new THREE.Ray();
   // The view while playing, easing after the ball: behind it along `heading` (to the cup when it last stopped).
   const view = { from: new THREE.Vector3(), look: new THREE.Vector3(), heading: new THREE.Vector2(1, 0), set: false };
-  const surfaceY = (x, z) => BASE + height(c, x, z);
-  const hint = () => !active ? 'Click the green to play' : mode === 'holes' && progress.n === 1 && !strokes ? 'Press anywhere, drag back and let go' : '';
+  const surfaceY = (x, z) => BASE + height(c, x, z) * LIFT;
+  const hint = () => !active ? 'Click the green to play' : mode === 'holes' && progress.n === 1 && !strokes ? 'Draw the club back from the ball and click' : '';
   const redraw = () => boardTexture?.redraw({ mode, n: progress.n, index: run?.index ?? 0, over: run?.over ?? 0, par: c.par, strokes, best: progress.best, reached: progress.reached, endlessBest: progress.endlessBest, hint: hint() });
   const aimAtCup = () => { const d = view.heading.set(c.cup.x - ball.x, c.cup.z - ball.z); if (d.lengthSq() > 1e-6) d.normalize(); };
 
@@ -215,7 +222,7 @@ export function createGolf({ camera, canvas, ray, onPlay }) {
     leave() { active = false; pull = null; redraw(); },
     // Where you stand when you step back (on the floor, in world space, facing the cup), and the view while playing.
     stand() { const [x, z] = within(ball.x - view.heading.x * 0.9, ball.z - view.heading.y * 0.9, 0.4), p = room.localToWorld(new THREE.Vector3(x, 0, z)); return { x: p.x, z: p.z, yaw: Math.atan2(view.heading.x, view.heading.y) }; },
-    pose() { return { from: room.localToWorld(view.from.clone()), look: room.localToWorld(view.look.clone()), fov: 55, hands: false }; },
+    pose() { return { from: room.localToWorld(view.from.clone()), look: room.localToWorld(view.look.clone()), fov: 65, hands: false }; },
     click() { return false; }, // a putt is a pull, not a click
     build(group) {
       room = group;
@@ -289,10 +296,10 @@ export function createGolf({ camera, canvas, ray, onPlay }) {
       ballMesh.position.set(ball.sunk ? c.cup.x : ball.x, surfaceY(ball.x, ball.z) + BALL - down * 0.06, ball.sunk ? c.cup.z : ball.z);
       shadow.visible = !ball.sunk; shadow.position.set(ball.x, surfaceY(ball.x, ball.z) + 0.002, ball.z);
       // The flag comes out as the ball nears the cup.
-      flag.position.y += ((Math.hypot(ball.x - c.cup.x, ball.z - c.cup.z) < 0.7 && (rolling || pull) ? 0.4 : 0) - flag.position.y) * Math.min(1, dt * 6);
+      flag.position.y += ((Math.hypot(ball.x - c.cup.x, ball.z - c.cup.z) < 0.7 && (rolling || pull?.held) ? 0.4 : 0) - flag.position.y) * Math.min(1, dt * 6);
       if (sunkAt >= 0 && time - sunkAt > (still ? 0.6 : 1.9)) next();
-      // The club rests behind the ball, facing the cup, until you pull.
-      if (golf.ready && !pull) place(view.heading, 0.03);
+      // The club: where you aim it, else resting behind the ball facing the cup.
+      if (golf.ready) place(pull?.dir ?? view.heading, pull?.back ?? 0.03);
       club.visible = golf.ready || !!swing;
       arrow.visible = !!pull && pull.power > 0.03;
       if (arrow.visible) { arrow.position.set(ball.x, surfaceY(ball.x, ball.z) + 0.012, ball.z); arrow.rotation.y = -Math.atan2(pull.dir.y, pull.dir.x); arrow.scale.set(0.25 + 1.4 * pull.power, 1, 1); arrow.material.color.setHSL(0.33 * (1 - pull.power), 1, 0.6); }
@@ -303,12 +310,12 @@ export function createGolf({ camera, canvas, ray, onPlay }) {
       }
       if (call.visible) { const age = time - call.userData.at; call.material.opacity = Math.max(0, 1 - age / 1.8); if (age > 1.8) call.visible = false; }
       // The view: behind the ball, high enough to see down to the cup, kept off the walls (rising by however far it was
-      // pulled in); it eases after the ball, and holds still while you pull.
-      if (!pull) {
+      // pulled in); it eases after the ball, and holds still while a finger aims.
+      if (!pull?.held) {
         const k = still || !view.set ? 1 : 1 - Math.exp(-dt * 2.5), y = surfaceY(ball.x, ball.z), far = Math.hypot(c.cup.x - ball.x, c.cup.z - ball.z);
         const back = [ball.x - view.heading.x * 1.6, ball.z - view.heading.y * 1.6], [cx, cz] = within(...back, 0.3);
         view.from.lerp(local.set(cx, y + Math.min(2.6, 1.3 + 0.25 * far + 0.7 * Math.hypot(back[0] - cx, back[1] - cz)), cz), k);
-        view.look.lerp(local.set(ball.x + (c.cup.x - ball.x) * 0.2, y, ball.z + (c.cup.z - ball.z) * 0.2), k); view.set = true;
+        view.look.lerp(local.set(ball.x + (c.cup.x - ball.x) * 0.05, y, ball.z + (c.cup.z - ball.z) * 0.05), k); view.set = true; // the ball a little below the middle, room behind it to draw the club back
       }
     },
   };
@@ -347,27 +354,25 @@ export function createGolf({ camera, canvas, ray, onPlay }) {
     confetti.userData.at = time; confetti.visible = true;
   }
 
-  // Pulling back: the way is where the pointer meets the level of the ball, against where you pressed (the putt goes the
-  // other way); how hard is how far it's been dragged on the screen, so a short drag anywhere does, ball near an edge or not.
+  // Where the pointer meets the level of the ball.
   const onPlane = event => {
     rayer.origin.copy(room.worldToLocal(local.copy(camera.position))); rayer.direction.copy(ray(event));
     plane.constant = -surfaceY(ball.x, ball.z); return rayer.intersectPlane(plane, hitPoint) && hitPoint.clone();
   };
-  canvas.addEventListener('pointerdown', event => {
-    if (event.button !== 0 || !golf.ready) return;
-    const at = onPlane(event); if (at) pull = { start: at, x: event.clientX, y: event.clientY, dir: view.heading.clone(), power: 0 };
-  });
-  canvas.addEventListener('pointermove', event => {
-    if (!pull) return;
+  // Aiming: the club's head under the pointer, no further back than REACH; the putt would go from it through the ball, as
+  // hard as it's drawn back. A mouse aims as it moves, a finger while it presses; either putts on letting go.
+  const aimAt = event => {
     const at = onPlane(event); if (!at) return;
-    const dx = pull.start.x - at.x, dz = pull.start.z - at.z, length = Math.hypot(dx, dz);
-    pull.power = Math.min(1, Math.hypot(event.clientX - pull.x, event.clientY - pull.y) / (canvas.clientHeight * PULL)); if (length > 0.003) pull.dir.set(dx / length, dz / length);
-    place(pull.dir, 0.03 + pull.power * 0.4);
-  });
-  canvas.addEventListener('pointerup', () => {
-    if (!pull) return;
-    const { dir, power } = pull; pull = null;
-    if (power > 0.03 && golf.ready) swing = { t: 0, dir, back: 0.03 + power * 0.4, speed: power * MAX };
+    const dx = ball.x - at.x, dz = ball.z - at.z, length = Math.hypot(dx, dz), back = clamp(length - BALL - 0.004, 0.02, REACH);
+    pull = { held: pull?.held, dir: length > 1e-3 ? new THREE.Vector2(dx / length, dz / length) : view.heading.clone(), back, power: clamp((back - 0.03) / (REACH - 0.03), 0, 1) };
+  };
+  canvas.addEventListener('pointermove', event => { if (golf.ready && (event.pointerType === 'mouse' || pull?.held)) aimAt(event); });
+  canvas.addEventListener('pointerleave', () => { if (!pull?.held) pull = null; });
+  canvas.addEventListener('pointerdown', event => { if (event.button !== 0 || !golf.ready) return; aimAt(event); if (pull) pull.held = true; });
+  canvas.addEventListener('pointerup', event => {
+    if (!pull?.held) return;
+    aimAt(event); const { dir, power, back } = pull; pull = null;
+    if (power > 0.04 && golf.ready) swing = { t: 0, dir, back, speed: power * MAX };
   });
   canvas.addEventListener('pointercancel', () => { pull = null; });
   return golf;
