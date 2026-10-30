@@ -15,3 +15,5 @@ export function savedColour() {
 export function saveColour(name) {
   try { localStorage.setItem(storageKey, name); } catch { /* Private browsing can disable storage. */ }
 }
+// The only colours allowed to compete for attention.
+export const SIGNALS = { need: '#ff4a33', working: '#39e0c8', idle: '#9fb4e0', near: '#ff8426' };
