@@ -233,8 +233,11 @@ export function createRoom(scene, renderer) {
   const deskShadows = floorShadow(1, 1, 0.3); deskShadows.geometry = new THREE.BufferGeometry(); root.add(deskShadows);
   const room = {
     // The secret room behind the lounge's bookshelf; pressing its right book calls room.onSecret (office.js walks you over).
-    secret: createSecret({ onPress: () => room.onSecret?.() }),
-    colliders: [], furnitureColliders: [], fadeables: { ceiling: null, walls: [] }, boards: {},
+    secret: createSecret({ onPress: () => room.onSecret?.(), onMove: () => room.refreshFlight() }),
+    colliders: [], flightColliders: [], lintels: [], furnitureColliders: [], fadeables: { ceiling: null, walls: [] }, boards: {},
+    // What thrown things meet: what blocks walking, less what's only for walking, plus what you can't walk into (the wall over a
+    // doorway). A new list whenever room.colliders changes or a door moves: it's how props.js knows to wake things.
+    refreshFlight() { room.flightColliders = [...room.colliders.filter(box => !box.walkOnly), ...room.lintels]; },
     deskAnchor(id) {
       const desk = desks.get(id); if (!desk) return null;
       desk.group.updateMatrixWorld();
@@ -294,7 +297,7 @@ export function createRoom(scene, renderer) {
         if (sign.waiting !== waiting) { sign.waiting = waiting; sign.texture.redraw(waiting); }
       }
       for (const [key, sign] of signs) if (!podKeys.has(key)) { disposeTree(sign.group); signs.delete(key); }
-      room.colliders = [...room.wallColliders, ...room.furnitureColliders, ...solid];
+      room.colliders = [...room.wallColliders, ...room.furnitureColliders, ...solid]; room.refreshFlight();
       lights.refresh();
     },
     // A session's newest screenshot ({ bitmap, count }) for its second monitor, or null for none (and no second monitor).
@@ -395,7 +398,7 @@ export function createRoom(scene, renderer) {
 
     // Walls, each with the inward normal used to fade the ones between the overview camera and the room.
     // What hangs on a wall is its child, so it hides with the wall. Side walls' local x runs toward -z: x = depth / 2 - z.
-    room.fadeables.walls = []; room.wallColliders = [];
+    room.fadeables.walls = []; room.wallColliders = []; room.lintels = [];
     // `door`: where along it (its local x) a doorway is cut, DOOR.w wide and DOOR.h high; the trim and what blocks walking stop
     // either side of it.
     const wall = (w, x, z, rotation, normal, color = '#eef1f5', door) => {
@@ -406,7 +409,9 @@ export function createRoom(scene, renderer) {
       m.position.set(x, WALL_H / 2, z); m.rotation.y = rotation; shell.add(m); m.updateMatrixWorld();
       const trim = mesh(mergeGeometries(trims.map(([a, b]) => new THREE.BoxGeometry(b - a, 0.14, WALL_T + 0.04).translate((a + b) / 2, 0, 0))), toonMaterial('#3a4352'), 0); trim.position.y = -WALL_H / 2 + 0.07; m.add(trim);
       room.fadeables.walls.push({ mesh: m, normal });
-      for (const [a, b] of spans) room.wallColliders.push(new THREE.Box3(new THREE.Vector3(a, -WALL_H / 2, -WALL_T / 2), new THREE.Vector3(b, WALL_H / 2, WALL_T / 2)).applyMatrix4(m.matrixWorld));
+      const solid = (a, b, y = -WALL_H / 2) => new THREE.Box3(new THREE.Vector3(a, y, -WALL_T / 2), new THREE.Vector3(b, WALL_H / 2, WALL_T / 2)).applyMatrix4(m.matrixWorld);
+      for (const [a, b] of spans) room.wallColliders.push(solid(a, b));
+      if (door !== undefined) room.lintels.push(solid(door - DOOR.w / 2, door + DOOR.w / 2, DOOR.h - WALL_H / 2));
       return m;
     };
     // Two accent walls: teal behind the windows, coral on the right.

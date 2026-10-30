@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { STEP, TiltedBox, makeBody, stepBody, advance, simulate } from '../client/office/flight.js';
+import { STEP, TiltedBox, makeBody, stepBody, advance, simulate, escaped } from '../client/office/flight.js';
+import { createProps, moveBody } from '../client/office/props.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const kind = (extra = {}) => ({ radius: 0.1, low: 0.1, bounce: 0.5, roll: 1, drag: 0.1, throw: 8, tumble: 4, upright: false, centre: V(0, 0, 0), ...extra });
@@ -140,4 +141,123 @@ test('a shot stops at 8 s at the latest', () => {
   const c = makeBody(kind(), V(0, 1, 0), V(1, 0, 0));
   assert.ok(simulate(c, { colliders: [] }, { stop: ({ surface }) => surface === 'floor' }).contacts.at(-1).surface === 'floor');
   assert.equal(STEP, 1 / 240);
+});
+
+test('a body outside the building counts as escaped', () => {
+  const building = { left: -9, width: 20, depth: 10 };
+  for (const [x, z] of [[-10.1, 5], [21.1, 5], [5, -1.1], [5, 11.1]]) assert.ok(escaped(V(x, 1, z), building), `${x} ${z}`);
+  for (const [x, z] of [[5, 5], [-3, 5], [-9, 5], [-9.9, 5], [20.9, 5], [5, -0.9], [5, 10.9]]) assert.ok(!escaped(V(x, 1, z), building), `${x} ${z}`);
+});
+
+// What props.js adds to a flight body.
+const thing = (k, pos, vel) => Object.assign(makeBody(k, pos, vel), { turn: new THREE.Quaternion(), hits: new Set(), home: pos.clone() });
+const building = { left: 0, width: 10, depth: 10 };
+const mug = { radius: 0.07, low: 0.05, bounce: 0.2, roll: 6, drag: 0.3, upright: true };
+const lean = b => V(0, 1, 0).applyQuaternion(b.turn).y;
+
+test('a mug that stops leaning stands back up before it counts as still', () => {
+  const tilted = () => { const b = thing(mug, V(5, 0.05, 5), V(0, 0, 0)); b.turn.setFromAxisAngle(V(1, 0, 0), 1.2); return b; };
+  // flight alone rests it as it is, or there'd be nothing here to check
+  const alone = tilted(); for (let i = 0; i < 60 && !alone.rest; i++) advance(alone, 1 / 60, { colliders: [] });
+  assert.ok(alone.rest); assert.ok(lean(alone) < 0.5);
+  for (const dt of [1 / 30, 1 / 60, 1 / 144]) {
+    const b = tilted(); let frames = 0;
+    for (; !b.rest && frames < 600; frames++) { moveBody(b, dt, { colliders: [] }, building); if (b.rest) break; }
+    assert.ok(b.rest, `${dt}`); assert.ok(lean(b) > 0.999, `${dt}: ${lean(b)}`);
+    assert.ok(frames * dt > 0.2 && frames * dt < 1.5, `${dt}: took ${frames * dt}`);
+    assert.deepEqual(b.pos.toArray(), [5, 0.05, 5]); // straightening doesn't creep
+  }
+});
+
+test('thrown things tumble in the air, a mug too until it lands; a ball rolls along the floor', () => {
+  for (const k of [mug, kind()]) {
+    const b = thing(k, V(5, 2.5, 5), V(1, 0, 0)); b.spin.set(0, 0, 8);
+    for (let i = 0; i < 12; i++) moveBody(b, 1 / 60, { colliders: [] }, building);
+    const angle = 2 * Math.acos(Math.min(1, Math.abs(b.turn.w)));
+    assert.ok(Math.abs(angle - 8 * Math.exp(-0.5 * 0.1) * 0.2) < 0.05, `${angle}`);
+    assert.ok(b.spin.length() > 7);
+  }
+  const b = thing(kind({ roll: 0.5 }), V(1, 0.1, 5), V(3, 0, 0));
+  for (let i = 0; i < 3; i++) moveBody(b, 1 / 60, { colliders: [] }, building); // 30 rad/s
+  const roll = V(0, 1, 0).applyQuaternion(b.turn); // rolling toward +x turns its top toward +x
+  assert.ok(roll.x > 0.5, `${roll.toArray()}`);
+});
+
+test('a body rests where its home is, and an escaped one goes back there still', () => {
+  const b = thing(kind(), V(5, 0.5, 5), V(1, 0, 1)); b.hits.add('someone');
+  for (let i = 0; i < 600 && !b.rest; i++) moveBody(b, 1 / 60, { colliders: [] }, building);
+  assert.ok(b.rest); assert.deepEqual(b.home.toArray(), b.pos.toArray()); assert.notDeepEqual(b.home.toArray(), [5, 0.5, 5]);
+  assert.equal(b.hits.size, 0, 'at rest it can hit them again');
+  const home = b.home.clone();
+  b.rest = false; b.pos.set(-1.5, 1, 5); b.vel.set(-4, 0, 0); b.spin.set(1, 1, 1);
+  moveBody(b, 1 / 60, { colliders: [] }, building);
+  assert.deepEqual(b.pos.toArray(), home.toArray()); assert.deepEqual(b.vel.toArray(), [0, 0, 0]); assert.deepEqual(b.spin.toArray(), [0, 0, 0]);
+  // one that's never rested goes back to where it started
+  const c = thing(kind(), V(3, 1, 3), V(-50, 0, 0));
+  moveBody(c, 0.1, { colliders: [] }, building);
+  assert.deepEqual(c.pos.toArray(), [3, 1, 3]);
+  // coming to rest out there doesn't make out there home
+  const d = thing(kind(), V(3, 0.1, 3), V(0, 0, 0)); d.pos.set(-5, 0.1, 3); d.quiet = 1;
+  moveBody(d, 1 / 60, { colliders: [] }, building);
+  assert.deepEqual(d.pos.toArray(), [3, 0.1, 3]); assert.deepEqual(d.home.toArray(), [3, 0.1, 3]);
+});
+
+// The real props on a stand-in office: no document in Node, so a blank canvas for its textures.
+const blank = () => new Proxy({}, { get: (t, k) => k in t ? t[k] : () => ({ addColorStop() {} }), set: (t, k, v) => { t[k] = v; return true; } });
+const box3 = (x0, y0, z0, x1, y1, z1, extra) => Object.assign(box(x0, y0, z0, x1, y1, z1), extra);
+function office({ colliders = [], still = false, people = [] } = {}) {
+  const heard = [], scene = new THREE.Scene(), player = { position: V(1, 1.6, 1), forward: V(0, 0, -1), yaw: 0, flight: null };
+  const room = { flightColliders: colliders, secret: { bounds: r => ({ left: 0, width: r.width + 13.2, depth: r.depth }), inside: p => p.x > 10.1 } };
+  const characters = new Map(people.map(p => [p.id, { scale: 1, root: { visible: true } }]));
+  const cast = { characters, positionOf: id => { const p = people.find(p => p.id === id); return p && V(p.x, p.top + 0.08, p.z); } };
+  const camera = new THREE.PerspectiveCamera(); camera.position.set(1, 1.6, 1);
+  globalThis.document = { createElement: () => ({ getContext: blank }) };
+  const props = createProps(scene, { room, cast, camera, player, view: { amount: 0, drunk: 0 }, bounds: () => ({ width: 10, depth: 10 }), reducedMotion: () => still, onHit: (id, line) => heard.push([id, line]) });
+  delete globalThis.document;
+  const ball = scene.children[0].children[0].userData.prop(0); // the football
+  const run = (seconds, rate = 60) => { for (let i = 0; i < seconds * rate; i++) props.update(1 / rate); };
+  run(0.1);
+  const send = (pos, vel) => { ball.pos.set(...pos); ball.vel.set(...vel); ball.rest = false; };
+  return { props, run, ball, send, room, player, heard };
+}
+
+test('only real walls stop things now: the room has no invisible edge', () => {
+  const a = office(); a.send([9.5, 1, 5], [4, 0, 0]); a.run(0.5);
+  assert.ok(a.ball.pos.x > 10.5, `${a.ball.pos.x}`);
+  const b = office({ colliders: [box3(10, 0, 0, 10.2, 3, 10)] }); b.send([9.5, 1, 5], [4, 0, 0]); b.run(0.5);
+  assert.ok(b.ball.pos.x <= 10 - 0.11 + 1e-6, `${b.ball.pos.x}`);
+});
+
+test('someone hit, or whose desk is knocked, says so once a throw', () => {
+  const ann = { id: 'ann', x: 5, z: 5, top: 1.6 }, desk = box3(7, 0, 4, 8, 0.75, 6, { owner: 'bob' }), bob = { id: 'bob', x: 7.5, z: 8, top: 1.6 };
+  const a = office({ people: [ann, bob], colliders: [desk] });
+  a.send([4, 1, 5], [5, 0, 0]); a.run(0.2);
+  assert.deepEqual(a.heard.map(h => h[0]), ['ann']); assert.ok(a.ball.vel.x < 0, 'and it bounced');
+  a.send([6.5, 0.4, 5], [5, 0, 0]); a.run(0.1); // bob's desk, hard
+  assert.deepEqual(a.heard.map(h => h[0]), ['ann', 'bob']);
+  const quiet = office({ people: [ann, bob], colliders: [desk] }); // gently: not worth a word
+  quiet.send([6.8, 0.4, 5], [1, 0, 0]); quiet.run(0.5);
+  quiet.send([4.55, 1, 5], [1, 0, 0]); quiet.run(0.3);
+  assert.deepEqual(quiet.heard, []);
+});
+
+test('a new flightColliders list wakes things: what lay on a desk falls', () => {
+  const desk = box3(4, 0, 4, 6, 0.75, 6), a = office({ colliders: [desk] });
+  a.send([5, 0.9, 5], [0, 0, 0]); a.run(1);
+  assert.ok(a.ball.rest); assert.ok(Math.abs(a.ball.pos.y - 0.86) < 1e-6);
+  a.room.flightColliders = []; a.run(4);
+  assert.ok(a.ball.rest); assert.ok(Math.abs(a.ball.pos.y - 0.11) < 1e-6);
+});
+
+test('a kick settles at once with reduced motion', () => {
+  const a = office({ still: true });
+  a.ball.pos.set(2, 0.11, 1); a.ball.rest = true; a.player.position.set(1.55, 1.6, 1); a.props.update(1 / 60); a.player.position.set(1.6, 1.6, 1); a.props.update(1 / 60);
+  assert.ok(a.ball.rest); assert.ok(a.ball.pos.x > 3, `${a.ball.pos.x}`);
+});
+
+test('what you drop going through the secret door stays in the office', () => {
+  const a = office(); a.player.position.set(10.5, 1.6, 5); a.ball.pos.set(10.8, 1, 5); a.run(0.05);
+  a.ball.pos.set(10.8, 1, 5); a.props.grab(a.ball); a.props.update(1 / 60);
+  a.props.throw(null, true);
+  assert.ok(a.ball.pos.x <= 10 - 0.11 + 1e-9, `${a.ball.pos.x}`);
 });

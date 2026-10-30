@@ -64,7 +64,7 @@ const neon = (g, w, h) => {
   for (let k = 1; k <= 12; k++) g.lineTo(w * 0.18 + k * w * 0.64 / 12, h * (k % 2 ? 0.72 : 0.8)); g.stroke();
 };
 
-export function createSecret({ onPress }) {
+export function createSecret({ onPress, onMove }) {
   let open = false, t = 0, idle = 0, press = 0, time = 0, built = null;
   const games = []; // what's played in here (darts.js): built into the room and updated with it
   const shelf = new THREE.Group(); shelf.userData.secret = 'shelf'; // userData keeps room.js's bake off what moves
@@ -79,7 +79,7 @@ export function createSecret({ onPress }) {
     // Inside the games room (past the middle of the wall), at `p`.
     inside(p) { return !!built && p.x > built.door.x + WALL_T / 2 && p.z > built.door.z - SECRET.back && p.z < built.door.z + SECRET.front; },
     // How far you may walk: the office and the games room beside it (walls and the shelf do the rest).
-    bounds(room) { return { width: room.width + WALL_T + SECRET.w, depth: room.depth }; },
+    bounds(room) { return { left: 0, width: room.width + WALL_T + SECRET.w, depth: room.depth }; },
     // Where to stand to press the right book.
     get spot() { return built && new THREE.Vector3(built.door.x - 0.9, 0, built.door.z); },
     toggle() { open = !open; idle = 0; press = PRESS; },
@@ -113,7 +113,7 @@ export function createSecret({ onPress }) {
       const inside = secret.inside(at);
       if (open && !inside && Math.hypot(at.x - built.door.x, at.z - built.door.z) > AWAY) { if ((idle += dt) > SHUT_AFTER) open = false; } else idle = 0;
       const goal = open ? 1 : 0;
-      if (t !== goal) { t = still ? goal : THREE.MathUtils.clamp(t + (goal ? dt : -dt) / MOVE, 0, 1); place(); }
+      if (t !== goal) { t = still ? goal : THREE.MathUtils.clamp(t + (goal ? dt : -dt) / MOVE, 0, 1); place(); onMove?.(); }
       press = Math.max(0, press - dt);
       key.rotation.x = LEAN + (still ? 0 : 0.4 * Math.sin(Math.PI * press / PRESS));
       const shown = (t > 0 || inside) && overview < 0.01;

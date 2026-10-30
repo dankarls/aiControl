@@ -28,9 +28,11 @@ export class TiltedBox {
 
 const vec = v => v?.isVector3 ? v.clone() : new Vector3().fromArray(v ?? [0, 0, 0]);
 export const makeBody = (kind, pos, vel) => ({ kind, pos: vec(pos), vel: vec(vel), spin: new Vector3(), ground: false, rest: false, due: 0, quiet: 0 });
+// More than a metre outside the building: it got past the walls somehow.
+export const escaped = (p, { left, width, depth }) => p.x < left - 1 || p.x > width + 1 || p.z < -1 || p.z > depth + 1;
 
 // Reports a hit before resolving it (the speed into the surface), then bounces: a hard knock keeps `bounce`, a soft one just stops.
-const contact = (b, world, n, surface, box) => {
+export const contact = (b, world, n, surface, box) => {
   const vn = b.vel.dot(n);
   if (vn < 0) {
     if (world.onContact) { event.surface = surface; event.box = box; event.speed = -vn; world.onContact(b, event); }
