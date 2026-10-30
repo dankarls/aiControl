@@ -6,6 +6,9 @@ import { canvasTexture } from './furniture.js';
 import { Overview } from './overview.js';
 
 const EASE = 5, FADED = 0.12, RUN_FOV = 6, STRIDE = 1.6; // radians of walk cycle per metre
+// A sip now and then: seconds between (at random in that range), its raise, hold and lower, and how much of a mug it is.
+// The hand comes in to your mouth, just under the bottom edge, and tips the mug a little past level (radians).
+const SIPS = [40, 110], RAISE = 0.35, HOLD = 0.5, LOWER = 0.45, SIP = 0.08, MOUTH = new THREE.Vector3(-0.22, 0.1, 0.33), TILT = 1.6;
 
 export class OfficeCamera {
   constructor(camera, scene, player, room, { reducedMotion, container }) {
@@ -39,6 +42,7 @@ export class OfficeCamera {
     this.hands.add(new THREE.Mesh(new THREE.SphereGeometry(0.021, 12, 8).translate(wrist.x, wrist.y, wrist.z), ink));
     this.was = { x: 0, z: 0, yaw: 0, pitch: 0 }; this.walk = this.stride = 0; this.sway = new THREE.Vector2();
     this.slosh = new THREE.Vector2(); this.sloshing = new THREE.Vector2(); // the coffee's tilt and how fast it's tilting
+    this.sipping = null; this.nextSip = SIPS[0]; this.drunk = 0; // seconds into a sip; till the next; what's been drunk (props.js takes it off the level)
     this.from = new THREE.Vector3(); this.look = new THREE.Vector3();
   }
 
@@ -86,15 +90,29 @@ export class OfficeCamera {
     const p = this.player, was = this.was, step = Math.hypot(p.position.x - was.x, p.position.z - was.z), rate = 1 / Math.max(dt, 0.001), k = 1 - Math.exp(-dt * 8);
     const spin = Math.atan2(Math.sin(p.yaw - was.yaw), Math.cos(p.yaw - was.yaw)) * rate, nod = (p.pitch - was.pitch) * rate;
     Object.assign(was, { x: p.position.x, z: p.position.z, yaw: p.yaw, pitch: p.pitch });
+    // Now and then a sip: up to your mouth at the bottom of the screen, tipped, and back. Not in a game, the overview, a
+    // talk or a pour, running or flying over, with the mug empty or with reduced motion, nor in the few seconds after any of those.
+    const free = !instant && !this.game && !this.gameAmount && !this.amount && !this.focusPoint && this.pour < 0.01 && !p.running && !p.flight && this.level > 0.05;
+    let sip = 0, sipping = 0;
+    if (instant) this.sipping = null;
+    if (this.sipping === null) { this.nextSip = free ? this.nextSip - dt : Math.max(this.nextSip, 3); if (this.nextSip <= 0) this.sipping = 0; }
+    else if (!free && this.sipping < RAISE + HOLD) this.sipping = RAISE + HOLD + (this.sipping < RAISE ? LOWER * (1 - this.sipping / RAISE) : 0); // put it down from where it is
+    if (this.sipping !== null) {
+      const t = this.sipping += dt, swallow = RAISE + HOLD / 2;
+      sip = THREE.MathUtils.smoothstep(t < RAISE + HOLD ? t / RAISE : 1 - (t - RAISE - HOLD) / LOWER, 0, 1);
+      sipping = Math.sin(THREE.MathUtils.clamp((t - RAISE) / HOLD, 0, 1) * Math.PI); // tipped a little further while drinking
+      if (t - dt < swallow && t >= swallow) this.drunk += SIP;
+      if (t >= RAISE + HOLD + LOWER) { this.sipping = null; this.nextSip = SIPS[0] + Math.random() * (SIPS[1] - SIPS[0]); }
+    }
     // Held out in front, raised and tipped to the left; the coffee hides once it would show through the side.
     const tip = this.pour, out = -0.1 * tip, lift = 0.12 * tip;
-    this.grip.rotation.set(-0.25 * tip, 0, 1.15 * tip);
-    this.coffee.visible = this.level > 0.02 && tip < 0.4; this.coffee.position.y = -0.05 + 0.09 * this.level;
-    if (instant || step > 0.5) { this.hands.position.set(out, lift, out); this.hands.rotation.z = 0; this.coffee.rotation.set(0, 0, 0); this.slosh.set(0, 0); this.sloshing.set(0, 0); return; } // reduced motion, or a jump across the room
+    this.grip.rotation.set(-0.25 * tip + sip * TILT + 0.1 * sipping, 0.3 * sip, 1.15 * tip);
+    this.coffee.visible = this.level > 0.02 && tip < 0.4 && sip < 0.85; this.coffee.position.y = -0.05 + 0.09 * this.level;
+    if (instant || step > 0.5) { this.hands.position.set(out, lift, out).addScaledVector(MOUTH, sip); this.hands.rotation.z = 0; this.coffee.rotation.set(0, 0, 0); this.slosh.set(0, 0); this.sloshing.set(0, 0); return; } // reduced motion, or a jump across the room
     this.walk += (Math.min(1, step * rate / 3) - this.walk) * k; this.stride += step * STRIDE;
     this.sway.x += (THREE.MathUtils.clamp(spin * 0.012, -0.03, 0.03) - this.sway.x) * k; this.sway.y += (THREE.MathUtils.clamp(-nod * 0.01, -0.025, 0.025) - this.sway.y) * k;
     const side = Math.sin(this.stride) * this.walk, dip = (1 - Math.cos(this.stride * 2)) * this.walk;
-    this.hands.position.set(side * 0.012 + this.sway.x + out, -dip * 0.008 + this.sway.y + lift, out); this.hands.rotation.z = this.sway.x * 1.5;
+    this.hands.position.set(side * 0.012 + this.sway.x + out, -dip * 0.008 + this.sway.y + lift, out).addScaledVector(MOUTH, sip); this.hands.rotation.z = this.sway.x * 1.5;
     // Walking pace nearly matches the spring (about 1.8 Hz), which carries the tilt to about one and a half times its aim.
     const s = this.slosh, v = this.sloshing, t = Math.min(dt, 0.05), ax = Math.cos(this.stride * 2) * 0.05 * this.walk - this.sway.y * 3, az = -side * 0.07 - this.sway.x * 4;
     v.x += (130 * (ax - s.x) - 5 * v.x) * t; v.y += (130 * (az - s.y) - 5 * v.y) * t;

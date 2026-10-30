@@ -310,6 +310,7 @@ export function createProps(scene, { room, cast, camera, player, view, bounds, r
       tip = still ? want : tip + (want - tip) * (1 - Math.exp(-dt * 8));
       if (filling && (level >= 1 || !byMachine())) filling = false;
       if (filling) level = still ? 1 : Math.min(1, level + dt * FILL);
+      level = Math.max(0, level - view.drunk); view.drunk = 0; // a sip (camera.js)
       view.pour = tip; view.level = level;
       const pours = !still && tip > 0.75 && level > 0 && view.mug;
       if (pours) {
