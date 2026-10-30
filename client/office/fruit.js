@@ -307,19 +307,30 @@ export function createFruit({ fruit, color, accessories = [], trim = '#ff5d8f' }
   // Both eyes are one mesh pivoting on the body's axis: turning it slides them around the skin, squashing it closes them.
   const centre = shape.surface(faceY);
   // Lashes flick out from the top outer edge of each eye; they're part of the eyes, so they blink and look along.
-  const lashes = has.has('lashes') ? [-1, 1].flatMap(side => [0.35, 0.8, 1.2].map(a => {
-    const rim = (k, lift) => onSkin(side * (spread + Math.cos(a) * 0.03 * k / centre.r), faceY + Math.sin(a) * 0.047 * k + lift, 0.002);
-    return arc([rim(1, 0), rim(1.35, 0.004), rim(1.6, 0.016)], 0.0045);
-  })) : [];
-  const eyeGeometry = mergeGeometries([...[-1, 1].map(side => { const at = onSkin(side * spread, faceY, -0.004); return baked(new THREE.SphereGeometry(0.042, 14, 10).scale(0.72, 1.12, 0.45), at, outward(at)); }), ...lashes]).translate(-centre.x, -faceY, 0);
-  const eyes = new THREE.Mesh(eyeGeometry, ink); own.push(eyeGeometry); face.add(eyes);
+  // `lid`, 0 to 1: how far a heavy upper lid has come down. It cuts the top off each eye, sloping down to the outside, with a line along the cut.
+  const eyeGeometry = lid => {
+    const height = 0.047 - lid * 0.045, slope = lid * 0.5, parts = [];
+    for (const side of [-1, 1]) {
+      const at = onSkin(side * spread, faceY, -0.004), eye = new THREE.SphereGeometry(0.042, 14, 10).scale(0.72, 1.12, 0.45), p = eye.attributes.position;
+      for (let i = 0; i < p.count; i++) p.setY(i, Math.min(p.getY(i), height - side * p.getX(i) * slope));
+      parts.push(baked(eye, at, outward(at)));
+      const skin = (along, up, out = 0.004) => onSkin(side * (spread + along / centre.r), faceY + height - along * slope + up, out);
+      if (lid) parts.push(arc([skin(-0.036, 0), skin(0.003, 0.004), skin(0.044, 0)], 0.0045));
+      if (has.has('lashes')) for (const a of [0.35, 0.8, 1.2]) {
+        const rim = (k, lift) => skin(Math.cos(a) * 0.03 * k, Math.sin(a) * height * k - height + lift, 0.002);
+        parts.push(arc([rim(1, 0), rim(1.35, 0.004), rim(1.6, 0.016)], 0.0045));
+      }
+    }
+    return mergeGeometries(parts).translate(-centre.x, -faceY, 0);
+  };
+  const eyes = new THREE.Mesh(eyeGeometry(0), ink); face.add(eyes);
   const placeEyes = (dx = 0, dy = 0) => { const { x, r } = shape.surface(faceY + dy), out = r - centre.r; eyes.position.set(x + Math.sin(dx) * out, faceY + dy, Math.cos(dx) * out); eyes.rotation.y = dx; };
   placeEyes();
-  // Brows, mouth and bags are one painted mesh, rebuilt when the expression or the wear changes.
+  // Brows and mouth are one painted mesh, rebuilt when the expression changes.
   const lines = new THREE.Mesh(new THREE.BufferGeometry(), painted()); face.add(lines);
-  let expression = [], bags = [];
+  let expression = [];
   const lips = has.has('lipstick') && '#c2185b';
-  const redraw = () => { lines.geometry.dispose(); lines.geometry = paint([...expression, ...bags]); };
+  const redraw = () => { lines.geometry.dispose(); lines.geometry = paint(expression); };
   const setExpression = name => {
     expression = [];
     const line = (points, radius, color = INK) => expression.push([arc(points, radius), color]);
@@ -369,27 +380,18 @@ export function createFruit({ fruit, color, accessories = [], trim = '#ff5d8f' }
   };
   setExpression('smile');
 
-  // Wear: the skin browns and bruises (a banana's ends go black), then come bags under the eyes, heavy lids and flies.
+  // Wear: the skin browns and bruises (a banana's ends go black), then come heavy lids and flies.
   const skin = wearable(colorMaterial);
   // The flies are three copies of one sphere; they circle in a fixed ball above the head.
   const buzzX = shape.surface(h * 0.9).x, flies = new THREE.InstancedMesh(flyGeometry(), ink, 3);
   flies.visible = false; flies.boundingSphere = new THREE.Sphere(V(buzzX, h + 0.1), 0.4); body.add(flies); own.push(flies);
-  const bagHalf = 0.034 / centre.r;
-  let droop = 1, blink = 1;
   const setWear = wear => {
-    bags = [];
     // Freckles first, then spots and rot; the flies only come when auto-compact is close.
     const age = Math.min(1, wear * 1.2);
     colorMaterial.color.copy(fresh).lerp(ROT, age * 0.55);
     skin.tests.value.set(wear > 0.15 ? 1 - age * 0.8 : 2, wear > 0.45 ? 1 - (wear - 0.4) * 0.75 : 2, fruit === 'banana' && wear > 0.25 ? 1 - age * 0.75 : 2); // 2: never shows
     flies.visible = wear >= 0.9;
-    for (let level = 0; level < (wear >= 0.75 ? 2 : wear >= 0.4 ? 1 : 0); level++) for (const side of [-1, 1]) {
-      const y = faceY - 0.058 - level * 0.016;
-      bags.push([arc([onSkin(side * spread - bagHalf, y + 0.008), onSkin(side * spread, y - 0.006), onSkin(side * spread + bagHalf, y + 0.008)], 0.0045), '#6a5470']);
-    }
-    redraw();
-    droop = 1 - Math.max(0, wear - 0.3) * 0.55;
-    eyes.scale.y = Math.max(0.1, blink * droop);
+    eyes.geometry.dispose(); eyes.geometry = eyeGeometry(Math.max(0, wear - 0.2) / 0.8);
   };
 
   // Accessories (status.js picks them, at most one per slot).
@@ -547,9 +549,9 @@ export function createFruit({ fruit, color, accessories = [], trim = '#ff5d8f' }
       flies.instanceMatrix.needsUpdate = true;
     },
     setGrey(on) { skin.grey.value = +on; },
-    setBlink(open) { if (open === blink) return; blink = open; eyes.scale.y = Math.max(0.1, open * droop); },
+    setBlink(open) { eyes.scale.y = Math.max(0.1, open); },
     // Eyes slide a little toward a point given in the fruit's local space; null looks ahead.
     lookAt(point) { if (!point) { placeEyes(); return; } const dx = THREE.MathUtils.clamp(Math.atan2(point.x, point.z) * 0.25, -0.12, 0.12), dy = THREE.MathUtils.clamp((point.y - body.position.y - faceY) * 0.05, -0.02, 0.02); placeEyes(dx, dy); },
-    dispose() { group.removeFromParent(); lines.geometry.dispose(); for (const item of own) item.dispose(); },
+    dispose() { group.removeFromParent(); lines.geometry.dispose(); eyes.geometry.dispose(); for (const item of own) item.dispose(); },
   };
 }
