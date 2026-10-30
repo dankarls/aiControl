@@ -1,8 +1,8 @@
 // The putting green in the secret room: holes from golf-course.js, built, drawn and played here.
 // Click the course (or the notice board beside it) to play: the view moves behind the ball, raised enough to see the cup,
 // and follows the ball as it rolls. The putter's head goes where the pointer is on the green: the putt goes from there through
-// the ball, as hard as the club is drawn back (REACH for the hardest). Click to putt; a finger aims while it presses and
-// putts as it lifts. Let go with the club at the ball and nothing happens. The green rises and falls (drawn twice as high
+// the ball, as hard as the club is drawn back (REACH for the hardest). A putt is a pull: press, drag the club back and let
+// go (a plain click does nothing, so nothing goes off by accident). Let go with the club at the ball and nothing happens. The green rises and falls (drawn twice as high
 // as it rolls, so it shows), plain felt lit by the room.
 // Holes 1 to 50 are the same for everyone; the notice board keeps your best on each, and any you've reached can be picked
 // there to play again. Endless (on the board too) deals fresh holes, harder as it goes, until you're ten over par; your
@@ -182,7 +182,7 @@ export function createGolf({ camera, canvas, ray, onPlay }) {
   // The view while playing, easing after the ball: behind it along `heading` (to the cup when it last stopped).
   const view = { from: new THREE.Vector3(), look: new THREE.Vector3(), heading: new THREE.Vector2(1, 0), set: false };
   const surfaceY = (x, z) => BASE + height(c, x, z) * LIFT;
-  const hint = () => !active ? 'Click the green to play' : mode === 'holes' && progress.n === 1 && !strokes ? 'Draw the club back from the ball and click' : '';
+  const hint = () => !active ? 'Click the green to play' : mode === 'holes' && progress.n === 1 && !strokes ? 'Press, drag the club back and let go' : '';
   const redraw = () => boardTexture?.redraw({ mode, n: progress.n, index: run?.index ?? 0, over: run?.over ?? 0, par: c.par, strokes, best: progress.best, reached: progress.reached, endlessBest: progress.endlessBest, hint: hint() });
   const aimAtCup = () => { const d = view.heading.set(c.cup.x - ball.x, c.cup.z - ball.z); if (d.lengthSq() > 1e-6) d.normalize(); };
 
@@ -360,7 +360,9 @@ export function createGolf({ camera, canvas, ray, onPlay }) {
     plane.constant = -surfaceY(ball.x, ball.z); return rayer.intersectPlane(plane, hitPoint) && hitPoint.clone();
   };
   // Aiming: the club's head under the pointer, no further back than REACH; the putt would go from it through the ball, as
-  // hard as it's drawn back. A mouse aims as it moves, a finger while it presses; either putts on letting go.
+  // hard as it's drawn back. A mouse aims as it moves, a finger while it presses; either putts on letting go, if it was
+  // dragged at least a little on the way (DRAG pixels).
+  const DRAG = 10;
   const aimAt = event => {
     const at = onPlane(event); if (!at) return;
     const dx = ball.x - at.x, dz = ball.z - at.z, length = Math.hypot(dx, dz), back = clamp(length - BALL - 0.004, 0.02, REACH);
@@ -368,10 +370,12 @@ export function createGolf({ camera, canvas, ray, onPlay }) {
   };
   canvas.addEventListener('pointermove', event => { if (golf.ready && (event.pointerType === 'mouse' || pull?.held)) aimAt(event); });
   canvas.addEventListener('pointerleave', () => { if (!pull?.held) pull = null; });
-  canvas.addEventListener('pointerdown', event => { if (event.button !== 0 || !golf.ready) return; aimAt(event); if (pull) pull.held = true; });
+  canvas.addEventListener('pointerdown', event => { if (event.button !== 0 || !golf.ready) return; aimAt(event); if (pull) pull.held = { x: event.clientX, y: event.clientY }; });
   canvas.addEventListener('pointerup', event => {
     if (!pull?.held) return;
+    const dragged = Math.hypot(event.clientX - pull.held.x, event.clientY - pull.held.y) >= DRAG;
     aimAt(event); const { dir, power, back } = pull; pull = null;
+    if (!dragged) return;
     // The forward swing is quick enough to meet the ball at about two thirds of the speed it leaves at; the follow-through
     // is short, so the club never catches it up.
     const speed = power * MAX;
