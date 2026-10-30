@@ -308,6 +308,15 @@ test('Fire outside tmux sends SIGTERM to an interactive Claude after the recheck
   await assert.rejects(stays.adapter.fire(terminal, async () => {}), e => e.status === 504 && /still running/.test(e.message));
 });
 
+test('Fire signals a parked Claude, whatever its status says, and types nothing into its pane', async () => {
+  const parked = { ...paneRecord, kind: 'interactive', status: 'busy', parkedJobId: 'job' };
+  const signals = [];
+  const { adapter, calls } = tmuxFixture({ pollMs: 1, alive: async () => !signals.length, signal: (pid, name) => signals.push(name) });
+  assert.deepEqual(await adapter.fire(parked, async () => {}), { ok: true });
+  assert.deepEqual(signals, ['SIGTERM']);
+  assert.deepEqual(calls.filter(args => ['send-keys', 'paste-buffer'].includes(args[0])), []);
+});
+
 test('Claude adapter fires only a session that is quiet: idle a while, no subagent, no command running', async t => {
   const dir = await mkdtemp(join(tmpdir(), 'aicontrol-claude-fire-')); t.after(() => rm(dir, { recursive: true, force: true }));
   const path = join(dir, `${record.pid}.json`), register = extra => writeFile(path, JSON.stringify({ ...record, cwd: '/work/project', status: 'idle', statusUpdatedAt: Date.now() - 60_000, ...extra }));
@@ -339,6 +348,16 @@ test('Claude adapter fires only a session that is quiet: idle a while, no subage
   await assert.rejects(adapter.fire(record.sessionId), /subagent/);
   await rm(subagents, { recursive: true });
 
+  assert.deepEqual(await adapter.fire(record.sessionId), { ok: true });
+  assert.deepEqual(fired, [record.pid]);
+
+  // A parked session's status stops changing, so it's stale; only what it still runs counts.
+  fired.length = 0;
+  await register({ status: 'busy', parkedJobId: 'job' });
+  adapter.hooks.set(record.sessionId, { status: 'working', updatedAt: 0 });
+  running = ['npm run dev'];
+  await assert.rejects(adapter.fire(record.sessionId), /npm run dev/);
+  running = [];
   assert.deepEqual(await adapter.fire(record.sessionId), { ok: true });
   assert.deepEqual(fired, [record.pid]);
 });

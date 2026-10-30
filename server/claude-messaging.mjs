@@ -190,9 +190,10 @@ export class ClaudeMessaging {
   // Enter; if it throws, /exit is wiped again. Done when the process has gone.
   // Outside tmux, an interactive Claude gets SIGTERM instead, which it takes like /exit: it quits within a second or two,
   // its terminal gets its shell back and the session can be resumed. A draft in its prompt can't be seen, so it goes too.
+  // So does a parked Claude, in tmux or not: it has no prompt of its own to type into, and its status is stale.
   async fire(record, recheck) {
-    const pane = await this.readyPane(record, false);
-    if (record.status !== 'idle') throw fail('Claude is working. Stop it first.', 409);
+    const parked = !!record.parkedJobId, pane = parked ? null : await this.readyPane(record, false);
+    if (!parked && record.status !== 'idle') throw fail('Claude is working. Stop it first.', 409);
     if (!pane) {
       if (record.kind !== 'interactive') throw fail('Only terminal sessions can be fired.', 409);
       await recheck();
