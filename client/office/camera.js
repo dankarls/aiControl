@@ -35,6 +35,8 @@ export class OfficeCamera {
     this.mug = mug; this.pour = 0; this.level = 1;
     const arm = new THREE.QuadraticBezierCurve3(wrist, new THREE.Vector3(0.5, -0.32, -0.5), new THREE.Vector3(0.62, -0.7, -0.25));
     this.hands.add(new THREE.Mesh(new THREE.TubeGeometry(arm, 16, 0.02, 8), ink));
+    // The wrist: a ball over the arm's open end, at the point the fist turns about, so they stay joined however far it pours.
+    this.hands.add(new THREE.Mesh(new THREE.SphereGeometry(0.021, 12, 8).translate(wrist.x, wrist.y, wrist.z), ink));
     this.was = { x: 0, z: 0, yaw: 0, pitch: 0 }; this.walk = this.stride = 0; this.sway = new THREE.Vector2();
     this.slosh = new THREE.Vector2(); this.sloshing = new THREE.Vector2(); // the coffee's tilt and how fast it's tilting
     this.from = new THREE.Vector3(); this.look = new THREE.Vector3();
