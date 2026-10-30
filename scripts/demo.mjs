@@ -1,5 +1,6 @@
 // Fake projects, sessions, subagents, requests and usage for screenshots.
 // Runs beside a real server: own port, temporary login, no agent connections.
+import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -20,7 +21,7 @@ const tool = (text, minutes, extra) => msg('assistant', text, minutes, { tool: t
 const steps = (done, ...names) => names.map((step, i) => ({ step, status: i < done ? 'done' : i === done ? 'active' : 'pending' }));
 
 function claude(id, project, title, status, minutes, messages, extra = {}) {
-  return { id: `claude:${id}`, nativeId: id, provider: 'claude', title, cwd: `${home}/${project}`, project, status, updatedAt: ago(minutes), model: 'claude-opus-5-5', version: '2.4.1', effort: 'high', efforts: ['low', 'medium', 'high', 'xhigh', 'max'], permissionMode: 'default', detail: '', control: true, messaging: { send: true, queue: false, via: 'tmux', interrupt: true, effort: true, fire: true }, messages, messagesState: 'ready', ...extra };
+  return { id: `claude:${id}`, nativeId: id, provider: 'claude', title, cwd: `${home}/${project}`, project, status, updatedAt: ago(minutes), model: 'claude-opus-5-5', version: '2.4.1', effort: 'high', efforts: ['low', 'medium', 'high', 'xhigh', 'max'], permissionMode: 'default', detail: '', control: true, messaging: { send: true, queue: false, via: 'tmux', interrupt: true, effort: true, fire: true, clear: true }, messages, messagesState: 'ready', ...extra };
 }
 function codex(id, project, title, status, minutes, messages, extra = {}) {
   return { id: `codex:${id}`, nativeId: id, provider: 'codex', title, cwd: `${home}/${project}`, project, status, updatedAt: ago(minutes), model: 'gpt-5.5-codex', effort: 'medium', efforts: ['low', 'medium', 'high', 'xhigh'], detail: '', control: true, messaging: { send: true, queue: true, interrupt: true, effort: true }, messages, messagesState: 'ready', queuedMessages: [], queueAvailable: true, queueError: '', ...extra };
@@ -139,6 +140,7 @@ const messages = {
   cancel: async () => ({ ok: true }),
   interrupt: async id => { const s = sessions.find(s => s.id === id); if (s) s.status = 'idle'; return { ok: true }; },
   fire: async id => { const at = sessions.findIndex(s => s.id === id); if (at >= 0) sessions.splice(at, 1); return { ok: true }; },
+  clear: async id => { const s = sessions.find(s => s.id === id); if (!s) return { ok: true }; s.nativeId = randomUUID(); s.id = `claude:${s.nativeId}`; s.messages = []; s.context = undefined; return { ok: true, id: s.id }; },
   effort: async (id, body) => { const s = sessions.find(s => s.id === id); if (s) s.effort = body.effort; return { ok: true }; },
   history: async id => ({ messages: [msg('user', 'An older request from earlier today.', 400), msg('assistant', 'Older reply.', 399), ...(sessions.find(s => s.id === id)?.messages || [])], more: false }),
   images: async id => ({ images: (shots[id] || []).map(([, minutes, agent], n) => ({ id: `${agent ? 'a1b2c3.' : ''}0000000${n}-0000-4000-8000-000000000000:0`, type: 'image/webp', at: ago(minutes), tool: true, ...(agent && { agent }) })) }),

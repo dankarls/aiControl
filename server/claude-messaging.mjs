@@ -186,8 +186,31 @@ export class ClaudeMessaging {
     if (start < 0 || end < 0) return null;
     return rows.slice(start, end).join('\n').replace(/^\s*[❯>]/, '').replaceAll('\u00a0', ' ').trim();
   }
-  // Ends the session with /exit, typed only into an empty prompt. `recheck` runs once /exit shows there, just before
-  // Enter; if it throws, /exit is wiped again. Done when the process has gone.
+  // Types a command only into an empty prompt. `recheck` runs once it shows there, just before Enter; if it throws, the
+  // command is wiped again.
+  async typeAlone(pane, command, recheck) {
+    const typed = () => this.inputText(pane);
+    const before = await typed();
+    if (before === null) throw fail('Claude’s prompt isn’t showing. Check its terminal.', 409);
+    if (before) throw fail('There’s a draft in Claude’s prompt. Send or clear it first.', 409);
+    await this.paste(pane, command, randomUUID());
+    try {
+      if (!await this.until(async () => await typed() === command, this.settleMs)) throw fail(`Could not type ${command} into Claude’s prompt. Check its terminal.`, 503);
+      await recheck();
+    } catch (error) {
+      if ((await typed())?.endsWith(command)) await this.tmux(['send-keys', '-t', pane, ...Array(command.length).fill('BSpace')]).catch(() => {});
+      throw error;
+    }
+    try { await this.tmux(['send-keys', '-t', pane, 'Enter']); } catch { throw fail(`${command} is in Claude’s prompt but Enter failed. Check the terminal.`, 504); }
+  }
+  // Starts over in the same pane. A parked session has no prompt of its own to type into, and its status is stale.
+  async clear(record, recheck) {
+    if (record.parkedJobId) throw fail('A parked session has no prompt to clear.', 409);
+    const pane = await this.readyPane(record);
+    if (record.status !== 'idle') throw fail('Claude is working. Stop it first.', 409);
+    return this.queue(async () => { await this.typeAlone(pane, '/clear', recheck); return { ok: true }; });
+  }
+  // Ends the session with /exit, typed like any command above. Done when the process has gone.
   // Outside tmux, an interactive Claude gets SIGTERM instead, which it takes like /exit: it quits within a second or two,
   // its terminal gets its shell back and the session can be resumed. A draft in its prompt can't be seen, so it goes too.
   // So does a parked Claude, in tmux or not: it has no prompt of its own to type into, and its status is stale.
@@ -202,20 +225,8 @@ export class ClaudeMessaging {
       if (!await this.until(async () => !await this.alive(record.pid, record.procStart), this.exitMs)) throw fail('Claude is still running after SIGTERM. Check its terminal.', 504);
       return { ok: true };
     }
-    const typed = () => this.inputText(pane);
     return this.queue(async () => {
-      const before = await typed();
-      if (before === null) throw fail('Claude’s prompt isn’t showing. Check its terminal.', 409);
-      if (before) throw fail('There’s a draft in Claude’s prompt. Send or clear it first.', 409);
-      await this.paste(pane, '/exit', randomUUID());
-      try {
-        if (!await this.until(async () => await typed() === '/exit', this.settleMs)) throw fail('Could not type /exit into Claude’s prompt. Check its terminal.', 503);
-        await recheck();
-      } catch (error) {
-        if ((await typed())?.endsWith('/exit')) await this.tmux(['send-keys', '-t', pane, ...Array(5).fill('BSpace')]).catch(() => {});
-        throw error;
-      }
-      try { await this.tmux(['send-keys', '-t', pane, 'Enter']); } catch { throw fail('/exit is in Claude’s prompt but Enter failed. Check the terminal.', 504); }
+      await this.typeAlone(pane, '/exit', recheck);
       if (!await this.until(async () => !await this.alive(record.pid, record.procStart), this.exitMs)) throw fail('Claude is still running after /exit. Check its terminal.', 504);
       return { ok: true };
     });

@@ -73,7 +73,7 @@ const navigation = new PanelNavigation(window, id => {
   state.selected = id; panelSignature = '';
   if (id === 'access') renderAccessPanel(); else if (state.snapshot) renderPanel();
 });
-let poll, touching = 0, activityTimer, panelSignature = '', loading = false;
+let poll, touching = 0, activityTimer, panelSignature = '', loading = false, clearing = false;
 const statuses = { working: ['Working', 'green'], idle: ['Idle', 'gray'], permission: ['Permission', 'amber'], question: ['Question', 'amber'], offline: ['Offline', 'gray'], error: ['Error', 'red'], unknown: ['Unknown', 'gray'] };
 const icons = {
   grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
@@ -97,6 +97,7 @@ const icons = {
   sound: '<path d="M4 9.5v5h3.5L12 18V6L7.5 9.5H4Z"/><path d="M15.5 9a4 4 0 0 1 0 6m2.5-8.5a7.5 7.5 0 0 1 0 11"/>',
   next: '<path d="m6 5 7 7-7 7m7-14 7 7-7 7"/>',
   exit: '<path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4m5-12 4 4-4 4m4-4H9"/>',
+  eraser: '<path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21m9 0H7M5 11l9 9"/>',
   office: '<path d="M4 21V5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v16m0-11h3a2 2 0 0 1 2 2v9M2 21h20M8 7h3m-3 4h3m-3 4h3"/>',
 };
 function icon(name) {
@@ -498,7 +499,7 @@ function revealPanel() { const panel = document.querySelector('#panel'); panel.h
 function renderPanel() {
   const session = state.snapshot.sessions.find(s => s.id === state.selected);
   const panel = document.querySelector('#panel');
-  if (!session) { navigation.reset(); hidePanel(); return; }
+  if (!session) { if (clearing) return; navigation.reset(); hidePanel(); return; }
   if (panel.dataset.sessionId !== session.id) {
     disposeHistory(); disposeComposer(); panelSignature = '';
     if (panel.dataset.sessionId) { markSeen(panel.dataset.sessionId); older.delete(panel.dataset.sessionId); }
@@ -538,6 +539,7 @@ function renderSessionHeader(header, session) {
   if (next) { const b = button('Next', 'quiet-button next-button', openNext, 'next'); b.title = `Next waiting (n): ${next.title}`; actions.append(b); }
   if (session.status === 'working' && session.messaging?.interrupt) { const stop = button('Stop', 'quiet-button stop-button', () => interrupt(session, stop), 'stop'); stop.title = 'Interrupt the current turn'; stop.disabled = !!state.error; actions.append(stop); }
   if ((session.status === 'idle' || session.asks) && !session.parentId && session.messaging?.fire) { const fire = button('Fire', 'quiet-button stop-button fire-button', () => fireSession(session, fire), 'exit'); fire.title = `End this session with ${session.messaging.via === 'tmux' ? '/exit' : 'SIGTERM'} (refused while anything is still running)`; fire.disabled = !!state.error; actions.append(fire); }
+  if ((session.status === 'idle' || session.asks) && !session.parentId && session.messaging?.clear) { const clear = button('Clear', 'quiet-button clear-button', () => clearSession(session, clear), 'eraser'); clear.title = 'Start over with /clear'; clear.disabled = !!state.error; actions.append(clear); }
   if (session.messaging?.effort && session.efforts?.length) actions.append(effortPicker(session));
   actions.append(themeMenu(), badge(session.status)); const back = button('Back', 'quiet-button back-button', closePanel, 'back'); back.title = 'Back to sessions'; head.append(back, actions); header.append(head);
   const title = el('h2', 'panel-title', session.title); title.title = session.title; header.append(title);
@@ -582,18 +584,29 @@ function effortPicker(session) {
   };
   return select;
 }
-// The first click arms it for a few seconds; the second ends the session. The server refuses if anything is still running.
+// The first click arms it for a few seconds; the second goes ahead. The server refuses if anything is still running.
+function armed(control) {
+  if (control.classList.contains('armed')) return true;
+  const label = control.querySelector('span:not(.icon)'), name = label.textContent;
+  control.classList.add('armed'); label.textContent = 'Sure?'; control.setAttribute('aria-label', `Click again to ${name.toLowerCase()}`);
+  setTimeout(() => { control.classList.remove('armed'); label.textContent = name; control.removeAttribute('aria-label'); }, 3000);
+  return false;
+}
 async function fireSession(session, control) {
-  if (state.error) return;
-  const label = control.querySelector('span:not(.icon)');
-  if (!control.classList.contains('armed')) {
-    control.classList.add('armed'); label.textContent = 'Sure?'; control.setAttribute('aria-label', 'Click again to fire');
-    setTimeout(() => { control.classList.remove('armed'); label.textContent = 'Fire'; control.removeAttribute('aria-label'); }, 3000);
-    return;
-  }
+  if (state.error || !armed(control)) return;
   control.disabled = true;
   try { await api(`sessions/${encodeURIComponent(session.id)}/fire`, {}); toast('Fired'); office?.fire(session.id); closePanel(); await refresh(); }
   catch (error) { toast(error.message); control.disabled = false; }
+}
+// /clear gives the session a new id, so the panel moves to it. Until a snapshot has it, a missing session doesn't close the panel.
+async function clearSession(session, control) {
+  if (state.error || !armed(control)) return;
+  control.disabled = true; clearing = true;
+  try {
+    const { id } = await api(`sessions/${encodeURIComponent(session.id)}/clear`, {});
+    toast('Cleared'); if (state.selected === session.id) navigation.open(id, { replace: true }); await refresh();
+    setTimeout(() => { clearing = false; }, 4000);
+  } catch (error) { clearing = false; toast(error.message); control.disabled = false; }
 }
 async function interrupt(session, control) {
   if (state.error) return;

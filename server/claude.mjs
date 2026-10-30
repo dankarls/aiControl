@@ -65,6 +65,8 @@ export class ClaudeAdapter {
   workflowNames = new Map();
   paths = new Map();
   stoppedAgents = new Set();
+  clearMs = 8000;
+  clearPollMs = 200;
   connected = false;
   detail = 'Discovering local Claude Code sessions…';
   constructor(store, socketPath, { sessionsDir = join(homedir(), '.claude/sessions'), projectsDir = join(homedir(), '.claude/projects'), accounts = [{ label: '', sessionsDir, projectsDir }], alive = processMatches, messaging } = {}) { this.store = store; this.socketPath = socketPath; this.accounts = accounts; this.transcripts = new TranscriptReader(accounts.map(account => account.projectsDir)); this.images = new TranscriptImages();
@@ -98,7 +100,7 @@ export class ClaudeAdapter {
           registrations.set(record.sessionId, { record, account }); owners.set(record.sessionId, account);
           paths.set(`claude:${record.sessionId}`, transcript);
           const status = hook?.status || (record.parkedJobId ? 'idle' : states[record.status]) || 'unknown', tmux = via === 'tmux';
-          sessions.set(record.sessionId, { id: `claude:${record.sessionId}`, nativeId: record.sessionId, provider: 'claude', title: claudeSessionTitle(record, history), cwd: record.cwd, project: basename(record.cwd || 'Unknown'), account: account.label, status, parked: !!record.parkedJobId, updatedAt: Math.max(hook?.updatedAt || 0, record.updatedAt || 0), version: record.version || '', detail: status === 'working' && !hook?.compacting && turnTool(history.messages) || hook?.detail || '', activity: hook?.compacting ? 'compacting' : claudeActivity(status, step, modifiedAt), control: !!hook || canSend, messaging: { send: canSend, queue: false, via, interrupt: tmux, effort: tmux, fire: tmux || record.kind === 'interactive' }, efforts: claudeEfforts, pid: record.pid, ...history, queuedMessages: status === 'working' ? history.queuedMessages : [] });
+          sessions.set(record.sessionId, { id: `claude:${record.sessionId}`, nativeId: record.sessionId, provider: 'claude', title: claudeSessionTitle(record, history), cwd: record.cwd, project: basename(record.cwd || 'Unknown'), account: account.label, status, parked: !!record.parkedJobId, updatedAt: Math.max(hook?.updatedAt || 0, record.updatedAt || 0), version: record.version || '', detail: status === 'working' && !hook?.compacting && turnTool(history.messages) || hook?.detail || '', activity: hook?.compacting ? 'compacting' : claudeActivity(status, step, modifiedAt), control: !!hook || canSend, messaging: { send: canSend, queue: false, via, interrupt: tmux, effort: tmux, fire: tmux || record.kind === 'interactive', clear: tmux && !record.parkedJobId }, efforts: claudeEfforts, pid: record.pid, ...history, queuedMessages: status === 'working' ? history.queuedMessages : [] });
           for (const agent of await this.subagents(record, transcript, paths)) sessions.set(agent.id, agent);
         } catch { /* ignore partially written and stale registration files */ }
       }));
@@ -250,18 +252,30 @@ export class ClaudeAdapter {
   // compacting, no subagent or workflow working and nothing left running from its Bash tool, background ones included.
   // A parked session's status is stale, so only what it still runs counts; its job carries on without it.
   // All of it is checked again just before Enter (with /exit typed) or the signal.
+  async quiet(sessionId) {
+    const record = await this.record(sessionId), parked = !!record.parkedJobId, hook = parked ? null : this.hooks.get(sessionId), transcript = this.paths.get(`claude:${sessionId}`);
+    if (!parked && record.status === 'shell') throw fail('Background shells are still running. Stop them first.', 409);
+    if ((!parked && record.status !== 'idle') || (hook && hook.status !== 'idle') || hook?.compacting) throw fail('Claude is working. Stop it first.', 409);
+    if (Date.now() - Math.max(record.statusUpdatedAt || record.updatedAt || 0, hook?.updatedAt || 0) < QUIET_MS) throw fail('Claude only just finished. Try again in a moment.', 409);
+    if (transcript && (await this.subagents(record, transcript, new Map())).some(agent => agent.status === 'working')) throw fail('A subagent is still working.', 409);
+    const commands = await this.messaging.commands(record.pid);
+    if (commands.length) throw fail(`Still running: ${commands[0].slice(0, 60)}${commands.length > 1 ? ` (+${commands.length - 1})` : ''}. Stop it first.`, 409);
+    return record;
+  }
   async fire(sessionId) {
-    const quiet = async () => {
-      const record = await this.record(sessionId), parked = !!record.parkedJobId, hook = parked ? null : this.hooks.get(sessionId), transcript = this.paths.get(`claude:${sessionId}`);
-      if (!parked && record.status === 'shell') throw fail('Background shells are still running. Stop them first.', 409);
-      if ((!parked && record.status !== 'idle') || (hook && hook.status !== 'idle') || hook?.compacting) throw fail('Claude is working. Stop it first.', 409);
-      if (Date.now() - Math.max(record.statusUpdatedAt || record.updatedAt || 0, hook?.updatedAt || 0) < QUIET_MS) throw fail('Claude only just finished. Try again in a moment.', 409);
-      if (transcript && (await this.subagents(record, transcript, new Map())).some(agent => agent.status === 'working')) throw fail('A subagent is still working.', 409);
-      const commands = await this.messaging.commands(record.pid);
-      if (commands.length) throw fail(`Still running: ${commands[0].slice(0, 60)}${commands.length > 1 ? ` (+${commands.length - 1})` : ''}. Stop it first.`, 409);
-      return record;
-    };
-    return this.messaging.fire(await quiet(), quiet);
+    return this.messaging.fire(await this.quiet(sessionId), () => this.quiet(sessionId));
+  }
+  // /clear starts a new session in the same process, whose registration takes on the new id a second or so later.
+  // The panel moves to that id, so it comes back only once it's listed.
+  async clear(sessionId) {
+    const record = await this.quiet(sessionId), { pid } = record, id = `claude:${sessionId}`;
+    await this.messaging.clear(record, () => this.quiet(sessionId));
+    for (const end = Date.now() + this.clearMs; Date.now() < end; await new Promise(resolve => setTimeout(resolve, this.clearPollMs))) {
+      await this.refresh();
+      const fresh = this.list().find(session => session.pid === pid && session.id !== id && !session.parentId);
+      if (fresh) return { ok: true, id: fresh.id };
+    }
+    throw fail('/clear was sent but no new session showed up. Check its terminal.', 504);
   }
   async history(id, limit) {
     const [sessionId, agentId] = id.slice(7).split(':');

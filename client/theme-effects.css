@@ -632,7 +632,7 @@
   :is(.primary, .secondary, .quiet-button):active:not(:disabled) { transform: translateY(2px); box-shadow: none; }
   .primary { background: var(--go); }
   .primary:hover:not(:disabled) { background: #a5e872; }
-  [data-decision=decline], [data-decision=cancel], .fire-button.armed { background: var(--stop); color: var(--ink); border-color: var(--ink); }
+  [data-decision=decline], [data-decision=cancel], .fire-button.armed, .clear-button.armed { background: var(--stop); color: var(--ink); border-color: var(--ink); }
   .stop-button { color: #b0182c; }
   .filter-menu.filtered > summary, .alerts-menu.alerts-on > summary { background: var(--sky); color: var(--ink); border-color: var(--ink); }
   .live-label { color: var(--ink); }
@@ -926,7 +926,7 @@
 }
 
 /* An armed Fire stays red in every theme; the themed .quiet-button rules above outrank style.css. */
-:root .fire-button.armed { color: #fff; background: var(--danger); border-color: var(--danger); }
+:root :is(.fire-button, .clear-button).armed { color: #fff; background: var(--danger); border-color: var(--danger); }
 
 /* Screenshots, framed for each theme. Nothing covers or tints the picture itself: it has to show what the agent saw. */
 .history-shot::after { content: ''; position: absolute; pointer-events: none; }
