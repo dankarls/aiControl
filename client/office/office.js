@@ -82,7 +82,7 @@ export function mountOffice(container, hooks) {
       else if (hit?.kind === 'monitor') office.readScreen(hit.id, hit.node, hit.point);
       else if (hit?.kind === 'board') office.readBoard(hit.node);
       else if (hit?.kind === 'hire') office.offerHire(hit, at);
-      else if (hit?.kind === 'toggle') hit.node.userData.toggle();
+      else if (hit?.kind === 'toggle') hit.node.userData.toggle(hit.point);
       else if (hit?.kind === 'prop' && !view.overview) pickUp(hit.body);
       else if (mouse && !player.locked && !view.overview) player.lock();
       else if (hit?.kind === 'floor' && !view.overview) player.walkTo(hit.point);
@@ -115,7 +115,7 @@ export function mountOffice(container, hooks) {
     if (player.position.clone().setY(0).distanceTo(spot) < 1.4) { player.place(player.position.x, player.position.z, yaw); play(game); }
     else player.walkTo(spot, () => { player.place(player.position.x, player.position.z, yaw); play(game); }, 0.3, true);
   };
-  const darts = createDarts({ hands: view.hands, camera, aim, onPlay }), golf = createGolf({ camera, aim, onPlay });
+  const darts = createDarts({ hands: view.hands, camera, aim, onPlay }), golf = createGolf({ camera, canvas: renderer.domElement, ray: at => rayAt(at, renderer.domElement, camera), onPlay });
   room.secret.add(darts); room.secret.add(golf);
   const boards = createBoards(room);
   const bubbles = new Bubbles(container, id => office.talkTo(id));
@@ -174,7 +174,7 @@ export function mountOffice(container, hooks) {
     else if (event.key === 'Escape' && view.overview) overview(false);
     else if (event.code === 'KeyE' && !menu.contains(event.target)) {
       event.preventDefault();
-      if (props.holding) props.throw(); else if (prop) pickUp(prop); else if (monitor) office.readScreen(monitor.id, monitor.node, monitor.point); else if (board) office.readBoard(board); else if (toggle) toggle.userData.toggle(); else if (hire) office.offerHire(hire, dot ? player.centre : mouse, true); else office.talkTo(aimed || office.nearest());
+      if (props.holding) props.throw(); else if (prop) pickUp(prop); else if (monitor) office.readScreen(monitor.id, monitor.node, monitor.point); else if (board) office.readBoard(board); else if (toggle) toggle.userData.toggle(togglePoint); else if (hire) office.offerHire(hire, dot ? player.centre : mouse, true); else office.talkTo(aimed || office.nearest());
     }
     else if (event.code === 'KeyF' && !view.overview && !office.talking) { event.preventDefault(); if (!event.repeat) props.pour(true); }
   });
@@ -182,7 +182,7 @@ export function mountOffice(container, hooks) {
   listen(window, 'blur', () => props.pour(false));
   // Outline whatever a click (or E) would get, with its card: under the dot when aiming with it, else under the mouse
   // (the scene or a bubble, not the buttons). Ten times a second is plenty.
-  let mouse = null, hovered = null, aimed = null, monitor = null, board = null, hire = null, toggle = null, prop = null, dot = false, hoverIn = 0;
+  let mouse = null, hovered = null, aimed = null, monitor = null, board = null, hire = null, toggle = null, togglePoint = null, prop = null, dot = false, hoverIn = 0;
   listen(container, 'pointermove', event => {
     mouse = event.pointerType === 'mouse' && (event.target === renderer.domElement || event.target.closest?.('.office-bubble')) ? event : null;
     if (!dot) card.move(mouse);
@@ -197,7 +197,7 @@ export function mountOffice(container, hooks) {
     // Playing, nothing else is outlined: the pointer aims.
     if (playing) { highlight(hovered, false); hovered = aimed = monitor = board = hire = toggle = prop = null; props.aim(null); card.show(null); overlays.setAim(false); renderer.domElement.style.cursor = 'crosshair'; return; }
     const at = office.talking ? null : aiming ? player.centre : mouse, hit = at && under(at);
-    aimed = hit?.kind === 'character' ? hit.id : null; monitor = hit?.kind === 'monitor' ? hit : null; board = hit?.kind === 'board' ? hit.node : null; hire = hit?.kind === 'hire' ? hit : null; toggle = hit?.kind === 'toggle' ? hit.node : null;
+    aimed = hit?.kind === 'character' ? hit.id : null; monitor = hit?.kind === 'monitor' ? hit : null; board = hit?.kind === 'board' ? hit.node : null; hire = hit?.kind === 'hire' ? hit : null; toggle = hit?.kind === 'toggle' ? hit.node : null; togglePoint = hit?.point;
     prop = hit?.kind === 'prop' && !props.holding ? hit.body : null; props.aim(prop);
     const whose = aimed || monitor?.id, session = whose && office.snapshot?.sessions.find(session => session.id === whose), facts = session && hooks.describe?.(session);
     const count = monitor && room.glass(monitor.node, monitor.point).side && shots.count(monitor.id); // the second monitor: the screenshots
