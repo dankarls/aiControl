@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { summary } from '../client/theme-console.js';
 import { readFileSync } from 'node:fs';
 import { PALETTES, paletteFor, savedColour, saveColour } from '../client/bridge/palettes.js';
 
@@ -74,6 +75,13 @@ test('the chrome knows the bridge', () => {
   assert.match(readFileSync('client/alerts.js', 'utf8'), /bridge:/);
   assert.match(readFileSync('client/themes.css', 'utf8'), /\[data-theme=['"]?bridge/);
   assert.match(readFileSync('client/style.css', 'utf8'), /\.status-text\.bridge/);
+});
+test('the status line says what the bridge says: ALL STOP is the rate limit, not a quiet ship', () => {
+  const line = (...statuses) => summary(statuses.map(status => ({ status }))).bridge;
+  assert.equal(line(), 'ORBIT');
+  assert.equal(line('idle'), 'ORBIT');
+  assert.equal(line('working'), 'WARP 1');
+  assert.equal(line('working', 'question'), '1 WAITING · WARP 1');
 });
 test('chrome tokens use no gold', () => {
   const block = readFileSync('client/themes.css', 'utf8').match(/\[data-theme=['"]?bridge[^{]*\{[^}]*\}/)[0];

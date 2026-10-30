@@ -23,12 +23,12 @@ export function sessionMapPoints(sessions, now = Date.now()) {
 }
 
 // One line per theme; CSS shows the active theme's wording.
-function summary(sessions) {
+export function summary(sessions) {
   const working = sessions.filter(s => s.status === 'working').length, waiting = sessions.filter(s => needsInput(s.status)).length;
   return {
     modern: waiting ? `${waiting} need${waiting === 1 ? 's' : ''} you · ${working} working` : working ? `${working} working` : 'All quiet',
     alien: `CREW ${sessions.length} · ACTIVE ${working} · AWAITING INPUT ${waiting}`,
-    bridge: waiting ? `${waiting} WAITING · WARP ${working}` : working ? `WARP ${working}` : 'ALL STOP',
+    bridge: waiting ? `${waiting} WAITING · WARP ${working}` : working ? `WARP ${working}` : 'ORBIT',
     command: waiting ? `${waiting} awaiting orders · ${working} units active` : working ? `${working} units active` : 'All units standing by',
     simpsons: waiting ? `${waiting} need${waiting === 1 ? 's' : ''} you · ${working} working` : working ? `${working} working · Doughnuts later` : 'All quiet in Springfield',
     diablo: waiting ? `${waiting} need your counsel · ${working} questing` : working ? `${working} questing` : 'A moment of peace',
