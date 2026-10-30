@@ -164,6 +164,10 @@ function brand() {
 }
 function badge(status) { const [label, color] = statuses[status] || statuses.unknown; const node = el('span', `badge ${color}`); node.append(el('i', 'dot'), el('span', '', label)); return node; }
 const needsInput = session => ['permission', 'question'].includes(session.status);
+// The sidebar's filter and project as a test on a session; null while it's all of them. The list shows who passes, the
+// office outlines them.
+const picked = () => state.filter === 'all' && !state.project ? null
+  : s => (!state.project || (s.cwd || s.project) === state.project) && (state.filter === 'all' || (state.filter === 'attention' ? needsInput(s) : s.status === state.filter));
 const providerName = provider => provider === 'codex' ? 'Codex' : 'Claude Code';
 function age(time) { if (!time) return 'No activity time'; const seconds = Math.max(0, (Date.now() - time) / 1000); return seconds < 60 ? 'Just now' : seconds < 3600 ? `${Math.floor(seconds / 60)}m ago` : seconds < 86400 ? `${Math.floor(seconds / 3600)}h ago` : `${Math.floor(seconds / 86400)}d ago`; }
 
@@ -289,6 +293,7 @@ function syncOffice() {
   try {
     office = officeModule.mountOffice(box, { openPanel, nextWaiting: () => nextWaiting(), showList: () => setOfficeList(true), isUnread: unread, describe: sessionFacts, spawn: spawnAgent });
     if (state.snapshot) office.update(state.snapshot, { error: state.error });
+    office.pick(picked(), false);
   } catch (error) { console.error(error); office?.unmount(); office = null; fallBack('Office could not start; showing the list'); }
 }
 
@@ -317,7 +322,7 @@ function renderData() {
   if (usage.dataset.sig !== usageSignature) { usage.dataset.sig = usageSignature; renderUsage(usage, state.snapshot.usage, { disconnected: !!state.error }); }
   renderThemeConsole(document.querySelector('#theme-console'), sessions, { disconnected: !!state.error, onSelect: openPanel });
   const working = sessions.filter(s => s.status === 'working').length, idle = sessions.filter(s => s.status === 'idle').length;
-  const setFilter = value => () => { state.filter = value; state.project = ''; renderData(); };
+  const setFilter = value => () => { state.filter = value; state.project = ''; renderData(); office?.pick(picked(), true); };
   // Desktop filters live here; the stat row below replaces them on phones.
   syncList(document.querySelector('#navigation'), [['all', 'All sessions', 'grid', sessions.length], ['attention', 'Needs you', 'bell', count], ['working', 'Working', 'activity', working], ['idle', 'Idle', 'moon', idle]]
     .map(([value, label, glyph, number]) => [value, [value, label, glyph, number, state.filter === value && !state.project]]),
@@ -327,7 +332,7 @@ function renderData() {
     data => {
       if (!data) return el('span', 'no-projects', 'Projects appear with sessions');
       const [key, name, active, waiting] = data;
-      const b = button(name, `nav-item ${active ? 'active' : ''}`, () => { state.project = state.project === key ? '' : key; state.filter = 'all'; renderData(); }, 'folder'); b.title = key; b.append(el('span', 'project-dot', waiting || '')); return b;
+      const b = button(name, `nav-item ${active ? 'active' : ''}`, () => { state.project = state.project === key ? '' : key; state.filter = 'all'; renderData(); office?.pick(picked(), !!state.project); }, 'folder'); b.title = key; b.append(el('span', 'project-dot', waiting || '')); return b;
     });
   syncList(document.querySelector('#stats'), [
     ['all', 'All', sessions.length, `${projects.size} projects on this computer`, ''],
@@ -344,7 +349,7 @@ function renderData() {
   const filterMenu = document.querySelector('#agent-filter-menu'); filterMenu.classList.toggle('filtered', state.provider !== 'all'); filterMenu.querySelector('summary').setAttribute('aria-label', `Agent filter: ${state.provider === 'all' ? 'All agents' : providerName(state.provider)}`);
   const focusedSession = document.activeElement?.classList.contains('session-card') ? document.activeElement.dataset.sessionId : null;
   const groups = document.querySelector('#groups');
-  const visible = sessions.filter(s => (!state.project || (s.cwd || s.project) === state.project) && (state.provider === 'all' || s.provider === state.provider) && (state.filter === 'all' || (state.filter === 'attention' ? needsInput(s) : s.status === state.filter)) && `${s.title} ${s.project} ${s.cwd} ${s.model}`.toLowerCase().includes(state.search.toLowerCase()));
+  const pick = picked(), visible = sessions.filter(s => (!pick || pick(s)) && (state.provider === 'all' || s.provider === state.provider) && `${s.title} ${s.project} ${s.cwd} ${s.model}`.toLowerCase().includes(state.search.toLowerCase()));
   const visibleGroups = new Map(); for (const session of visible) { const key = session.cwd || session.project; if (!visibleGroups.has(key)) visibleGroups.set(key, []); visibleGroups.get(key).push(session); }
   // Flat: one list in status order, with a project label on each card.
   const flat = state.grouping === 'flat';

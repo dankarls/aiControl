@@ -50,12 +50,12 @@ export function withOutline(mesh, thickness = 0.009) {
   mesh.add(hull);
   return mesh;
 }
-// Hover: everything outlined under `root` gets a thicker blue outline; off puts the usual one back.
-export function highlight(root, on) {
+// Hover: everything outlined under `root` gets a thicker blue outline (or `color`); off puts the usual one back.
+export function highlight(root, on, color = HOVER) {
   root?.traverse(node => {
     if (!node.userData.outline) return;
     node.userData.plain ??= node.material;
-    node.material = on ? outlineMaterial(node.userData.plain.userData.thickness * 1.5, HOVER) : node.userData.plain;
+    node.material = on ? outlineMaterial(node.userData.plain.userData.thickness * 1.5, color) : node.userData.plain;
   });
 }
 const INK = new THREE.Color('#1b1a1f'), HOVER = '#4f7cff';

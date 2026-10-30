@@ -1,7 +1,7 @@
 // The Office theme: a 3D office where each session is a fruit at a desk. main.js mounts it in place of the list.
 import * as THREE from 'three';
 import './office.css';
-import { layoutOffice, VACANT_MS } from './layout.js';
+import { layoutOffice, VACANT_MS, DESK_W } from './layout.js';
 import { officeStatus, identity, monitorLines } from './status.js';
 import { createRoom } from './room.js';
 import { Cast } from './animation.js';
@@ -21,6 +21,7 @@ import { createGoose, GOOSE } from './goose.js';
 import { walkGrid, gridKey, findPath } from './path.js';
 import { hireChoices } from '../hire.js';
 
+const PICKED = '#ffd23f'; // the sidebar's highlighter
 const FIRED = { pose: 'crying', expression: 'crying', bubble: { icon: '📦', text: 'Fired', highlight: false } };
 
 export function webglAvailable() {
@@ -186,6 +187,15 @@ export function mountOffice(container, hooks) {
   // Outline whatever a click (or E) would get, with its card: under the dot when aiming with it, else under the mouse
   // (the scene or a bubble, not the buttons). Ten times a second is plenty.
   let mouse = null, hovered = null, aimed = null, monitor = null, board = null, hire = null, toggle = null, togglePoint = null, prop = null, dot = false, hoverIn = 0;
+  // The sidebar's pick (office.pick): a test on sessions, and the characters it takes in, outlined in the sidebar's yellow
+  // wherever you are; hover's blue goes over the top.
+  let picked = null, marks = new Set();
+  const lit = (node, on) => highlight(node, on || marks.has(node), on ? undefined : PICKED);
+  const mark = () => {
+    const next = new Set(picked ? (office.snapshot?.sessions || []).filter(picked).map(session => cast.characters.get(session.id)?.root).filter(Boolean) : []);
+    for (const node of [...marks, ...next]) if (node !== hovered) highlight(node, next.has(node), PICKED);
+    marks = next;
+  };
   listen(container, 'pointermove', event => {
     mouse = event.pointerType === 'mouse' && (event.target === renderer.domElement || event.target.closest?.('.office-bubble')) ? event : null;
     if (!dot) card.move(mouse);
@@ -198,7 +208,7 @@ export function mountOffice(container, hooks) {
     hoverIn = 0.1;
     if (menu.open) return; // the sign keeps its outline while its menu is up
     // Playing, nothing else is outlined: the pointer aims.
-    if (playing) { highlight(hovered, false); hovered = aimed = monitor = board = hire = toggle = prop = null; props.aim(null); card.show(null); overlays.setAim(false); renderer.domElement.style.cursor = 'crosshair'; return; }
+    if (playing) { lit(hovered, false); hovered = aimed = monitor = board = hire = toggle = prop = null; props.aim(null); card.show(null); overlays.setAim(false); renderer.domElement.style.cursor = 'crosshair'; return; }
     const at = office.talking ? null : aiming ? player.centre : mouse, hit = at && under(at);
     aimed = hit?.kind === 'character' ? hit.id : null; monitor = hit?.kind === 'monitor' ? hit : null; board = hit?.kind === 'board' ? hit.node : null; hire = hit?.kind === 'hire' ? hit : null; toggle = hit?.kind === 'toggle' ? hit.node : null; togglePoint = hit?.point;
     prop = hit?.kind === 'prop' && !props.holding ? hit.body : null; props.aim(prop);
@@ -209,7 +219,7 @@ export function mountOffice(container, hooks) {
     renderer.domElement.style.cursor = (node || prop) && !aiming ? 'pointer' : view.overview ? view.overhead.dragging ? 'grabbing' : 'grab' : '';
     overlays.setAim(!!(node || prop));
     if (node === hovered) return;
-    highlight(hovered, false); highlight(node, true); hovered = node;
+    lit(hovered, false); lit(node, true); hovered = node;
   };
   // The pods' name signs hang edge-on to the overview: it tips them up to face it, and a bit bigger (room.js shares their
   // geometry as shared.sign; office.update finds them).
@@ -266,7 +276,7 @@ export function mountOffice(container, hooks) {
       shots.sync(snapshot.sessions.filter(session => session.provider === 'claude' && !session.parentId && layout.desks.has(session.id)));
       for (const face of Object.values(room.boards)) face.parent.userData.board = true; // clicking one takes you to it
       signs = []; scene.traverse(node => { if (node.geometry && node.geometry === shared.sign) signs.push(node); });
-      cast.sync(layout, snapshot.sessions, room, office.statuses);
+      cast.sync(layout, snapshot.sessions, room, office.statuses); mark();
       bubbles.sync([...snapshot.sessions.filter(session => layout.desks.has(session.id) || session.parentId).map(session => ({ id: session.id, bubble: office.statuses.get(session.id).bubble, unread: hooks.isUnread?.(session) })),
         ...[...fired.keys()].filter(id => layout.desks.get(id)?.vacantSince !== undefined).map(id => ({ id, bubble: FIRED.bubble }))]);
       const waiting = snapshot.sessions.filter(session => office.statuses.get(session.id).bubble?.highlight);
@@ -334,8 +344,18 @@ export function mountOffice(container, hooks) {
     // A pod's sign: let go of the mouse and offer Claude (per account) or Codex, started in the pod's folder.
     offerHire({ cwd, node, point }, at, focus = false) {
       player.unlock(); card.show(null);
-      highlight(hovered, false); highlight(node, true); hovered = node;
+      lit(hovered, false); lit(node, true); hovered = node;
       menuAt.copy(point); menu.show(cwd, at, focus, hireChoices(office.snapshot, cwd));
+    },
+    // main.js: a filter or project was picked in the sidebar (null: all sessions). Outline who it takes in and, from a click,
+    // rise to the overview framed on their desks (or all of them).
+    pick(test, open) {
+      picked = test; mark();
+      if (!open) return;
+      play(null); office.talking = null; menu.close();
+      const desks = picked ? (office.snapshot?.sessions || []).filter(picked).map(session => layout?.desks.get(session.id) || layout?.desks.get(session.parentId)).filter(Boolean) : [];
+      view.overhead.frame(desks.map(({ x, z }) => [x - DESK_W / 2 - 0.3, x + DESK_W / 2 + 0.3, z - 1.4, z + 1.4]), !reducedMotion?.matches);
+      overview(true);
     },
     // main.js calls this when the session panel closes.
     panelClosed() { office.talking = null; cast.greet(null); view.focus(null); },

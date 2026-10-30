@@ -5,7 +5,7 @@ import { officeHasKeys } from './player.js';
 
 // Looking down at 55°, with room for the heads and bubbles over the desks and a margin round the screen edge.
 // Zoom goes from 3 m off the floor out to 1.6 times the fitted distance.
-export const PITCH = 55 * Math.PI / 180; const HEADS = 2.2, MARGIN = 0.07, CLOSEST = 3, FURTHEST = 1.6, KEY_PAN = 0.9, KEY_ZOOM = 1.5;
+export const PITCH = 55 * Math.PI / 180; const HEADS = 2.2, MARGIN = 0.07, CLOSEST = 3, FURTHEST = 1.6, KEY_PAN = 0.9, KEY_ZOOM = 1.5, GLIDE = 0.7;
 const SLOPE = new THREE.Vector3(0, Math.sin(PITCH), Math.cos(PITCH));
 const PAN = { KeyW: [0, -1], ArrowUp: [0, -1], KeyS: [0, 1], ArrowDown: [0, 1], KeyA: [-1, 0], ArrowLeft: [-1, 0], KeyD: [1, 0], ArrowRight: [1, 0] };
 const ZOOM = { '+': -1, '=': -1, '-': 1, '_': 1 };
@@ -84,25 +84,37 @@ export class Overview {
     this.room = room;
     this.boxes = pods.length ? pods.map(pod => [pod.x - pod.width / 2 - 0.6, pod.x + pod.width / 2 + 0.6, pod.z - pod.depth / 2 - 0.9, pod.z + pod.depth / 2 + 0.9]) : [[0, room.width, 0, room.depth]];
   }
+  // The sidebar's pick (office.pick): fit these desks instead of the pods until it closes, gliding over if it's open.
+  frame(boxes, glide) {
+    const was = glide && this.on && this.pose(), start = was && { look: was.look.clone(), distance: was.from.distanceTo(was.look), t: 0 };
+    // Never closer than a few desks' worth: one desk alone would put its pod's sign in your face.
+    const mid = i => (Math.min(...boxes.map(box => box[i])) + Math.max(...boxes.map(box => box[i + 1]))) / 2, x = mid(0), z = mid(2);
+    this.picked = boxes.length ? [...boxes, [x - 3.5, x + 3.5, z - 2.5, z + 2.5]] : null; this.view = null; this.glide = start || null;
+  }
   // Opening starts from the fitted view; closing keeps yours so the camera leaves from where it is.
-  setActive(on) { this.on = on; if (on) this.view = null; this.pointers.clear(); this.held.clear(); }
+  setActive(on) {
+    if (!on && this.picked) { this.edit(); this.picked = null; }
+    this.on = on; if (on) this.view = null; this.glide = null; this.pointers.clear(); this.held.clear();
+  }
   get dragging() { return this.pointers.size > 0; }
 
   // Worked out again only when the boxes or the screen's shape change.
   fitted() {
-    const key = `${this.boxes.join(';')},${this.camera.aspect.toFixed(3)}`;
-    if (this.fit?.key !== key) this.fit = { key, ...fitOverview(this.boxes, this.fov, this.camera.aspect) };
+    const boxes = this.picked || this.boxes, key = `${boxes.join(';')},${this.camera.aspect.toFixed(3)}`;
+    if (this.fit?.key !== key) this.fit = { key, ...fitOverview(boxes, this.fov, this.camera.aspect) };
     return this.fit;
   }
   // Where the camera goes: { from, look }, reused between calls.
   pose() {
-    const { look, distance } = this.view || this.fitted();
-    this.look.copy(look); this.from.copy(look).addScaledVector(SLOPE, distance);
+    const { look, distance } = this.view || this.fitted(), glide = this.glide, k = glide && (1 - Math.cos(Math.PI * glide.t)) / 2;
+    if (glide) this.look.lerpVectors(glide.look, look, k); else this.look.copy(look);
+    this.from.copy(this.look).addScaledVector(SLOPE, glide ? glide.distance + (distance - glide.distance) * k : distance);
     return this;
   }
 
   // Held keys pan at a pace that suits how far away you are, and zoom about the middle of the screen.
   update(dt) {
+    if (this.glide && (this.glide.t += dt / GLIDE) >= 1) this.glide = null;
     if (!this.on || !this.held.size) return;
     const step = new THREE.Vector3(); let zoom = 0;
     for (const [code, z] of this.held) { const pan = PAN[code]; if (pan) { step.x += pan[0]; step.z += pan[1]; } else zoom += z; }
@@ -110,7 +122,11 @@ export class Overview {
     if (zoom) this.zoom(null, Math.exp(zoom * KEY_ZOOM * dt));
   }
 
-  edit() { const { look, distance } = this.fitted(); return this.view ||= { look: look.clone(), distance }; }
+  // Taking hold mid-glide keeps it where it's got to.
+  edit() {
+    if (this.glide) { const { from, look } = this.pose(); this.view = { look: look.clone(), distance: from.distanceTo(look) }; this.glide = null; }
+    const { look, distance } = this.fitted(); return this.view ||= { look: look.clone(), distance };
+  }
   // The floor under one screen point moves to sit under the other.
   pan(a, b) { const p = this.ground(a), q = this.ground(b); if (p && q) this.move(p.sub(q)); }
   move(delta) {
