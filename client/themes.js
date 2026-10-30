@@ -13,10 +13,8 @@ export const themes = [
   { id: 'heroes', scheme: 'dark', name: 'Heroes', color: '#172749' },
   // The office replaces the list with a 3D scene; the chrome around it is paper pinned to a corkboard.
   { id: 'office', scheme: 'light', name: 'Office', color: '#dcc6a3' },
-  // The bridge is a 3D scene too; its colour options share one room, as Orbit's share one look.
-  { id: 'bridge-neon', look: 'bridge', scheme: 'dark', name: 'Bridge neon', color: '#150f33' },
-  { id: 'bridge-violet', look: 'bridge', scheme: 'dark', name: 'Bridge violet', color: '#1a1240' },
-  { id: 'bridge-arctic', look: 'bridge', scheme: 'dark', name: 'Bridge arctic', color: '#0f1a33' },
+  // The bridge is a 3D scene too; its colours are chosen on the bridge itself.
+  { id: 'bridge', scheme: 'dark', name: 'Bridge', color: '#150f33' },
 ];
 const storageKey = 'ai-control-theme';
 export function hasSavedTheme() { try { return themes.some(theme => theme.id === localStorage.getItem(storageKey)); } catch { return true; } }

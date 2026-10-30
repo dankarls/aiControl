@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { PALETTES, paletteFor } from '../client/bridge/palettes.js';
+import { PALETTES, paletteFor, savedColour, saveColour } from '../client/bridge/palettes.js';
 
 const rgb = hex => [1, 3, 5].map(at => parseInt(hex.slice(at, at + 2), 16) / 255);
 function hue(hex) {
@@ -17,7 +17,7 @@ function saturation(hex) {
 const hueDistance = (a, b) => { const d = Math.abs(a - b) % 360; return Math.min(d, 360 - d); };
 const linear = c => c <= .04045 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4;
 const maxLinear = hex => Math.max(...rgb(hex).map(linear));
-const KEYS = ['wall', 'ceiling', 'bay', 'trim', 'console', 'mount', 'rail', 'door', 'pit', 'deck', 'neon'];
+const KEYS = ['wall', 'ceiling', 'bay', 'trim', 'console', 'mount', 'rail', 'door', 'pit', 'deck', 'neon', 'lamp'];
 const decorative = p => [...KEYS.map(key => p[key]), ...p.tones];
 const allColours = p => [...decorative(p), p.chair, p.seat];
 
@@ -40,8 +40,32 @@ for (const [id, p] of Object.entries(PALETTES)) {
     assert.equal(typeof p.ambient, 'number');
   });
 }
-test('every option is a theme entry', () => {
+test('the menu has one Bridge theme; colours are chosen inside it', () => {
   const source = readFileSync('client/themes.js', 'utf8');
-  for (const id of Object.keys(PALETTES)) assert.ok(source.includes(`id: '${id}', look: 'bridge'`), id);
+  assert.ok(source.includes("id: 'bridge', scheme: 'dark'"));
+  assert.ok(!source.includes('bridge-'));
 });
-test('unknown choices get a palette', () => assert.equal(paletteFor('nope'), PALETTES['bridge-neon']));
+test('every colour has a name to show', () => {
+  for (const p of Object.values(PALETTES)) assert.match(p.name, /^[A-Z][a-z]+$/);
+});
+test('unknown colours get the first palette', () => assert.equal(paletteFor('nope'), PALETTES.neon));
+function withStorage(storage, run) {
+  const had = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', { value: storage, configurable: true });
+  try { run(); } finally { if (had) Object.defineProperty(globalThis, 'localStorage', had); else delete globalThis.localStorage; }
+}
+test('the chosen colour is remembered', () => {
+  const kept = new Map();
+  withStorage({ getItem: key => kept.get(key) ?? null, setItem: (key, value) => kept.set(key, value) }, () => {
+    assert.equal(savedColour(), 'neon');
+    saveColour('arctic');
+    assert.equal(savedColour(), 'arctic');
+  });
+});
+test('a stale or unreadable saved colour falls back', () => {
+  withStorage({ getItem: () => 'bridge-violet' }, () => assert.equal(savedColour(), 'neon'));
+  withStorage({ getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); } }, () => {
+    assert.equal(savedColour(), 'neon');
+    saveColour('violet');
+  });
+});
