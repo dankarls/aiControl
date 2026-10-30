@@ -173,12 +173,13 @@ export class ClaudeMessaging {
     return all.filter(child => child.ppid === pid && child.args.includes('/shell-snapshots/')).map(shell => all.find(child => child.ppid === shell.pid)?.args || 'a shell command');
   }
   // What's typed at Claude's prompt: '' when it's empty, null when no prompt shows (a dialog, or Claude has gone).
-  // The input box is the prompt line, and the lines it wraps onto, between two rules.
+  // The input box is the prompt line, and the lines it wraps onto, between two rules. A slash command's menu opens under
+  // the box with its own ❯ on the row after the bottom rule; no rule closes it, so it isn't taken for the box.
   async inputText(pane) {
     const screen = await this.tmux(['capture-pane', '-p', '-e', '-J', '-t', pane]).catch(() => null);
     if (screen === null) return null;
     const rows = undimmedRows(screen), rule = row => /^\s*─/.test(row ?? '');
-    const start = rows.findLastIndex((row, i) => rule(rows[i - 1]) && /^\s*[❯>]/.test(row)), end = rows.findIndex((row, i) => i > start && rule(row));
+    const start = rows.findLastIndex((row, i) => rule(rows[i - 1]) && /^\s*[❯>]/.test(row) && rows.some((later, j) => j > i && rule(later))), end = rows.findIndex((row, i) => i > start && rule(row));
     if (start < 0 || end < 0) return null;
     return rows.slice(start, end).join('\n').replace(/^\s*[❯>]/, '').replaceAll('\u00a0', ' ').trim();
   }

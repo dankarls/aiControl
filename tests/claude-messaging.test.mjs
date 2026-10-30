@@ -244,6 +244,8 @@ test('the prompt reads empty under Claude’s dim placeholder, and only a prompt
   assert.equal(await read(['> an earlier prompt', '\x1b[38;5;244m────', '\x1b[39m❯\u00a0\x1b[2mTry "write a test"', '\x1b[0m\x1b[38;5;244m────', '\x1b[39m  ⏵⏵ auto mode on']), '');
   assert.equal(await read(['────', '❯\u00a0\x1b[38;5;2mfix the \x1b[1;38;2;2;2;2mtests\x1b[22m', '────']), 'fix the tests');
   assert.equal(await read(['────', '❯ /exit', '────']), '/exit');
+  // Typing a slash command opens its menu under the box, the match marked with its own ❯.
+  assert.equal(await read(['────', '❯ /exit', '────', '  ❯ /exit       Exit the CLI', '    /context    Visualize current context usage']), '/exit');
   assert.equal(await read(['────', ' Do you want to proceed?', ' ❯ 1. Yes', '   2. No']), null);
   assert.equal(await read(['user@host:~$ ']), null);
 });
