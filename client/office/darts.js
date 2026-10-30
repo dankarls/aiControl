@@ -1,13 +1,16 @@
 // Darts in the secret room: a board on the back wall, a chalkboard beside it keeping score and a strip of tape for the oche.
 // Click the board (or E on it) to step up to the tape: the view is the oche's, a dart in hand, board and chalkboard both in
 // sight (on a narrow screen the chalkboard comes along in your other hand, up top). A ring on the board is where you aim,
-// and it breathes: wide, then tight, then wide again. A dart lands anywhere inside it, so throw when it's tightest. A mouse
-// moves it and a click (or E) throws; a finger drags it, as on a touchpad so the finger isn't in the way, and a tap throws.
-// Esc, ✕ or a walking key steps back (office.js runs that). Much like the darts in Final Fantasy VII Remake.
+// and it breathes: wide, then tight, then wide again. A dart lands anywhere inside it, so throw when it's tightest. As in
+// Final Fantasy VII Remake's darts, each dart's ring starts somewhere random on the board, you steer it with a thumbstick
+// against a pull back to there, it sways with your hand, and a dial round it runs down: when that's out the dart goes
+// wherever the ring is. The stick: press anywhere (mouse or finger) and drag; letting go throws, as does a click, a tap or
+// E. Esc, ✕ or a walking key steps back (office.js runs that).
 // The game is 301 with any finish: from 301 down to exactly 0, three darts a turn; going under 0 is a bust and the turn
 // counts for nothing. When one dart could finish, the beds that would glow. Your best is the fewest darts to check out,
 // kept per browser.
-// With reduced motion the ring holds still at a middling width and a dart lands at once.
+// With reduced motion the ring holds still at a middling width, goes straight to where the stick and the pull leave it,
+// doesn't sway, and a dart lands at once.
 import * as THREE from 'three';
 import { mesh, once, canvasTexture, glowTexture, paint, painted } from './furniture.js';
 import { DRAG_SLOP } from './player.js';
@@ -49,15 +52,19 @@ export function finishes(left) {
 // AWAY from its face, and SPAN is how wide the view has to be there to take in the board and the chalkboard.
 const BOARD = { x: 2.3, y: 1.73 }, SIZE = 1.3, FACE = -SECRET.back + 0.06, OCHE = FACE + 2.37, AWAY = 2.62, FOV = 38;
 const SLATE = { x: BOARD.x + 0.95, y: 1.62 }, SPAN = SLATE.x + 0.48 - (BOARD.x - RINGS.board * SIZE - 0.05);
-// The ring's radius on the wall (m) at its tightest and widest, and held still; seconds a breath takes; how far a finger's
-// drag moves it, for how far the wall under the finger moves; how far off the board's middle it can be dragged.
-const TIGHT = 0.006, WIDE = 0.075, STILL = 0.02, BREATH = 1.3, GAIN = 0.7, REACH = 0.42;
+// The ring's radius on the wall (m) at its tightest and widest, and held still; seconds a breath takes; how far off the
+// board's middle it can go.
+const TIGHT = 0.008, WIDE = 0.075, STILL = 0.02, BREATH = 2, REACH = 0.42;
+// The stick: how far you've dragged from where you pressed, up to STICK css px, is how hard the ring's pushed, up to PUSH
+// m/s, while it's pulled back to where it started at BACK per second, so held at full stretch it settles PUSH / BACK away.
+// The hand sways it up to SWAY (m) off. A dart's ring starts within START of the bull, and the dial (DIAL out from the
+// ring's middle) gives it CLOCK seconds, going red for the last LATE.
+const STICK = 60, PUSH = 0.5, BACK = 1.2, SWAY = 0.01, START = 0.8 * RINGS.doubleOut * SIZE, DIAL = 0.12, CLOCK = 8, LATE = 2;
 // How far down (css px) the chalkboard held up top starts: below office.css's row of buttons (12px down, 44px high, a shadow).
 const BAR = 66;
 const SPEED = 12, PULL = 1.6, BEST = 'ai-control-darts-best';
 const FLIGHTS = ['#ff4fd8', '#38f2ff', '#ffe14f'];
 export const CHALK = "'Comic Neue', 'Comic Sans MS', cursive";
-const coarse = globalThis.matchMedia?.('(pointer: coarse)');
 
 const B = (w, h, d, x, y, z) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
 // A dart along +z with its tip at the origin: point, barrel, shaft and two crossed flights.
@@ -120,7 +127,7 @@ function drawScore(g, w, h, game, best, active) {
   g.fillStyle = '#f2f2ea'; g.textAlign = 'right'; g.fillText(game.bust ? '' : `= ${game.turn.reduce((sum, hit) => sum + hit.points, 0)}`, w - 24, 275);
   g.textAlign = 'center'; g.font = `bold 40px ${CHALK}`;
   const word = game.won ? [`Checkout! ${game.darts} darts`, '#ffe14f'] : game.bust ? ['Bust!', '#ff6b6b'] : game.darts ? [`${game.darts} darts thrown`, '#b8c2bb']
-    : [!active ? 'Click the board to play' : coarse?.matches ? 'Drag to aim, tap to throw' : 'Throw when it’s tightest', '#b8c2bb'];
+    : [!active ? 'Click the board to play' : 'Drag, let go to throw', '#b8c2bb'];
   g.fillStyle = word[1]; g.fillText(word[0], w / 2, 345);
 }
 // What a dart just scored, floating up off the board (golf.js calls its holes with it too).
@@ -131,32 +138,27 @@ export function drawCall(g, w, h, text, color) {
   g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineWidth = 12; g.strokeStyle = '#1b1a1f'; g.strokeText(text, w / 2, h / 2); g.fillStyle = color; g.fillText(text, w / 2, h / 2);
 }
 
-// `hands`: the camera's hands (camera.js), where the next dart is held; `aim()`: where the mouse points, as a direction;
-// `canvas`: the scene's, for a finger's drags; `onPlay(darts)`: the board was clicked.
-export function createDarts({ hands, camera, aim, canvas, onPlay }) {
+// `hands`: the camera's hands (camera.js), where the next dart is held; `canvas`: the scene's, for the stick's drags;
+// `onPlay(darts)`: the board was clicked.
+export function createDarts({ hands, camera, canvas, onPlay }) {
   let game = newGame(), best = null, room = null, active = false, flight = null, pullAt = 0, time = 0, still = false;
-  let mouse = false, drag = null, breath = 0, wasReady = false, lit = '';
+  let drag = null, breath = 0, shot = 0, wasReady = false, lit = '';
   try { best = Number(localStorage.getItem(BEST)) || null; } catch {}
   const held = dart(0); held.rotation.set(0.12, 0.08, 0); held.visible = false; hands.add(held);
-  let stuck, ring, chalk, call, glow, hud;
-  // Where you aim, on the board's face in the room's frame.
-  const spot = new THREE.Vector2(BOARD.x, BOARD.y), local = new THREE.Vector3(), tight = new THREE.Color('#ffe14f');
+  let stuck, ring, chalk, call, glow, hud, pad;
+  // On the board's face in the room's frame: where the ring's been steered to, where this dart's started (and pulls back to)
+  // and the ring with the sway; the stick, as a push up to 1.
+  const spot = new THREE.Vector2(BOARD.x, BOARD.y), home = spot.clone(), sight = spot.clone(), step = new THREE.Vector2(), push = new THREE.Vector2();
+  const local = new THREE.Vector3(), tight = new THREE.Color('#ffe14f'), late = new THREE.Color('#ff5a5a');
   const onBoard = p => Math.hypot(p.x - BOARD.x, p.y - BOARD.y) <= RINGS.board * SIZE;
   const tan = () => Math.tan(camera.fov * Math.PI / 360), narrow = () => 2 * AWAY * Math.tan(FOV * Math.PI / 360) * camera.aspect < SPAN;
   // How wide the ring is now: it starts each dart wide and breathes in and out, lingering a moment when tight.
-  const spread = () => still ? STILL : TIGHT + (WIDE - TIGHT) * ((1 + Math.cos(2 * Math.PI * (time - breath) / BREATH)) / 2) ** 2;
-  // Where a line along `direction` from the camera meets the back wall, in the room's frame; null if it doesn't.
-  const landing = direction => {
-    const o = room.worldToLocal(local.copy(camera.position)), d = direction;
-    if (d.z > -0.05) return null;
-    const t = (FACE - o.z) / d.z, x = o.x + d.x * t, y = o.y + d.y * t;
-    return x > 0.1 && x < SECRET.w - 0.1 && y > 0.1 && y < 2.9 ? new THREE.Vector2(x, y) : null;
-  };
+  const spread = () => still ? STILL : TIGHT + (WIDE - TIGHT) * ((1 + Math.cos(2 * Math.PI * (time - breath) / BREATH)) / 2) ** 3;
   const darts = {
     // Holding a dart: playing, nothing in the air, the last turn's darts pulled out.
     get ready() { return active && !flight && !(game.over && time < pullAt); },
-    // Playing: office.js steps you up to the oche and back. A finger starts off aiming at the bull.
-    enter() { active = true; if (!mouse) spot.set(BOARD.x, BOARD.y); chalk.redraw(); },
+    // Playing: office.js steps you up to the oche and back.
+    enter() { active = true; chalk.redraw(); },
     leave() { active = false; drag = null; chalk.redraw(); },
     // Where you stand to play (on the floor, in world space) and which way you face; the view while playing: the board as
     // near the middle as leaves the chalkboard in sight, or on a narrow screen the board low, for the chalkboard up top.
@@ -206,7 +208,13 @@ export function createDarts({ hands, camera, aim, canvas, onPlay }) {
         tick.add(flat(new THREE.PlaneGeometry(0.034, 0.012), plain('#1b1a1f'), 4), flat(new THREE.PlaneGeometry(0.03, 0.008), plain('#ffffff'), 5));
         return tick;
       });
-      ring.userData = { area, edge, ticks };
+      // The dial: an arc from the top that runs down anticlockwise (drawn up to the time left; RingGeometry's segments run in order).
+      const arc = width => new THREE.RingGeometry(DIAL - width, DIAL + width, 64, 1, Math.PI / 2, Math.PI * 2);
+      const dial = [flat(arc(0.006), plain('#1b1a1f', 0.8), 2), flat(arc(0.0035), plain('#ffffff'), 3)]; ring.add(...dial);
+      ring.userData = { area, edge, ticks, dial };
+      // The stick while you drag it: a ring where you pressed and a knob that follows, STICK px out at most (update places them).
+      pad = new THREE.Group(); pad.visible = false; hands.add(pad);
+      pad.add(flat(new THREE.RingGeometry(0.9, 1, 40), plain('#ffffff', 0.5), 10), flat(new THREE.CircleGeometry(0.35, 24), plain('#ffffff', 0.7), 11));
       call = new THREE.Sprite(new THREE.SpriteMaterial({ map: canvasTexture(512, 128, drawCall), transparent: true, depthTest: false })); call.scale.set(0.72, 0.18, 1); call.renderOrder = 6; call.visible = false; room.add(call);
       relight();
     },
@@ -214,7 +222,7 @@ export function createDarts({ hands, camera, aim, canvas, onPlay }) {
     throw() {
       if (!darts.ready) return false;
       const a = Math.random() * Math.PI * 2, r = spread() * Math.sqrt(Math.random());
-      const to = new THREE.Vector3(THREE.MathUtils.clamp(spot.x + Math.cos(a) * r, 0.1, SECRET.w - 0.1), THREE.MathUtils.clamp(spot.y + Math.sin(a) * r, 0.1, 2.9), FACE);
+      const to = new THREE.Vector3(THREE.MathUtils.clamp(sight.x + Math.cos(a) * r, 0.1, SECRET.w - 0.1), THREE.MathUtils.clamp(sight.y + Math.sin(a) * r, 0.1, 2.9), FACE);
       const hit = onBoard(to) ? score((to.x - BOARD.x) / SIZE, (to.y - BOARD.y) / SIZE) : { points: 0, label: 'Miss', wall: true };
       if (hit.wall) to.z = -SECRET.back + 0.004;
       if (game.over) for (const m of stuck) m.visible = false;
@@ -230,7 +238,13 @@ export function createDarts({ hands, camera, aim, canvas, onPlay }) {
       if (!room) return;
       if (game.over && time >= pullAt && stuck.some(m => m.visible) && !flight) for (const m of stuck) m.visible = false; // pulled out
       const ready = darts.ready;
-      if (ready && !wasReady) breath = time; // a fresh dart: the ring starts wide
+      // A fresh dart: the ring starts wide somewhere on the board, the dial full. A stick still held from the last one has to
+      // let go and start again (or letting go would throw this one).
+      if (ready && !wasReady) {
+        breath = shot = time; if (drag?.moved) drag = null;
+        const a = Math.random() * Math.PI * 2, r = START * Math.sqrt(Math.random());
+        home.set(BOARD.x + Math.cos(a) * r, BOARD.y + Math.sin(a) * r); spot.copy(home);
+      }
       wasReady = ready; held.visible = ready;
       if (ready) { const next = game.over || game.won ? 0 : game.turn.length; if (held.userData.i !== next) { held.userData.i = next; held.geometry = stuck[next].geometry; } }
       // The dart in hand at the bottom left and, on a narrow screen, the chalkboard up top, both kept inside the view.
@@ -238,14 +252,29 @@ export function createDarts({ hands, camera, aim, canvas, onPlay }) {
       held.position.set(-Math.min(0.11, 0.55 * across), -Math.min(0.11, 0.8 * high), -deep);
       hud.visible = active && narrow();
       if (hud.visible) { const w = Math.min(0.45 * high, 1.1 * across); hud.scale.setScalar(w); hud.position.set(0, high - BAR * px - 0.415 * w, -deep); }
-      if (active && mouse) { const p = landing(aim()); if (p) spot.copy(p); }
       ring.visible = ready;
+      if (drag?.moved) { push.set(drag.x - drag.x0, drag.y0 - drag.y).divideScalar(STICK); if (push.lengthSq() > 1) push.normalize(); } else push.set(0, 0);
+      pad.visible = ready && !!drag?.moved;
+      if (pad.visible) {
+        const box = canvas.getBoundingClientRect(), [base, knob] = pad.children;
+        pad.position.set((drag.x0 - box.left - box.width / 2) * px, (box.top + box.height / 2 - drag.y0) * px, -deep); base.scale.setScalar(STICK * px);
+        knob.scale.setScalar(STICK * px); knob.position.set(push.x * STICK * px, push.y * STICK * px, 0);
+      }
       if (ready) {
-        const r = spread(), { area, edge, ticks } = ring.userData;
-        ring.position.set(spot.x, spot.y, (onBoard(spot) ? FACE : -SECRET.back) + 0.004);
+        // The stick pushes, home pulls back (with reduced motion, straight to where the two leave it); then the sway.
+        if (still) spot.copy(home).addScaledVector(push, PUSH / BACK);
+        else spot.addScaledVector(push, PUSH * dt).addScaledVector(step.copy(home).sub(spot), 1 - Math.exp(-BACK * dt));
+        const off = Math.hypot(spot.x - BOARD.x, spot.y - BOARD.y); if (off > REACH) spot.set(BOARD.x + (spot.x - BOARD.x) * REACH / off, BOARD.y + (spot.y - BOARD.y) * REACH / off);
+        sight.copy(spot);
+        if (!still) sight.add(step.set(Math.sin(time * 2.3) * 0.7 + Math.sin(time * 0.9 + 2) * 0.3, Math.sin(time * 1.9 + 1) * 0.7 + Math.sin(time * 1.3) * 0.3).multiplyScalar(SWAY));
+        const r = spread(), left = CLOCK - (time - shot), { area, edge, ticks, dial } = ring.userData;
+        ring.position.set(sight.x, sight.y, (onBoard(sight) ? FACE : -SECRET.back) + 0.004);
         area.scale.setScalar(r); edge.scale.setScalar(r);
         area.material.color.setRGB(1, 1, 1).lerp(tight, 1 - (r - TIGHT) / (WIDE - TIGHT)); edge.material.color.copy(area.material.color);
         for (const tick of ticks) for (const m of tick.children) m.position.x = r + 0.02;
+        for (const m of dial) m.geometry.setDrawRange(0, 6 * Math.ceil(64 * Math.max(0, left) / CLOCK));
+        dial[1].material.color.set(left < LATE ? late : 0xffffff);
+        if (left <= 0) darts.throw();
       }
       glow.visible = active && !!lit; if (glow.visible) glow.material.opacity = still ? 0.9 : 0.75 + 0.25 * Math.sin(time * 5);
       if (flight) {
@@ -272,21 +301,23 @@ export function createDarts({ hands, camera, aim, canvas, onPlay }) {
     call.material.map.redraw(word, game.won ? '#ffe14f' : game.bust ? '#ff6b6b' : FLIGHTS[f.i]);
     call.userData = { at: time, y: f.to.y + 0.16 }; call.position.set(f.to.x, f.to.y + 0.16, f.to.z + 0.1); call.material.opacity = 1; call.visible = true;
   }
-  // A mouse aims where it points. A finger drags the ring along, slower than itself, once it's really dragging (as player.js
-  // tells a drag from a tap, which throws).
-  canvas.addEventListener('pointermove', event => {
-    if (event.pointerType === 'mouse') { mouse = true; return; }
-    if (!drag || drag.id !== event.pointerId) return;
-    const dx = event.clientX - drag.x, dy = event.clientY - drag.y;
-    if (!drag.moved && Math.hypot(dx, dy) < DRAG_SLOP) return;
-    drag.moved = true; drag.x = event.clientX; drag.y = event.clientY;
-    const k = GAIN * 2 * AWAY * tan() / (canvas.clientHeight || 1);
-    spot.x += dx * k; spot.y -= dy * k;
-    const off = Math.hypot(spot.x - BOARD.x, spot.y - BOARD.y); if (off > REACH) spot.set(BOARD.x + (spot.x - BOARD.x) * REACH / off, BOARD.y + (spot.y - BOARD.y) * REACH / off);
+  // The stick: a press (mouse or finger) on the scene, then once it's really a drag (as player.js tells one from a click,
+  // which throws) how far it's gone from where it started.
+  canvas.addEventListener('pointerdown', event => {
+    if (!active || event.button !== 0 || drag) return;
+    drag = { id: event.pointerId, x0: event.clientX, y0: event.clientY, x: event.clientX, y: event.clientY, moved: false };
+    try { canvas.setPointerCapture(event.pointerId); } catch {} // a mouse can let go off the canvas
   });
-  canvas.addEventListener('pointerleave', event => { if (event.pointerType === 'mouse') mouse = false; });
-  canvas.addEventListener('pointerdown', event => { if (event.pointerType === 'mouse' || !active) return; mouse = false; drag ??= { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false }; });
-  const lift = event => { if (drag?.id === event.pointerId) drag = null; };
+  canvas.addEventListener('pointermove', event => {
+    if (drag?.id !== event.pointerId) return;
+    drag.x = event.clientX; drag.y = event.clientY;
+    if (Math.hypot(drag.x - drag.x0, drag.y - drag.y0) >= DRAG_SLOP) drag.moved = true;
+  });
+  const lift = event => {
+    if (drag?.id !== event.pointerId) return;
+    const moved = drag.moved; drag = null;
+    if (moved && event.type === 'pointerup') darts.throw();
+  };
   canvas.addEventListener('pointerup', lift); canvas.addEventListener('pointercancel', lift);
   return darts;
 }
