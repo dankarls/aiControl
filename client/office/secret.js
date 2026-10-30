@@ -12,7 +12,7 @@ import { toonMaterial } from './toon.js';
 // The doorway in the office's right wall: wide and high, its middle this far from the front wall (room.js cuts it).
 export const DOOR = { w: 1.3, h: 2.2, back: 3.8 };
 // The games room, from the doorway's middle on its far side: how far it reaches in (x), behind it (-z) and in front (+z).
-export const SECRET = { w: 10, back: 4.1, front: 3.1 };
+export const SECRET = { w: 13, back: 4.1, front: 3.1 };
 const SHELF = { w: 1.5, h: 2.3, d: 0.38 }, SLIDE = 1.6, MOVE = 1.4; // metres; seconds to slide open or shut
 const SHUT_AFTER = 5, AWAY = 3; // it shuts once you've been out of the room and this far from the doorway this many seconds
 // The right book: which shelf (from the floor), where along it, its size; it leans out LEAN and tips out further when pressed.
