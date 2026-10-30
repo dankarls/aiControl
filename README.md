@@ -10,7 +10,7 @@ A self-hosted dashboard for local Codex and Claude Code sessions on **macOS and 
 - Answer permissions and questions, send messages, stop turns and start agents. Nothing is auto-approved.
 - Chat history with Markdown, diffs, tool calls, screenshots and the Markdown files a session writes.
 - Account usage limits, notifications and sounds when a session needs you.
-- Light, dark and themed interfaces, including a walkable 3D Office.
+- Light, dark and themed interfaces, including a walkable 3D Office and a starship Bridge you can walk around, with holograms for its colours and who's waiting.
 - Local access or access from other devices over Tailscale, protected by a PIN or password.
 
 ## Setup
@@ -57,6 +57,12 @@ npm run build
 | Springfield | Sanctuary | Heroes |
 | --- | --- | --- |
 | ![Springfield](docs/screenshots/springfield-overview.webp) | ![Sanctuary](docs/screenshots/diablo-overview.webp) | ![Heroes](docs/screenshots/heroes-overview.webp) |
+
+| Bridge | Bridge, on alert | Bridge's list |
+| --- | --- | --- |
+| ![Bridge at warp](docs/screenshots/bridge-warp.webp) | ![Bridge on alert with the colour hologram open](docs/screenshots/bridge-hail.webp) | ![Bridge's session list](docs/screenshots/bridge-list.webp) |
+
+The Bridge theme is an original design and is not affiliated with any franchise.
 
 [More screenshots, including mobile](docs/screenshots).
 
