@@ -18,8 +18,8 @@ import { SECRET } from './secret.js';
 import { BALL, CUP, RAIL, PIPE, PERIOD, DT, MAX, HOLE_COUNT, PARS, hole, endless, height, step, inside } from './golf-course.js';
 
 // The green's surface over the floor (high enough that its deepest hollow stays above it); how far rails stand above it;
-// how much higher than it rolls the green is drawn, so its humps and hollows show.
-const BASE = 0.26, CAP = 0.06, LIFT = 2;
+// how much higher than it rolls the green is drawn, so its mounds and hollows show.
+const BASE = 0.32, CAP = 0.06, LIFT = 2.5;
 // How far back the club is drawn for the hardest putt (m); strokes before you pick up; how far over par ends an Endless run.
 const REACH = 0.6, STROKES = 8, OUT = 10, SAVE = 'ai-control-golf';
 const NEON = ['#ff4fd8', '#38f2ff', '#ffe14f', '#7dff6b', '#ff8a3d'], RAIL_BODY = '#2b2346';
@@ -56,7 +56,10 @@ function railParts(c) {
     parts.push([new THREE.BoxGeometry(length, CAP, RAIL * 2 + 0.006).rotateY(turn).translate(x, top + CAP / 2, z), color]);
     return top;
   };
-  c.outline.forEach((p, i) => { bar([...p, ...c.outline[(i + 1) % c.outline.length]], NEON[i % NEON.length]); post(...p); });
+  // One colour a side and a post at each real corner; round a curve (bends under 25°) the rail runs on unbroken.
+  const sharp = c.outline.map((p, i) => { const a = c.outline.at(i - 1), b = c.outline[(i + 1) % c.outline.length], turn = Math.abs(Math.atan2((p[0] - a[0]) * (b[1] - p[1]) - (p[1] - a[1]) * (b[0] - p[0]), (p[0] - a[0]) * (b[0] - p[0]) + (p[1] - a[1]) * (b[1] - p[1]))); return turn > 0.44; });
+  let side = 0;
+  c.outline.forEach((p, i) => { if (sharp[i] && i) side++; bar([...p, ...c.outline[(i + 1) % c.outline.length]], NEON[side % NEON.length]); if (sharp[i]) post(...p); });
   // A wedge: its two inner sides as rails, its top filled in level with the higher.
   for (const [p, q, s] of c.wedges) {
     const top = Math.max(bar([...p, ...q], NEON[1]), bar([...q, ...s], NEON[1])); post(...q, top);
@@ -77,7 +80,7 @@ function surfaceGeometry(c, box) {
       c.outline.forEach(([x1, z1], e) => { const [x2, z2] = c.outline[(e + 1) % c.outline.length], dx = x2 - x1, dz = z2 - z1, t = clamp(((x - x1) * dx + (z - z1) * dz) / (dx * dx + dz * dz), 0, 1), d = Math.hypot(x - x1 - dx * t, z - z1 - dz * t); if (d < best) { best = d; px = x1 + dx * t; pz = z1 + dz * t; } });
       x = px; z = pz;
     }
-    position.set([x, height(c, x, z) * LIFT, z], k * 3); uv.set([x / FELT, z / FELT], k * 2);
+    position.set([x, height(c, x, z) * LIFT, z], k * 3); uv.set([(x - box.x0) / (box.x1 - box.x0), 1 - (z - box.z0) / (box.z1 - box.z0)], k * 2);
   }
   for (let j = 0; j < rows - 1; j++) for (let i = 0; i < cols - 1; i++) {
     const a = j * cols + i, b = a + 1, d = a + cols, e = d + 1;
@@ -86,18 +89,19 @@ function surfaceGeometry(c, box) {
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(position, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); g.setIndex(index); g.computeVertexNormals();
   return g;
 }
-// The felt: a fine weave in green, tiled every FELT metres and lit by the room, so slopes show in light and shade.
-const FELT = 0.5;
-let feltLook;
-const felt = () => feltLook ??= (() => {
-  const texture = canvasTexture(128, 128, g => {
-    const img = g.createImageData(128, 128);
-    for (let k = 0; k < 128 * 128; k++) { const v = 0.9 + hash(k % 128, Math.floor(k / 128)) * 0.2; img.data.set([96 * v, 196 * v, 100 * v, 255], k * 4); }
-    g.putImageData(img, 0, 0);
-  });
-  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-  return texture;
-})();
+// The felt for hole `c`: a fine weave in green, with soft hill shading baked in as if lit low from the back left, so a mound
+// is bright on one side and in shadow on the other however the room's lit (it's lit by the room as well).
+function drawFelt(g, w, h, c, box) {
+  if (!c) return;
+  const img = g.createImageData(w, h), sx = (box.x1 - box.x0) / w, sz = (box.z1 - box.z0) / h, light = new THREE.Vector3(-0.55, 0.7, -0.45).normalize(), normal = new THREE.Vector3();
+  for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+    const x = box.x0 + (i + 0.5) * sx, z = box.z0 + (j + 0.5) * sz, k = (j * w + i) * 4;
+    normal.set(-(height(c, x + sx, z) - height(c, x - sx, z)) / (2 * sx) * LIFT * 2, 1, -(height(c, x, z + sz) - height(c, x, z - sz)) / (2 * sz) * LIFT * 2).normalize();
+    const shade = clamp(0.5 + 0.5 * normal.dot(light) / light.y, 0.45, 1.3) * (0.9 + hash(i, j) * 0.2);
+    img.data.set([96 * shade, 196 * shade, 100 * shade, 255], k);
+  }
+  g.putImageData(img, 0, 0);
+}
 // The notice board: cork with the scorecard pinned on, the hole on now above it, Endless below. Returns where the holes'
 // boxes and the Endless post-it are, in canvas pixels, for clicks.
 function drawBoard(g, w, h, s) {
@@ -193,6 +197,7 @@ export function createGolf({ camera, canvas, ray, onPlay }) {
     const xs = c.outline.map(p => p[0]), zs = c.outline.map(p => p[1]);
     Object.assign(box, { x0: Math.min(...xs), z0: Math.min(...zs), x1: Math.max(...xs), z1: Math.max(...zs) });
     surface.geometry.dispose(); surface.geometry = surfaceGeometry(c, box);
+    surface.material.map?.dispose(); surface.material.map = canvasTexture(Math.round((box.x1 - box.x0) * 120), Math.round((box.z1 - box.z0) * 120), (g, w, h) => drawFelt(g, w, h, c, box)); surface.material.needsUpdate = true;
     rails?.removeFromParent(); rails?.geometry.dispose(); rails = mesh(paint(railParts(c)), painted(), 0.004); course3d.add(rails);
     for (const m of things) { m.removeFromParent(); m.userData.cap?.material.dispose(); }
     things = c.things.map(o => { const m = mesh(once(`golf-${o.kind}`, () => paint(thingParts[o.kind]())), painted(), 0.004); m.position.set(o.x, surfaceY(o.x, o.z), o.z); m.rotation.y = -o.turn; course3d.add(m); return m; });
@@ -220,7 +225,7 @@ export function createGolf({ camera, canvas, ray, onPlay }) {
       room = group;
       // The course: click any of it to play (outlined under the pointer).
       course3d = new THREE.Group(); course3d.userData.toggle = () => onPlay(golf); group.add(course3d);
-      surface = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshLambertMaterial({ map: felt(), emissive: '#0c2e10' })); surface.position.y = BASE; course3d.add(surface);
+      surface = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshLambertMaterial({ emissive: '#0c2e10' })); surface.position.y = BASE; course3d.add(surface);
       cup = new THREE.Group(); course3d.add(cup);
       cup.add(new THREE.Mesh(new THREE.CircleGeometry(CUP, 28).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#141317' })), new THREE.Mesh(new THREE.RingGeometry(CUP, CUP + 0.012, 28).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#f4f2ec' })));
       flagTexture = canvasTexture(128, 96, (g, tw, th, number) => { g.clearRect(0, 0, tw, th); g.fillStyle = '#e63946'; g.beginPath(); g.moveTo(0, 0); g.lineTo(tw, th / 2); g.lineTo(0, th); g.fill(); g.fillStyle = '#ffffff'; g.font = `bold 44px ${CHALK}`; g.textBaseline = 'middle'; g.fillText(number ?? '', 8, th / 2 + 2); });
