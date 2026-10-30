@@ -1,4 +1,5 @@
 import { setAlienAmbienceEnabled } from './alien-ambience.js';
+import { sceneFor } from './scenes.js';
 
 // `look` picks the CSS theme; Orbit's `scheme` is fixed, or follows the system when absent.
 export const themes = [
@@ -9,6 +10,8 @@ export const themes = [
   { id: 'command', name: 'EVA', color: '#62685a' },
   // The office replaces the list with a 3D scene; the chrome around it is paper pinned to a corkboard.
   { id: 'office', scheme: 'light', name: 'Office', color: '#dcc6a3' },
+  // The bridge is a 3D scene too; its colour options share one room, as Orbit's share one look.
+  { id: 'bridge-neon', look: 'bridge', scheme: 'dark', name: 'Bridge neon', color: '#150f33' },
 ];
 const storageKey = 'ai-control-theme';
 export function hasSavedTheme() { try { return themes.some(theme => theme.id === localStorage.getItem(storageKey)); } catch { return true; } }
@@ -20,6 +23,7 @@ export function applyTheme(id) {
   const theme = themes.find(theme => theme.id === id) || themes.find(theme => theme.id === 'alien');
   const root = document.documentElement, previous = root.dataset.theme, look = theme.look || theme.id;
   root.dataset.theme = look; root.dataset.themeChoice = theme.id;
+  root.toggleAttribute('data-scene', !!sceneFor(look));
   setAlienAmbienceEnabled(look === 'alien');
   const scheme = () => {
     const dark = theme.scheme ? theme.scheme === 'dark' : !!theme.dark && !!systemDark?.matches;

@@ -16,6 +16,7 @@ import { renderMessageMarkdown, renderDocument } from './message-markdown.js';
 import { documentSegments, matchDocument } from './document-links.js';
 import { renderUsage } from './usage.js';
 import { renderThemeConsole } from './theme-console.js';
+import { sceneFor, sceneAction } from './scenes.js';
 import { hireChoices } from './hire.js';
 import { alertSettings, saveAlerts, canNotify, statusEvents, signal, playSound, enableNotifications, listenForOpen, faviconBadge } from './alerts.js';
 
@@ -98,6 +99,7 @@ const icons = {
   next: '<path d="m6 5 7 7-7 7m7-14 7 7-7 7"/>',
   exit: '<path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4m5-12 4 4-4 4m4-4H9"/>',
   eraser: '<path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21m9 0H7M5 11l9 9"/>',
+  bridge: '<path d="M12 2c3 2.5 4.5 6 4.5 10l-1.5 5H9l-1.5-5C7.500 8 9 4.500 12 2Zm-3 15-3 3 .5-5 1.500-3m7 5 3 3-.5-5-1.500-3M12 8.500v2"/>',
   office: '<path d="M4 21V5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v16m0-11h3a2 2 0 0 1 2 2v9M2 21h20M8 7h3m-3 4h3m-3 4h3"/>',
 };
 function icon(name) {
@@ -118,8 +120,8 @@ function uuid() {
 function chooseTheme(id) {
   applyTheme(id);
   for (const option of document.querySelectorAll('.theme-choice[data-theme-choice]')) option.setAttribute('aria-pressed', String(option.dataset.themeChoice === id));
-  // Picking the Office opens its scene, even if its list was showing last.
-  if (id === 'office' && officeList) setOfficeList(false); else syncOffice();
+  // Picking a scene theme opens its scene, even if its list was showing last.
+  if (sceneFor(document.documentElement.dataset.theme) && sceneList) setSceneList(false); else syncScene();
 }
 function themeMenu() {
   const menu = el('details', 'theme-menu');
@@ -194,7 +196,7 @@ function showLogin(message = '') {
   disposeComposer(); liveRender.cancel();
   messageDrafts.clear(); shots.clear(); docs.clear();
   clearTimeout(activityTimer); activityTimer = null;
-  clearInterval(poll); office?.unmount(); office = null; state.csrf = ''; state.snapshot = null; state.selected = null; panelSignature = ''; document.body.classList.remove('panel-open');
+  clearInterval(poll); closeScene(); state.csrf = ''; state.snapshot = null; state.selected = null; panelSignature = ''; document.body.classList.remove('panel-open');
   app.replaceChildren(); document.documentElement.removeAttribute('data-attention'); document.documentElement.removeAttribute('data-working');
   const screen = el('main', 'login-screen');
   screen.append(themeMenu());
@@ -231,7 +233,7 @@ function showWorkspace() {
   shell.append(aside);
   const content = el('div', 'workspace');
   const topbar = el('header', 'topbar');
-  const topActions = el('div', 'top-actions'); const live = el('span', 'live-label', 'Connecting…'); live.id = 'connection'; const access = button('PIN', 'quiet-button access-button', () => { previousFocus = document.activeElement; navigation.open('access'); }, 'key'); access.title = 'Change PIN / password'; const lockButton = button('Lock', 'quiet-button', () => lock(), 'lock'); lockButton.title = 'Lock now'; const officeButton = button('Office', 'quiet-button office-button', () => setOfficeList(false), 'office'); officeButton.title = 'Back to the office'; topActions.append(live, officeButton, alertsMenu(), themeMenu(), access, lockButton); topbar.append(brand()); content.append(topbar);
+  const topActions = el('div', 'top-actions'); const live = el('span', 'live-label', 'Connecting…'); live.id = 'connection'; const access = button('PIN', 'quiet-button access-button', () => { previousFocus = document.activeElement; navigation.open('access'); }, 'key'); access.title = 'Change PIN / password'; const lockButton = button('Lock', 'quiet-button', () => lock(), 'lock'); lockButton.title = 'Lock now'; const officeButton = button('Office', 'quiet-button office-button', () => setSceneList(false), 'office'); officeButton.title = 'Back to the office'; topActions.append(live, officeButton, alertsMenu(), themeMenu(), access, lockButton); topbar.append(brand()); content.append(topbar);
   // Desktop has no top bar: its controls sit at the bottom of the sidebar.
   const wide = matchMedia('(min-width: 641px)'), placeActions = () => (wide.matches ? aside : topbar).append(topActions);
   wide.onchange = placeActions; placeActions();
@@ -273,43 +275,51 @@ async function refresh() {
   } finally { loading = false; }
 }
 
-// The Office theme swaps the list for a 3D scene, downloaded only once it is chosen.
-// Its ☰ shows the list in the same paper look (the scene is unmounted meanwhile) and 🏢 goes back; the choice is remembered.
-const officeViewKey = 'ai-control-office-view';
-// Phones open on the list until the office is picked: it's the quicker check on a small screen.
+// Scene themes swap the list for a 3D scene, downloaded only once it is chosen.
+// Its ☰ shows the list in the same look (the scene is unmounted meanwhile) and a button goes back; the choice is remembered.
+const sceneViewKey = 'ai-control-office-view';
+// Phones open on the list until the scene is picked: it's the quicker check on a small screen.
 const phone = () => !!globalThis.matchMedia?.('(max-width: 640px) and (pointer: coarse)').matches;
-let office = null, officeModule = null, officeList = (() => { try { return (localStorage.getItem(officeViewKey) ?? (phone() ? 'list' : 'scene')) === 'list'; } catch { return phone(); } })();
-function setOfficeList(list) {
-  officeList = list; try { localStorage.setItem(officeViewKey, list ? 'list' : 'scene'); } catch { /* per-tab only */ }
-  syncOffice(); renderData();
+const sceneModules = {};
+let scene = null, sceneLook = null, failedLook = null, sceneList = (() => { try { return (localStorage.getItem(sceneViewKey) ?? (phone() ? 'list' : 'scene')) === 'list'; } catch { return phone(); } })();
+function setSceneList(list) {
+  sceneList = list; try { localStorage.setItem(sceneViewKey, list ? 'list' : 'scene'); } catch { /* per-tab only */ }
+  syncScene(); renderData();
   if (list) document.querySelector('.office-button')?.focus();
 }
-function syncOffice() {
-  const root = document.documentElement, main = document.querySelector('.main-content'), chosen = root.dataset.themeChoice === 'office';
-  root.toggleAttribute('data-office-list', chosen && officeList);
-  if (!chosen) root.removeAttribute('data-office-fallback');
-  if (!chosen || officeList || !main) { office?.unmount(); office = null; document.querySelector('#office')?.remove(); return; }
-  // Any failure (download, no WebGL2, renderer refused) shows the list once and stays that way for this theme choice.
-  const fallBack = message => { root.setAttribute('data-office-fallback', ''); document.querySelector('#office')?.remove(); toast(message); };
-  // An office bug must not take the session list down with it.
-  if (office) { if (state.snapshot) try { office.update(state.snapshot, { error: state.error }); } catch (error) { console.error(error); office.unmount(); office = null; fallBack('Office stopped; showing the list'); } return; }
-  if (root.hasAttribute('data-office-fallback')) return;
-  if (!officeModule) { officeModule = import('./office/office.js').then(module => { officeModule = module; syncOffice(); }, () => { officeModule = null; fallBack('Office failed to load; showing the list'); }); return; }
-  if (officeModule instanceof Promise) return;
-  if (!officeModule.webglAvailable()) { fallBack('Office needs WebGL 2; showing the list'); return; }
-  const box = el('div'); box.id = 'office'; main.append(box);
+function closeScene() { scene?.unmount(); scene = null; sceneLook = null; document.querySelector('.main-content > .scene')?.remove(); }
+function syncScene() {
+  const root = document.documentElement, main = document.querySelector('.main-content'), look = root.dataset.theme, entry = sceneFor(look);
+  root.toggleAttribute('data-scene-list', !!entry && sceneList);
+  if (failedLook !== look) { failedLook = null; root.removeAttribute('data-scene-fallback'); }
+  const back = document.querySelector('.office-button');
+  if (back && entry && back.dataset.look !== look) { back.dataset.look = look; back.title = `Back to the ${entry.name.toLowerCase()}`; back.lastElementChild.textContent = entry.name; back.firstElementChild.replaceWith(icon(look)); }
+  const action = sceneAction(sceneLook, main && entry ? look : null, sceneList);
+  if (action === 'unmount' || action === 'swap') closeScene();
+  if (action === 'unmount' || action === 'none') { document.querySelector('.main-content > .scene')?.remove(); return; }
+  // Any failure (download, no WebGL2, renderer refused) shows the list once and stays that way for this look.
+  const fallBack = message => { failedLook = look; root.setAttribute('data-scene-fallback', ''); document.querySelector('.main-content > .scene')?.remove(); toast(message); };
+  // A scene bug must not take the session list down with it.
+  if (action === 'keep') { if (state.snapshot) try { scene.update(state.snapshot, { error: state.error }); } catch (error) { console.error(error); closeScene(); fallBack(`${entry.name} stopped; showing the list`); } return; }
+  if (root.hasAttribute('data-scene-fallback')) return;
+  const module = sceneModules[look];
+  if (!module) { sceneModules[look] = entry.load().then(loaded => { sceneModules[look] = loaded; syncScene(); }, () => { delete sceneModules[look]; if (document.documentElement.dataset.theme === look) fallBack(`${entry.name} failed to load; showing the list`); }); return; }
+  if (module instanceof Promise) return;
+  if (!module.webglAvailable()) { fallBack(`${entry.name} needs WebGL 2; showing the list`); return; }
+  const box = el('div', 'scene'); box.id = look; main.append(box);
   try {
-    office = officeModule.mountOffice(box, { openPanel, nextWaiting: () => nextWaiting(), showList: () => setOfficeList(true), isUnread: unread, describe: sessionFacts, spawn: spawnAgent, showShots: (id, images, closed) => images.length ? showShot(id, images.at(-1).id, images, closed) : closed() });
-    if (state.snapshot) office.update(state.snapshot, { error: state.error });
-    office.pick(picked(), false);
-  } catch (error) { console.error(error); office?.unmount(); office = null; fallBack('Office could not start; showing the list'); }
+    sceneLook = look;
+    scene = module.mount(box, { openPanel, nextWaiting: () => nextWaiting(), showList: () => setSceneList(true), isUnread: unread, describe: sessionFacts, spawn: spawnAgent, showShots: (id, images, closed) => images.length ? showShot(id, images.at(-1).id, images, closed) : closed() });
+    if (state.snapshot) scene.update(state.snapshot, { error: state.error });
+    scene.pick(picked(), false);
+  } catch (error) { console.error(error); closeScene(); fallBack(`${entry.name} could not start; showing the list`); }
 }
 
 function renderData() {
   if (!state.snapshot || !document.querySelector('#groups')) {
     const error = document.querySelector('#error'); if (error && state.error) { error.hidden = false; error.textContent = state.error; } return;
   }
-  syncOffice();
+  syncScene();
   const { sessions, providers } = state.snapshot;
   const count = sessions.filter(needsInput).length;
   setProperty(document, 'title', `${count ? `(${count}) ` : ''}AI Control`);
@@ -330,7 +340,7 @@ function renderData() {
   if (usage.dataset.sig !== usageSignature) { usage.dataset.sig = usageSignature; renderUsage(usage, state.snapshot.usage, { disconnected: !!state.error }); }
   renderThemeConsole(document.querySelector('#theme-console'), sessions, { disconnected: !!state.error, onSelect: openPanel });
   const working = sessions.filter(s => s.status === 'working').length, idle = sessions.filter(s => s.status === 'idle').length;
-  const setFilter = value => () => { state.filter = value; state.project = ''; renderData(); office?.pick(picked(), true); };
+  const setFilter = value => () => { state.filter = value; state.project = ''; renderData(); scene?.pick(picked(), true); };
   // Desktop filters live here; the stat row below replaces them on phones.
   syncList(document.querySelector('#navigation'), [['all', 'All sessions', 'grid', sessions.length], ['attention', 'Needs you', 'bell', count], ['working', 'Working', 'activity', working], ['idle', 'Idle', 'moon', idle]]
     .map(([value, label, glyph, number]) => [value, [value, label, glyph, number, state.filter === value && !state.project]]),
@@ -340,7 +350,7 @@ function renderData() {
     data => {
       if (!data) return el('span', 'no-projects', 'Projects appear with sessions');
       const [key, name, active, waiting] = data;
-      const b = button(name, `nav-item ${active ? 'active' : ''}`, () => { state.project = state.project === key ? '' : key; state.filter = 'all'; renderData(); office?.pick(picked(), !!state.project); }, 'folder'); b.title = key; b.append(el('span', 'project-dot', waiting || '')); return b;
+      const b = button(name, `nav-item ${active ? 'active' : ''}`, () => { state.project = state.project === key ? '' : key; state.filter = 'all'; renderData(); scene?.pick(picked(), !!state.project); }, 'folder'); b.title = key; b.append(el('span', 'project-dot', waiting || '')); return b;
     });
   syncList(document.querySelector('#stats'), [
     ['all', 'All', sessions.length, `${projects.size} projects on this computer`, ''],
@@ -494,7 +504,7 @@ function flipFrom(root, before) {
 let previousFocus;
 function openPanel(id) { previousFocus = document.activeElement; navigation.open(id); document.querySelector('#panel button')?.focus(); }
 function closePanel() { navigation.close(); }
-function hidePanel() { office?.panelClosed(); const closedId = state.selected; markSeen(closedId); older.delete(closedId); state.selected = null; panelSignature = ''; const panel = document.querySelector('#panel'); if (!panel) return; disposeHistory(); disposeComposer(); liveRender.cancel(); panel.dataset.sessionId = ''; panel.hidden = true; document.querySelector('#backdrop').hidden = true; document.querySelector('.shell')?.removeAttribute('inert'); document.body.classList.remove('panel-open'); renderData(); const focus = previousFocus?.isConnected ? previousFocus : [...document.querySelectorAll('.session-card[data-session-id]')].find(b => b.dataset.sessionId === closedId); focus?.focus({ preventScroll: true }); }
+function hidePanel() { scene?.panelClosed(); const closedId = state.selected; markSeen(closedId); older.delete(closedId); state.selected = null; panelSignature = ''; const panel = document.querySelector('#panel'); if (!panel) return; disposeHistory(); disposeComposer(); liveRender.cancel(); panel.dataset.sessionId = ''; panel.hidden = true; document.querySelector('#backdrop').hidden = true; document.querySelector('.shell')?.removeAttribute('inert'); document.body.classList.remove('panel-open'); renderData(); const focus = previousFocus?.isConnected ? previousFocus : [...document.querySelectorAll('.session-card[data-session-id]')].find(b => b.dataset.sessionId === closedId); focus?.focus({ preventScroll: true }); }
 function revealPanel() { const panel = document.querySelector('#panel'); panel.hidden = false; document.querySelector('#backdrop').hidden = false; document.querySelector('.shell').setAttribute('inert', ''); document.body.classList.add('panel-open'); return panel; }
 function renderPanel() {
   const session = state.snapshot.sessions.find(s => s.id === state.selected);
@@ -595,7 +605,7 @@ function armed(control) {
 async function fireSession(session, control) {
   if (state.error || !armed(control)) return;
   control.disabled = true;
-  try { await api(`sessions/${encodeURIComponent(session.id)}/fire`, {}); toast('Fired'); office?.fire(session.id); closePanel(); await refresh(); }
+  try { await api(`sessions/${encodeURIComponent(session.id)}/fire`, {}); toast('Fired'); scene?.fire(session.id); closePanel(); await refresh(); }
   catch (error) { toast(error.message); control.disabled = false; }
 }
 // /clear gives the session a new id, so the panel moves to it. Until a snapshot has it, a missing session doesn't close the panel.
@@ -1072,7 +1082,7 @@ document.addEventListener('keydown', event => {
 // Single-key shortcuts outside text fields: / search, j k move between cards, n next waiting session.
 document.addEventListener('keydown', event => {
   if (!state.csrf || event.ctrlKey || event.metaKey || event.altKey || event.target.closest?.('input, textarea, select, [contenteditable]') || document.querySelector('dialog[open], details[open].theme-menu, #agent-filter-menu[open]')) return;
-  if (event.key === 'n' && nextWaiting(state.selected)) { event.preventDefault(); if (office && !state.selected) office.talkTo(nextWaiting().id); else openNext(); return; }
+  if (event.key === 'n' && nextWaiting(state.selected)) { event.preventDefault(); if (scene && !state.selected) scene.talkTo(nextWaiting().id); else openNext(); return; }
   if (state.selected) return;
   if (event.key === '/') { event.preventDefault(); document.querySelector('.search input')?.focus(); return; }
   if (event.key !== 'j' && event.key !== 'k') return;
@@ -1125,7 +1135,7 @@ function showThemePicker() {
     choice.prepend(el('span', `theme-preview ${theme.id}`)); grid.append(choice);
   }
   dialog.append(el('h2', '', 'Pick a theme'), grid);
-  dialog.onclose = () => { applyTheme(document.documentElement.dataset.themeChoice); dialog.remove(); syncOffice(); };
+  dialog.onclose = () => { applyTheme(document.documentElement.dataset.themeChoice); dialog.remove(); syncScene(); };
   document.body.append(dialog); dialog.showModal();
 }
 if (firstVisit) showThemePicker();
