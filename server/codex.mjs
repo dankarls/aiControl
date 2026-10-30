@@ -5,11 +5,12 @@ import { fail, slashCommand } from './requests.mjs';
 import { codexMessage, messageLimit, recentMessages, textContent, planSteps } from './messages.mjs';
 import { UsagePoller, codexUsageWindows } from './usage.mjs';
 import { itemDocuments, readableDocuments, readDocument } from './documents.mjs';
+import { CodexImages } from './codex-images.mjs';
 
 export const codexSocketPath = () => join(process.env.CODEX_HOME || join(homedir(), '.codex'), 'app-server-control', 'app-server-control.sock');
 export function connectCodexSocket(path, connectionOptions = {}) {
   // History and live tool results can contain base64 images, even though the
-  // dashboard only displays text. A 32 MiB cap caused endless reconnect loops.
+  // dashboard snapshots only carry text. A 32 MiB cap caused endless reconnect loops.
   return new WebSocket(`ws+unix:${path}:/`, { ...connectionOptions, handshakeTimeout: 10_000, perMessageDeflate: false, maxPayload: 256 * 1024 * 1024 });
 }
 
@@ -78,6 +79,7 @@ export class CodexAdapter {
   // Loaded threads with no rollout until their first turn: resume fails, but turn/start works.
   fresh = new Set();
   items = new Map();
+  images = new CodexImages();
   submissions = new Map();
   models = new Map();
   startingQueue = new Set();
@@ -105,7 +107,7 @@ export class CodexAdapter {
       this.connected = false; this.detail = `Codex disconnected: ${reason.slice(0, 250)} Retrying…`;
       this.usage.stop('Codex is disconnected. Usage will refresh when it reconnects.');
       if (!this.stopped && this.lastError !== reason) { this.lastError = reason; this.log(`[Codex connection] ${reason.slice(0, 250)}`); }
-      this.joined.clear(); this.fresh.clear(); this.items.clear();
+      this.joined.clear(); this.fresh.clear(); this.items.clear(); this.images.clear();
       for (const session of this.sessions.values()) { session.status = 'offline'; session.control = false; this.store.removeSession(session.id); }
       for (const request of this.store.list()) if (request.provider === 'codex') this.store.removeSession(request.sessionId);
       for (const pending of [...this.calls.values(), ...this.resolutions.values()]) pending.reject(fail('Codex disconnected. Verify the request in the original client.', 503));
@@ -174,7 +176,7 @@ export class CodexAdapter {
         if (!current()) return;
         loaded.push(...page.data); cursor = page.nextCursor;
       } while (cursor);
-      for (const id of this.sessions.keys()) if (!loaded.includes(id)) { this.store.removeSession(`codex:${id}`); this.sessions.delete(id); this.joined.delete(id); this.fresh.delete(id); }
+      for (const id of this.sessions.keys()) if (!loaded.includes(id)) { this.store.removeSession(`codex:${id}`); this.sessions.delete(id); this.joined.delete(id); this.fresh.delete(id); this.images.delete(id); }
       // Only join already-loaded threads; never resume a saved conversation from disk.
       for (let start = 0; start < loaded.length; start += 8) await Promise.all(loaded.slice(start, start + 8).map(async id => {
         try {
@@ -216,7 +218,10 @@ export class CodexAdapter {
     for (let pageNumber = 0, texts = 0; pageNumber < limit && texts < limit; pageNumber++) {
       const page = await this.rpc('thread/items/list', { threadId, limit: 10, sortDirection: 'desc', ...(cursor ? { cursor } : {}) });
       if (this.connection !== connection) return null;
-      for (const entry of page.data) { const value = codexMessage(entry); if (value) { messages.push(value); if (!value.tool) texts++; } }
+      for (const entry of page.data) {
+        this.images.remember(threadId, entry, this.sessions.get(threadId)?.cwd);
+        const value = codexMessage(entry); if (value) { messages.push(value); if (!value.tool) texts++; }
+      }
       cursor = page.nextCursor; more = !!cursor; if (!cursor) break;
     }
     return { messages: recentMessages(messages.reverse(), limit), more };
@@ -257,6 +262,18 @@ export class CodexAdapter {
     if (!document) throw fail('Document not found.', 404);
     return document;
   }
+  async imageList(threadId) {
+    const session = this.sessions.get(threadId);
+    if (!session) throw fail('Session is no longer available.', 409);
+    if (session.messagesState === 'loading') await this.refreshMessages(threadId);
+    return { images: await this.images.list(threadId) };
+  }
+  async image(threadId, imageId) {
+    if (!this.sessions.has(threadId)) throw fail('Session is no longer available.', 409);
+    const image = await this.images.get(threadId, imageId);
+    if (!image) throw fail('Image not found.', 404);
+    return image;
+  }
   queueView(entry) {
     return { id: entry.id, text: textContent(entry.input).slice(0, 12_000), clientMessageId: entry.clientUserMessageId, hasAttachments: entry.input?.some(item => item.type !== 'text') || false };
   }
@@ -287,20 +304,69 @@ export class CodexAdapter {
     this.requireMessaging(threadId);
     if (typeof body?.text !== 'string' || !body.text.trim() || body.text.length > 12_000) throw fail('Enter a message of 1–12,000 characters.');
     if (!['send', 'queue'].includes(body.mode) || !/^[a-f0-9-]{36}$/i.test(body.clientMessageId || '')) throw fail('Invalid message submission.');
-    // The app server takes text only: /clear here would reach the model as a message and clear nothing.
     const command = slashCommand(body.text);
-    if (command) throw fail(`${command} only works in Codex’s own terminal; from here it would be sent to Codex as a message.`);
+    const clear = command.toLowerCase() === '/clear';
+    if (clear && (body.text.trim().toLowerCase() !== '/clear' || body.mode !== 'send')) throw fail('Send /clear by itself; it cannot be queued.');
+    if (command && !clear) throw fail(`${command} only works in Codex’s own terminal; from here it would be sent to Codex as a message.`);
     const key = `${threadId}:${body.clientMessageId}`, fingerprint = JSON.stringify([body.mode, body.text]);
     const previous = this.submissions.get(key);
     if (previous) {
       if (previous.fingerprint !== fingerprint) throw fail('This message ID was already used.', 409);
       return previous.promise;
     }
-    const promise = this.deliverMessage(threadId, body);
+    const promise = clear ? this.clearChat(threadId) : this.deliverMessage(threadId, body);
     this.submissions.set(key, { fingerprint, promise });
     promise.catch(error => { if (error.status !== 504) this.submissions.delete(key); });
     if (this.submissions.size > 1000) this.submissions.delete(this.submissions.keys().next().value);
     return promise;
+  }
+  // Like the CLI's /clear, create a new conversation and retain the old history. The dashboard
+  // switches to the returned session; other clients remain attached to their original thread.
+  async clearChat(threadId) {
+    if (this.sendingMessages.has(threadId) || this.startingQueue.has(threadId)) throw fail('Another message is being sent. Wait for it to finish.', 409);
+    this.sendingMessages.add(threadId);
+    let submitted = false;
+    try {
+      const session = this.requireMessaging(threadId);
+      const { thread } = await this.rpc('thread/read', { threadId, includeTurns: false });
+      if (thread.parentThreadId || thread.canAcceptDirectInput === false) throw fail('Use /clear in the parent session.', 409);
+      if (codexStatus(thread.status) !== 'idle' || this.store.list().some(r => r.sessionId === session.id)) throw fail('Stop the current work before using /clear.', 409);
+      if (this.fresh.has(threadId) && !thread.preview && !session.messages.length) return { status: 'cleared', sessionId: session.id, session: this.list().find(s => s.id === session.id) };
+      await this.refreshQueue(threadId);
+      if (!session.queueAvailable || session.queuedMessages.length) throw fail('Clear the queued messages before using /clear.', 409);
+      const settings = await this.rpc('thread/resume', { threadId, excludeTurns: true });
+      this.requireMessaging(threadId);
+      const effort = session.nextEffort || settings.reasoningEffort || session.effort;
+      const config = effort ? { model_reasoning_effort: effort } : {};
+      const permissions = settings.activePermissionProfile?.id;
+      const sandbox = { readOnly: 'read-only', workspaceWrite: 'workspace-write', dangerFullAccess: 'danger-full-access' }[settings.sandbox?.type];
+      if (!permissions && !sandbox) throw fail('This session’s permissions cannot be carried over here. Use /clear in its original client.', 409);
+      if (!permissions && settings.sandbox.type === 'workspaceWrite') config.sandbox_workspace_write = {
+        writable_roots: settings.sandbox.writableRoots || [], network_access: !!settings.sandbox.networkAccess,
+        exclude_slash_tmp: !!settings.sandbox.excludeSlashTmp, exclude_tmpdir_env_var: !!settings.sandbox.excludeTmpdirEnvVar,
+      };
+      submitted = true;
+      const result = await this.rpc('thread/start', {
+        cwd: settings.cwd || thread.cwd, model: settings.model || thread.model, modelProvider: settings.modelProvider || thread.modelProvider,
+        approvalPolicy: settings.approvalPolicy, approvalsReviewer: settings.approvalsReviewer,
+        ...(permissions ? { permissions } : { sandbox }), config,
+        ...(settings.runtimeWorkspaceRoots?.length ? { runtimeWorkspaceRoots: settings.runtimeWorkspaceRoots } : {}),
+        ...(settings.serviceTier ? { serviceTier: settings.serviceTier } : {}),
+        ...(thread.projectId ? { projectId: thread.projectId } : {}),
+        ephemeral: !!thread.ephemeral, historyMode: 'paginated', sessionStartSource: 'clear',
+      });
+      if (!result.thread?.id) throw fail('Codex did not confirm the new chat.', 502);
+      this.upsert({ ...result.thread, model: result.model || result.thread.model, reasoningEffort: result.reasoningEffort || effort });
+      const next = this.sessions.get(result.thread.id);
+      next.messagesState = 'empty';
+      this.fresh.add(result.thread.id);
+      return { status: 'cleared', sessionId: next.id, session: this.list().find(s => s.id === next.id) };
+    } catch (error) {
+      // A lost acknowledgement may already have created a chat. Deduplication keeps retries from
+      // creating another one, just as it prevents a normal message from being submitted twice.
+      if (submitted && error.rpcCode == null) throw fail('The new chat could not be confirmed. Check the session list before trying /clear again.', 504);
+      throw error;
+    } finally { this.sendingMessages.delete(threadId); }
   }
   async deliverMessage(threadId, body) {
     const input = [{ type: 'text', text: body.text, text_elements: [] }];
@@ -441,6 +507,7 @@ export class CodexAdapter {
     }
     if (message.method === 'item/completed') {
       const session = this.sessions.get(p.threadId), value = p.item && codexMessage(p.item);
+      if (session && p.item) this.images.remember(p.threadId, p.item, session.cwd);
       if (session && value) { session.messages = recentMessages([...session.messages.filter(m => m.id !== value.id), value]); session.messagesState = 'ready'; session.updatedAt = Date.now(); }
       if (session && p.item?.type === 'contextCompaction' && session.activity === 'compacting') { session.activity = ''; session.detail = ''; }
     }

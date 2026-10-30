@@ -1,4 +1,4 @@
-// Screenshots a session has looked at (server/images.mjs reads them from its transcript and its subagents'): the newest on a
+// Screenshots a session has looked at (from Claude transcripts or Codex tool results): the newest on a
 // second monitor at its desk (room.setShot). Lists are fetched again a while after a session changes, one request at a time.
 import { SCREEN_W, SCREEN_H } from './screens.js';
 
@@ -51,7 +51,7 @@ export function createScreenshots({ room }) {
   const result = {
     images: id => sessions.get(id)?.images || [],
     count: id => sessions.get(id)?.images?.length || 0,
-    // The sessions that could have any (top-level Claude ones at a desk): lists for new ones now, changed ones in a while.
+    // Top-level sessions at a desk: lists for new ones now, changed ones in a while.
     sync(list) {
       const ids = new Set();
       for (const { id, updatedAt, title: name, project } of list) {

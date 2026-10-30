@@ -3,6 +3,11 @@ import './themes.css';
 import './theme-effects.css';
 import './alien-visitor.css';
 import './theme-access.css';
+import './simpsons.css';
+import './diablo.css';
+import './heroes.css';
+import './provider-icons.css';
+import { providerIcon } from './provider-icons.js';
 import { applyTheme, savedTheme, hasSavedTheme, themes, bootSequence } from './themes.js';
 import { PanelNavigation } from './navigation.js';
 import { HistoryScroll } from './history-scroll.js';
@@ -45,10 +50,10 @@ function sessionList(cache, session, kind) {
   }
   return entry.items;
 }
-// Screenshots a Claude session and its subagents looked at (server/images.mjs).
+// Screenshots a session looked at (server/images.mjs for Claude and its subagents, server/codex-images.mjs for Codex).
 const shots = new Map(); // session id → { items, changed, fetched }
 const shotUrl = (id, imageId) => `/api/sessions/${encodeURIComponent(id)}/images/${encodeURIComponent(imageId)}`;
-const sessionShots = session => session.provider === 'claude' ? sessionList(shots, session, 'images') : [];
+const sessionShots = session => sessionList(shots, session, 'images');
 // Markdown files a session wrote or named (server/documents.mjs).
 const docs = new Map(); // session id → { items, changed, fetched }
 const sessionDocs = session => sessionList(docs, session, 'documents');
@@ -162,7 +167,7 @@ function alertsMenu() {
   return menu;
 }
 // Each theme names the control room after its own computer; CSS shows the active one.
-const brandNames = { modern: 'AI Control', alien: 'MU/TH/UR', command: 'EVA' };
+const brandNames = { modern: 'AI Control', alien: 'MU/TH/UR', command: 'EVA', simpsons: 'Springfield', heroes: 'Heroes', diablo: 'Sanctuary' };
 function brand() {
   const logo = el('div', 'brand'); logo.setAttribute('role', 'img'); logo.setAttribute('aria-label', 'AI Control');
   for (const [id, name] of Object.entries(brandNames)) {
@@ -386,7 +391,7 @@ function renderData() {
     header.hidden = flat;
     if (!flat && header.dataset.sig !== headerSignature) {
       header.dataset.sig = headerSignature;
-      const title = el('div', 'group-title'); title.append(icon('folder'), el('h2', '', list[0].project), el('span', 'group-count', list.length));
+      const title = el('div', 'group-title'); title.append(el('h2', '', list[0].project), el('span', 'group-count', list.length));
       header.replaceChildren(title, el('span', 'project-path', cwd.replace(/^\/home\/[^/]+/, '~')), spawnButtons(cwd));
     }
     // Subagents sit directly under their parent; orphans keep their own place.
@@ -441,7 +446,7 @@ function renderCard(session, previous) {
   const card = el('button', `session-card ${session.needs ? 'needs-input' : ''} ${session.parentId ? 'subagent' : ''}`); card.type = 'button'; card.onclick = () => openPanel(session.id);
   // Long card loops run on a page-wide clock, so a rebuilt card continues them instead of restarting.
   card.style.setProperty('--since-load', `${-Math.round(performance.now())}ms`); card.dataset.sessionId = session.id; card.dataset.status = session.status; card.setAttribute('aria-label', `${session.title}, ${providerName(session.provider)}, ${(statuses[session.status] || statuses.unknown)[0]}`);
-  const mark = el('span', `agent-mark ${session.provider}`, session.provider === 'codex' ? '⌘' : '✳'); mark.setAttribute('role', 'img'); mark.setAttribute('aria-label', providerName(session.provider)); mark.title = providerName(session.provider);
+  const mark = el('span', `agent-mark ${session.provider}`); mark.append(providerIcon(session.provider)); mark.setAttribute('role', 'img'); mark.setAttribute('aria-label', providerName(session.provider)); mark.title = providerName(session.provider);
   if (session.unread) card.classList.add('unread');
   if (session.plan) { card.dataset.plan = ''; card.style.setProperty('--plan', session.plan[0] / session.plan[1]); }
   const body = el('span', 'session-body');
@@ -710,7 +715,11 @@ function renderComposer(session) {
       try {
         const result = await api(`sessions/${encodeURIComponent(session.id)}/messages`, draft.submission);
         draft.text = ''; draft.revision = (draft.revision || 0) + 1; draft.submission = null;
-        toast(result.status === 'submitted' ? 'Sent via inbox (not tmux)' : result.status === 'steered' ? 'Sent into the current work' : 'Sent');
+        if (result.status === 'cleared' && result.session && state.snapshot) {
+          state.snapshot.sessions = [...state.snapshot.sessions.filter(item => item.id !== result.session.id), result.session];
+          if (state.selected === session.id) navigation.open(result.sessionId, { replace: true });
+        }
+        toast(result.status === 'cleared' ? 'New Codex chat' : result.status === 'submitted' ? 'Sent via inbox (not tmux)' : result.status === 'steered' ? 'Sent into the current work' : 'Sent');
         if (state.selected === session.id) document.querySelector('#recent-messages')?.historyScroll?.jumpToLatest();
         await refresh();
       } catch (error) { draft.error = error.message; }
@@ -970,7 +979,12 @@ function mergeHistory(earlier = [], recent) {
 async function loadOlder(id) {
   const current = older.get(id), limit = Math.min(200, (current?.limit || 20) + 40);
   older.set(id, { messages: [], more: true, ...current, loading: true }); renderPanel();
-  try { const result = await api(`sessions/${encodeURIComponent(id)}/history?limit=${limit}`); older.set(id, { limit, messages: result.messages, more: result.more && limit < 200 }); }
+  try {
+    const result = await api(`sessions/${encodeURIComponent(id)}/history?limit=${limit}`);
+    older.set(id, { limit, messages: result.messages, more: result.more && limit < 200 });
+    // Codex discovers images as history pages load, even when the session itself has not changed.
+    const images = shots.get(id); if (images) { images.changed = null; images.fetched = 0; }
+  }
   catch (error) { toast(error.message); if (current) older.set(id, current); else older.delete(id); }
   if (state.selected === id && state.snapshot) renderPanel();
 }
@@ -1047,7 +1061,7 @@ async function respond(request, payload, container, error) {
 function toast(text) { const node = el('div', 'toast', text); node.setAttribute('role', 'status'); app.append(node); setTimeout(() => node.remove(), 3500); }
 function spawnButtons(cwd) {
   const actions = el('span', 'group-actions');
-  for (const choice of hireChoices(state.snapshot, cwd)) { const b = button(choice.label, 'quiet-button spawn-button', () => spawnAgent(cwd, choice, b), 'plus'); b.title = `New ${choice.name} in tmux${choice.last ? ' · last used here' : ''}`; actions.append(b); }
+  for (const choice of hireChoices(state.snapshot, cwd)) { const b = button(choice.label, 'quiet-button spawn-button', () => spawnAgent(cwd, choice, b), 'plus'); b.insertBefore(providerIcon(choice.provider), b.lastChild); b.title = `New ${choice.name} in tmux${choice.last ? ' · last used here' : ''}`; actions.append(b); }
   return actions;
 }
 async function spawnAgent(cwd, choice, control) {
