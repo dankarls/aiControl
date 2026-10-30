@@ -50,6 +50,18 @@ test('subagents sit on the parent desk with overflow', () => {
   assert.equal(desk.overflow, 2);
   assert.equal(layoutOffice([s('p', 'x'), ...kids]).desks.size, 1);
 });
+test('a finished helper sits a minute, walks out, then is gone; helpers keep their seats', () => {
+  const now = 1e7, kid = (id, idle) => s(id, 'x', { parentId: 'p', status: idle === undefined ? 'working' : 'idle', updatedAt: now - (idle ?? 0) });
+  const at = (kids, previous, when = now) => layoutOffice([s('p', 'x'), ...kids], previous, when);
+  const first = at([kid('a'), kid('b'), kid('c', 30_000)]);
+  assert.deepEqual(first.desks.get('p').subagents, ['a', 'b', 'c']);
+  assert.deepEqual(first.desks.get('p').leaving, []);
+  const later = at([kid('b'), kid('c', 70_000), kid('a', 10_000)], first);
+  assert.deepEqual(later.desks.get('p').subagents, ['a', 'b', 'c'], 'same seats, whatever order they come in');
+  assert.deepEqual(later.desks.get('p').leaving, ['c']);
+  assert.deepEqual(at([kid('b'), kid('c', 95_000), kid('a', 10_000)], later).desks.get('p').subagents, ['a', 'b'], 'gone once it has had time to walk out');
+  assert.deepEqual(at([kid('a'), kid('d', 70_000)]).desks.get('p').subagents, ['a'], 'one already done when first seen never sits down');
+});
 test('orphan subagents are dropped', () => {
   assert.equal(layoutOffice([s('k', 'x', { parentId: 'gone' })]).desks.size, 0);
 });
