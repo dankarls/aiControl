@@ -144,6 +144,9 @@ input:is([type=checkbox], [type=radio]) { width: 18px; height: 18px; margin: 0; 
 /* Back from the Office's list to its scene. */
 .quiet-button.office-button { display: none; }
 :root[data-office-list]:not([data-office-fallback]) .quiet-button.office-button { display: inline-flex; }
+/* The Office's scene takes the page; here rather than in office.css so the list doesn't show while the office's code loads. */
+:root[data-theme-choice=office]:not([data-office-fallback], [data-office-list]) .main-content { max-width: none; padding: 0; height: 100dvh; }
+:root[data-theme-choice=office]:not([data-office-fallback], [data-office-list]) .main-content > :not(#office) { display: none; }
 .connection-error { padding: 10px 12px; margin-bottom: 12px; font-size: 13px; line-height: 1.5; color: var(--warn); background: var(--warn-soft); border: 1px solid var(--warn-line); border-radius: var(--radius-sm); }
 
 /* Overview */
