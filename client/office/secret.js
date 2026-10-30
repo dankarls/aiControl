@@ -91,9 +91,11 @@ export function createSecret({ onPress }) {
       // A wooden sill across the doorway's floor, where the wall stands (neither room's floor reaches into it).
       const sill = mesh(once('secretSill', () => new THREE.BoxGeometry(WALL_T, 0.012, DOOR.w)), toonMaterial('#7a4e2d'), 0.004); sill.position.set(width + WALL_T / 2, 0.006, door.z); shell.add(sill);
       // Its own lamps sit in the shell, always there, so showing the room never changes the count of lights (which would
-      // recompile every material); hidden, they're just off. Neither reaches past the wall into the office.
+      // recompile every material); hidden, they're just off. Neither reaches past the wall into the office. They're spot
+      // lights opened out to a half sphere pointing down, the same kind as the screens' (lights.js), so no point light is
+      // left for every pixel to pay for.
       const lamps = [[NEON[0], 5, 4.2, 7.8, -0.5], [NEON[1], 4, 2.1, 2.2, 0.8]].map(([color, power, reach, x, z]) => {
-        const light = new THREE.PointLight(color, 0, reach, 1.2); light.position.set(width + WALL_T + x, 2.5, door.z + z); shell.add(light);
+        const light = new THREE.SpotLight(color, 0, reach, Math.PI / 2, 1, 1.2); light.position.set(width + WALL_T + x, 2.5, door.z + z); light.target.position.set(light.position.x, 0, light.position.z); shell.add(light, light.target);
         return [light, power];
       });
       // Its walls block walking from the start, as boxes: the end walls from the office's wall out, the far wall across.
