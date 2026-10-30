@@ -170,11 +170,11 @@ const sample = (g, field, x, z) => {
 };
 export const height = (c, x, z) => sample(c.grid, c.grid.h, x, z);
 
-// A ball touching something: pushed out along (nx, nz) and bounced; the push is remembered, so next step a slope can't
-// press it on into what it rests against.
+// A ball touching something: pushed out along (nx, nz) and bounced (barely moving, it just stops against it, or it would
+// patter against a rail for ever); the push is remembered, so next step a slope can't press it on into what it rests on.
 const hit = (b, nx, nz, depth) => {
   b.x += nx * depth; b.z += nz * depth;
-  const vn = b.vx * nx + b.vz * nz; if (vn < 0) { b.vx -= (1 + BOUNCE) * vn * nx; b.vz -= (1 + BOUNCE) * vn * nz; }
+  const vn = b.vx * nx + b.vz * nz, give = 1 + (vn < -0.08 ? BOUNCE : 0); if (vn < 0) { b.vx -= give * vn * nx; b.vz -= give * vn * nz; }
   b.touch.push([nx, nz]);
 };
 function thing(o, b) {
@@ -194,6 +194,9 @@ export function step(c, b) {
   b.touch = [];
   b.vx += fx * DT; b.vz += fz * DT;
   const s = Math.hypot(b.vx, b.vz), drop = DECEL * DT;
+  // Hardly moving for half a second (nudging along a rail, say) is stopped.
+  b.slow = s < 0.04 ? (b.slow || 0) + DT : 0;
+  if (b.slow > 0.5) { b.vx = b.vz = 0; b.rest = true; return b; }
   if (s <= drop) { b.vx = b.vz = 0; if (Math.hypot(fx, fz) <= DECEL) { b.rest = true; return b; } }
   else { b.vx -= b.vx / s * drop; b.vz -= b.vz / s * drop; }
   b.x += b.vx * DT; b.z += b.vz * DT;
