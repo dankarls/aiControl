@@ -102,7 +102,9 @@ export function createSecret({ onPress }) {
       const { w, back, front } = SECRET, x0 = width + WALL_T, box = (xa, za, xb, zb) => new THREE.Box3(new THREE.Vector3(xa, 0, za), new THREE.Vector3(xb, WALL_H, zb));
       const walls = [box(x0, door.z - back - WALL_T, x0 + w + WALL_T, door.z - back), box(x0, door.z + front, x0 + w + WALL_T, door.z + front + WALL_T), box(x0 + w, door.z - back - WALL_T, x0 + w + WALL_T, door.z + front + WALL_T)];
       built = { door, shell, room: null, collider, lamps }; place();
-      return [...walls, collider];
+      // What a game stands on the floor (in the room's frame) blocks walking too.
+      const blocks = games.flatMap(game => game.blocks ?? []).map(b => b.clone().translate(new THREE.Vector3(x0, 0, door.z)));
+      return [...walls, ...blocks, collider];
     },
     // Each frame, with where you stand (not the camera, which the overview lifts away).
     update(dt, at, still, overview) {
