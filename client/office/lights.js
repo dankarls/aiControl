@@ -62,10 +62,10 @@ export function createLights(root, beam) {
     update(dt, eye, still, desks) {
       dt = Math.max(0, dt); // the first frame's dt can be negative (its timestamp predates the loop starting)
       if (boot?.rows) {
-        // Each row catches with one blink, like a tube; reduced motion or the switch off skips to the end.
+        // Each row comes on in turn; reduced motion or the switch off skips to the end.
         boot.t += Math.min(dt, 0.05);
         const done = still || !on || boot.t > boot.rows * ROW + 0.2;
-        const lit = Array.from({ length: boot.rows }, (_, i) => { const t = boot.t - i * ROW; return done || (t >= 0 && (t < 0.06 || t >= 0.14)); }), key = lit.join();
+        const lit = Array.from({ length: boot.rows }, (_, i) => { const t = boot.t - i * ROW; return done || t >= 0; }), key = lit.join();
         if (key !== boot.key || stale) { boot.key = key; level = done ? +on : lit.filter(Boolean).length / boot.rows; apply(); boot.show(done ? null : lit); }
         if (done) boot = null;
       } else if (+on !== level || (stale && level < 1)) { level = +on; apply(); }
