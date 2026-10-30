@@ -3,14 +3,14 @@
 // sight (on a narrow screen the chalkboard comes along in your other hand, up top). A ring on the board is where you aim,
 // and it breathes: wide, then tight, then wide again. A dart lands anywhere inside it, so throw when it's tightest. As in
 // Final Fantasy VII Remake's darts, each dart's ring starts somewhere random on the board, you steer it with a thumbstick
-// against a pull back to there, it sways with your hand, and a dial round it runs down: when that's out the dart goes
-// wherever the ring is. The stick: press anywhere (mouse or finger) and drag; letting go throws, as does a click, a tap or
+// against a pull back to there (which drifts, as a hand does), it sways, and a dial round it runs down: when that's out the
+// dart goes wherever the ring is. The stick: press anywhere (mouse or finger) and drag; letting go throws, as does a click, a tap or
 // E. Esc, ✕ or a walking key steps back (office.js runs that).
 // The game is 301 with any finish: from 301 down to exactly 0, three darts a turn; going under 0 is a bust and the turn
 // counts for nothing. When one dart could finish, the beds that would glow. Your best is the fewest darts to check out,
 // kept per browser.
 // With reduced motion the ring holds still at a middling width, goes straight to where the stick and the pull leave it,
-// doesn't sway, and a dart lands at once.
+// doesn't drift or sway, and a dart lands at once.
 import * as THREE from 'three';
 import { mesh, once, canvasTexture, glowTexture, paint, painted } from './furniture.js';
 import { DRAG_SLOP } from './player.js';
@@ -52,14 +52,15 @@ export function finishes(left) {
 // AWAY from its face, and SPAN is how wide the view has to be there to take in the board and the chalkboard.
 const BOARD = { x: 2.3, y: 1.73 }, SIZE = 1.3, FACE = -SECRET.back + 0.06, OCHE = FACE + 2.37, AWAY = 2.62, FOV = 38;
 const SLATE = { x: BOARD.x + 0.95, y: 1.62 }, SPAN = SLATE.x + 0.48 - (BOARD.x - RINGS.board * SIZE - 0.05);
-// The ring's radius on the wall (m) at its tightest and widest, and held still; seconds a breath takes; how far off the
-// board's middle it can go.
-const TIGHT = 0.008, WIDE = 0.075, STILL = 0.02, BREATH = 2, REACH = 0.42;
+// The ring's radius on the wall (m) at its tightest and widest, and held still; its edge's width, whatever its size; seconds
+// a breath takes; how far off the board's middle it can go.
+const TIGHT = 0.008, WIDE = 0.075, STILL = 0.02, LINE = 0.003, BREATH = 2, REACH = 0.42;
 // The stick: how far you've dragged from where you pressed, up to STICK css px, is how hard the ring's pushed, up to PUSH
 // m/s, while it's pulled back to where it started at BACK per second, so held at full stretch it settles PUSH / BACK away.
-// The hand sways it up to SWAY (m) off. A dart's ring starts within START of the bull, and the dial (DIAL out from the
-// ring's middle) gives it CLOCK seconds, going red for the last LATE.
-const STICK = 60, PUSH = 0.5, BACK = 1.2, SWAY = 0.01, START = 0.8 * RINGS.doubleOut * SIZE, DIAL = 0.12, CLOCK = 8, LATE = 2;
+// Where it's pulled back to drifts up to DRIFT (m) about where it started, slowly, so you keep steering; the hand sways it
+// up to SWAY off, quicker. A dart's ring starts within START of the bull, and the dial (DIAL out from the ring's middle)
+// gives it CLOCK seconds, going red for the last LATE.
+const STICK = 60, PUSH = 0.5, BACK = 1.2, DRIFT = 0.04, SWAY = 0.01, START = 0.8 * RINGS.doubleOut * SIZE, DIAL = 0.12, CLOCK = 8, LATE = 2;
 // How far down (css px) the chalkboard held up top starts: below office.css's row of buttons (12px down, 44px high, a shadow).
 const BAR = 66;
 const SPEED = 12, PULL = 1.6, BEST = 'ai-control-darts-best';
@@ -67,6 +68,12 @@ const FLIGHTS = ['#ff4fd8', '#38f2ff', '#ffe14f'];
 export const CHALK = "'Comic Neue', 'Comic Sans MS', cursive";
 
 const B = (w, h, d, x, y, z) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
+// Sets a flat ring of one band (a RingGeometry with one phi segment) to run from `inner` to `outer`.
+function band(m, inner, outer) {
+  const p = m.geometry.attributes.position, n = p.count / 2;
+  for (let i = 0; i < p.count; i++) { const a = 2 * Math.PI * (i % n) / (n - 1), r = i < n ? inner : outer; p.setXY(i, Math.cos(a) * r, Math.sin(a) * r); }
+  p.needsUpdate = true;
+}
 // A dart along +z with its tip at the origin: point, barrel, shaft and two crossed flights.
 const dartParts = color => [
   [new THREE.ConeGeometry(0.0016, 0.022, 6).rotateX(-Math.PI / 2).translate(0, 0, 0.011), '#c9ced8'],
@@ -146,9 +153,10 @@ export function createDarts({ hands, camera, canvas, onPlay }) {
   try { best = Number(localStorage.getItem(BEST)) || null; } catch {}
   const held = dart(0); held.rotation.set(0.12, 0.08, 0); held.visible = false; hands.add(held);
   let stuck, ring, chalk, call, glow, hud, pad;
-  // On the board's face in the room's frame: where the ring's been steered to, where this dart's started (and pulls back to)
-  // and the ring with the sway; the stick, as a push up to 1.
-  const spot = new THREE.Vector2(BOARD.x, BOARD.y), home = spot.clone(), sight = spot.clone(), step = new THREE.Vector2(), push = new THREE.Vector2();
+  // On the board's face in the room's frame: where the ring's been steered to, where this dart's started, where it's pulled
+  // back to (drifting about there) and the ring with the sway; the stick, as a push up to 1; the drift's phases this dart.
+  const spot = new THREE.Vector2(BOARD.x, BOARD.y), start = spot.clone(), home = spot.clone(), sight = spot.clone(), step = new THREE.Vector2(), push = new THREE.Vector2();
+  const wander = [0, 0, 0, 0];
   const local = new THREE.Vector3(), tight = new THREE.Color('#ffe14f'), late = new THREE.Color('#ff5a5a');
   const onBoard = p => Math.hypot(p.x - BOARD.x, p.y - BOARD.y) <= RINGS.board * SIZE;
   const tan = () => Math.tan(camera.fov * Math.PI / 360), narrow = () => 2 * AWAY * Math.tan(FOV * Math.PI / 360) * camera.aspect < SPAN;
@@ -198,14 +206,15 @@ export function createDarts({ hands, camera, canvas, onPlay }) {
       document.fonts?.load(`bold 40px 'Comic Neue'`).then(() => chalk.redraw()).catch(() => {});
       const tape = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.05).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#ffd23f' })); tape.position.set(BOARD.x, 0.014, OCHE); room.add(tape);
       stuck = FLIGHTS.map((_, i) => { const m = dart(i); m.visible = false; room.add(m); return m; });
-      // The ring: where the dart can land, shaded, and its edge, both turning gold as it tightens; four ticks outside it and a
-      // dot in the middle stay one size, so it shows however tight it gets. White on a dark edge shows on cream and black.
+      // The ring: where the dart can land, shaded, its edge and four ticks outside it, all turning gold as it gets tight. The
+      // edge's line and the ticks stay one size, so it shows however tight it gets; white on dark shows on cream and black.
       ring = new THREE.Group(); ring.visible = false; room.add(ring);
-      const area = flat(new THREE.CircleGeometry(1, 40), plain('#ffffff', 0.22), 2), edge = flat(new THREE.RingGeometry(0.93, 1, 40), plain('#ffffff', 0.8), 3);
-      ring.add(area, edge, flat(new THREE.CircleGeometry(0.009, 16), plain('#1b1a1f'), 4), flat(new THREE.CircleGeometry(0.006, 16), plain('#ffffff'), 5));
+      const area = flat(new THREE.CircleGeometry(1, 40), plain('#ffffff', 0.22), 2);
+      const edge = [flat(new THREE.RingGeometry(0.5, 1, 40), plain('#1b1a1f', 0.8), 3), flat(new THREE.RingGeometry(0.5, 1, 40), plain('#ffffff'), 4)];
+      ring.add(area, ...edge);
       const ticks = [0, 1, 2, 3].map(i => {
         const tick = new THREE.Group(); tick.rotation.z = i * Math.PI / 2; ring.add(tick);
-        tick.add(flat(new THREE.PlaneGeometry(0.034, 0.012), plain('#1b1a1f'), 4), flat(new THREE.PlaneGeometry(0.03, 0.008), plain('#ffffff'), 5));
+        tick.add(flat(new THREE.PlaneGeometry(0.034, 0.012), plain('#1b1a1f'), 4), flat(new THREE.PlaneGeometry(0.03, 0.008), edge[1].material, 5));
         return tick;
       });
       // The dial: an arc from the top that runs down anticlockwise (drawn up to the time left; RingGeometry's segments run in order).
@@ -243,7 +252,8 @@ export function createDarts({ hands, camera, canvas, onPlay }) {
       if (ready && !wasReady) {
         breath = shot = time; if (drag?.moved) drag = null;
         const a = Math.random() * Math.PI * 2, r = START * Math.sqrt(Math.random());
-        home.set(BOARD.x + Math.cos(a) * r, BOARD.y + Math.sin(a) * r); spot.copy(home);
+        start.set(BOARD.x + Math.cos(a) * r, BOARD.y + Math.sin(a) * r); spot.copy(start);
+        for (let i = 0; i < 4; i++) wander[i] = Math.random() * Math.PI * 2;
       }
       wasReady = ready; held.visible = ready;
       if (ready) { const next = game.over || game.won ? 0 : game.turn.length; if (held.userData.i !== next) { held.userData.i = next; held.geometry = stuck[next].geometry; } }
@@ -262,6 +272,8 @@ export function createDarts({ hands, camera, canvas, onPlay }) {
       }
       if (ready) {
         // The stick pushes, home pulls back (with reduced motion, straight to where the two leave it); then the sway.
+        home.copy(start);
+        if (!still) home.add(step.set(Math.sin(time * 0.7 + wander[0]) * 0.6 + Math.sin(time * 1.7 + wander[1]) * 0.4, Math.sin(time * 0.9 + wander[2]) * 0.6 + Math.sin(time * 1.3 + wander[3]) * 0.4).multiplyScalar(DRIFT));
         if (still) spot.copy(home).addScaledVector(push, PUSH / BACK);
         else spot.addScaledVector(push, PUSH * dt).addScaledVector(step.copy(home).sub(spot), 1 - Math.exp(-BACK * dt));
         const off = Math.hypot(spot.x - BOARD.x, spot.y - BOARD.y); if (off > REACH) spot.set(BOARD.x + (spot.x - BOARD.x) * REACH / off, BOARD.y + (spot.y - BOARD.y) * REACH / off);
@@ -269,8 +281,8 @@ export function createDarts({ hands, camera, canvas, onPlay }) {
         if (!still) sight.add(step.set(Math.sin(time * 2.3) * 0.7 + Math.sin(time * 0.9 + 2) * 0.3, Math.sin(time * 1.9 + 1) * 0.7 + Math.sin(time * 1.3) * 0.3).multiplyScalar(SWAY));
         const r = spread(), left = CLOCK - (time - shot), { area, edge, ticks, dial } = ring.userData;
         ring.position.set(sight.x, sight.y, (onBoard(sight) ? FACE : -SECRET.back) + 0.004);
-        area.scale.setScalar(r); edge.scale.setScalar(r);
-        area.material.color.setRGB(1, 1, 1).lerp(tight, 1 - (r - TIGHT) / (WIDE - TIGHT)); edge.material.color.copy(area.material.color);
+        area.scale.setScalar(r); band(edge[0], r - LINE - 0.001, r + 0.001); band(edge[1], r - LINE, r);
+        area.material.color.setRGB(1, 1, 1).lerp(tight, ((WIDE - r) / (WIDE - TIGHT)) ** 4); edge[1].material.color.copy(area.material.color);
         for (const tick of ticks) for (const m of tick.children) m.position.x = r + 0.02;
         for (const m of dial) m.geometry.setDrawRange(0, 6 * Math.ceil(64 * Math.max(0, left) / CLOCK));
         dial[1].material.color.set(left < LATE ? late : 0xffffff);
