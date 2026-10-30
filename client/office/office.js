@@ -29,7 +29,7 @@ export function webglAvailable() {
 
 export function mountOffice(container, hooks) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'low-power' });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5)); // past 1.5× a laptop's GPU pays far more than it shows
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   container.append(renderer.domElement);
   const scene = new THREE.Scene();
@@ -231,19 +231,22 @@ export function mountOffice(container, hooks) {
     renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
   };
   const observer = new ResizeObserver(resize); observer.observe(container); resize();
-  // ponytail: a fixed 30 fps budget (60–144 Hz is wasted on a dashboard left open all day); throttle further when idle if it still costs too much.
-  const frameMs = 1000 / 30, phone = globalThis.matchMedia?.('(max-width: 640px)');
-  let raf = 0, last = performance.now();
+  // A steady ~60 fps: on a faster screen only every n-th refresh is drawn, n whole so the pace never wobbles (120 Hz → 60,
+  // 144 Hz → 72). `gap` is the screen's refresh interval, smoothed.
+  const phone = globalThis.matchMedia?.('(max-width: 640px)');
+  let raf = 0, last = performance.now(), previous = last, gap = 1000 / 60, tick = 0;
   const loop = now => {
     raf = requestAnimationFrame(loop);
+    gap += (Math.min(50, now - previous) - gap) * 0.05; previous = now;
+    if (++tick % Math.max(1, Math.round(1000 / 60 / gap))) return;
     // On a phone the open panel covers the whole office.
-    if (now - last < frameMs - 1 || (phone?.matches && document.body.classList.contains('panel-open'))) return;
+    if (phone?.matches && document.body.classList.contains('panel-open')) return;
     const dt = Math.min(0.1, (now - last) / 1000); last = now;
     for (const fn of frames) fn(dt, now);
     renderer.render(scene, office.camera);
   };
   // Nothing renders while the tab is hidden; polling stops then too.
-  const visibility = () => { cancelAnimationFrame(raf); raf = 0; if (!document.hidden) { last = performance.now(); raf = requestAnimationFrame(loop); } };
+  const visibility = () => { cancelAnimationFrame(raf); raf = 0; if (!document.hidden) { last = previous = performance.now(); raf = requestAnimationFrame(loop); } };
   document.addEventListener('visibilitychange', visibility); visibility();
 
   const office = {

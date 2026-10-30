@@ -8,7 +8,7 @@ import { toonMaterial, withOutline } from './toon.js';
 export const WALL_H = 3, WALL_T = 0.2;
 export const shared = {};
 export const once = (key, make) => shared[key] ??= make();
-export const rounded = (w, h, d, r = 0.04) => new RoundedBoxGeometry(w, h, d, 3, r);
+export const rounded = (w, h, d, r = 0.04) => new RoundedBoxGeometry(w, h, d, 2, r);
 
 export function mesh(geometry, material, outline = 0.01) {
   const m = new THREE.Mesh(geometry, material);

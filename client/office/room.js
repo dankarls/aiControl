@@ -225,7 +225,7 @@ export function createRoom(scene, renderer) {
   // Every screen, on shared textures (screens.js); `shots`: each session's newest screenshot, for its second monitor.
   const screens = createScreens(root, renderer), shots = new Map();
   const shell = new THREE.Group(); root.add(shell);
-  // Fill, daylight and the screens' glow (lights.js); the ceiling lamps (point lights, in the shell) do the rest.
+  // Fill, daylight, the lamps' light from above and the screens' glow (lights.js).
   const lights = createLights(root, BEAM);
   // Back to the terminal: redrawn from the latest status even if it hasn't changed.
   const slacking = createSlacking(desk => { desk.screenKey = null; redraw(desk, desk.status); });
@@ -517,11 +517,6 @@ export function createRoom(scene, renderer) {
       const glow = new THREE.Mesh(once('glow', () => white(new THREE.PlaneGeometry(2.4, 2.4).rotateX(Math.PI / 2))), glowMaterial); glow.position.set(x, WALL_H - 0.005, z); ceiling.add(glow);
     }
     room.fadeables.ceiling = ceiling;
-    // The lamps' light: a few point lights on a coarse grid (each one costs every lit pixel, so not one per lamp).
-    const cols = Math.ceil(width / 8), rows = Math.ceil(depth / 8);
-    for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++) {
-      const light = dims(new THREE.PointLight('#ffecd0', 6, 0, 1.5), 0); light.position.set((i + 0.5) * width / cols, WALL_H - 0.35, (j + 0.5) * depth / rows); shell.add(light);
-    }
     // What stands still goes into a few merged meshes; the windows move with the view, so they stay.
     bake(shell, [ceiling]); bake(ceiling);
     // Start-up (lights.js): a row of lamps, counted from the door, stays grey and its glow out until it comes on.
