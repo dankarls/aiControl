@@ -3,7 +3,7 @@
 //
 // A hole is a green inside AREA: one to three straight legs (straight, L or dogleg, or one wide one) joined into a single
 // outline, some corners cut off at an angle, wedges on the rails to bank off and, further on, walls and office things in the
-// way; gentle humps, hollows and a tilt; a tee at one end, the cup at the other; and obstacles: bumpers, a coffee spill, a
+// way; a mound or a hollow or two, the rest flat; a tee at one end, the cup at the other; and obstacles: bumpers, a coffee spill, a
 // pipe, a windmill. What's in the way is put along the way, the line from the tee round the corners to the cup, so it's in
 // the way. `difficulty` (0 to 1) sets how much of all that a hole gets. It's makeable if some putt from the tee drops
 // (par 2) or leaves one that does (par 3).
@@ -16,7 +16,7 @@ export const PERIOD = 3, shut = t => { const a = (t / PERIOD * 4) % 1; return a 
 export const DT = 1 / 120, MAX = 4; // a step (s); the hardest putt (m/s)
 // Friction (m/s²), how hard a slope pulls (per unit of slope), the fastest a ball drops in (m/s), how much of its speed a ball
 // keeps off a rail, how long a putt may roll (s), the height grid's spacing and the outline's (m).
-const DECEL = 0.6, PULL = 7, CAPTURE = 1.25, BOUNCE = 0.65, LIMIT = 12, GRID = 0.02, CELL = 0.1;
+const DECEL = 0.6, PULL = 7, CAPTURE = 1.25, BOUNCE = 0.65, LIMIT = 12, GRID = 0.02, CELL = 0.05;
 const SIZES = { books: { w: 0.22, d: 0.16 }, mug: { r: 0.05 }, duck: { r: 0.06 }, stapler: { w: 0.19, d: 0.05 } };
 
 // mulberry32: a small seeded generator, the same numbers everywhere.
@@ -34,28 +34,49 @@ export function inside(poly, x, z) {
 const toSegment = (x, z, x1, z1, x2, z2) => { const dx = x2 - x1, dz = z2 - z1, t = clamp(((x - x1) * dx + (z - z1) * dz) / (dx * dx + dz * dz || 1), 0, 1); return Math.hypot(x - x1 - dx * t, z - z1 - dz * t); };
 export const fromEdge = (poly, x, z) => { let d = Infinity; for (let i = 0; i < poly.length; i++) d = Math.min(d, toSegment(x, z, ...poly[i], ...poly[(i + 1) % poly.length])); return d; };
 
-// The outline of a union of rectangles [x0, z0, x1, z1] (on CELL): corner to corner round the edge, straight runs merged.
-function outline(rects) {
-  const x0 = Math.min(...rects.map(r => r[0])), z0 = Math.min(...rects.map(r => r[1]));
-  const cols = Math.round((Math.max(...rects.map(r => r[2])) - x0) / CELL), rows = Math.round((Math.max(...rects.map(r => r[3])) - z0) / CELL);
-  const on = (i, j) => i >= 0 && j >= 0 && i < cols && j < rows && rects.some(([a, b, c, d]) => { const x = x0 + (i + 0.5) * CELL, z = z0 + (j + 0.5) * CELL; return x > a && x < c && z > b && z < d; });
+// The outline of whatever `on(x, z)` covers (traced on a CELL grid over AREA): the edge of the covered cells, then
+// straightened (simplify), so steps on a slant or a curve become a line or an arc.
+function outline(on) {
+  const cols = Math.ceil((AREA.x1 - AREA.x0) / CELL), rows = Math.ceil((AREA.z1 - AREA.z0) / CELL);
+  const at = (i, j) => i >= 0 && j >= 0 && i < cols && j < rows && on(AREA.x0 + (i + 0.5) * CELL, AREA.z0 + (j + 0.5) * CELL);
   const next = new Map(), add = (a, b, c, d) => next.set(`${a},${b}`, [c, d]);
-  for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) if (on(i, j)) {
-    if (!on(i, j - 1)) add(i, j, i + 1, j); if (!on(i + 1, j)) add(i + 1, j, i + 1, j + 1);
-    if (!on(i, j + 1)) add(i + 1, j + 1, i, j + 1); if (!on(i - 1, j)) add(i, j + 1, i, j);
+  for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) if (at(i, j)) {
+    if (!at(i, j - 1)) add(i, j, i + 1, j); if (!at(i + 1, j)) add(i + 1, j, i + 1, j + 1);
+    if (!at(i, j + 1)) add(i + 1, j + 1, i, j + 1); if (!at(i - 1, j)) add(i, j + 1, i, j);
   }
-  const start = next.keys().next().value, corners = [];
-  for (let key = start; ;) { const [i, j] = key.split(',').map(Number), [a, b] = next.get(key); corners.push([i, j]); key = `${a},${b}`; if (key === start) break; }
-  return corners.filter((p, k) => { const a = corners.at(k - 1), b = corners[(k + 1) % corners.length]; return (p[0] - a[0]) * (b[1] - p[1]) !== (p[1] - a[1]) * (b[0] - p[0]); })
-    .map(([i, j]) => [x0 + i * CELL, z0 + j * CELL]);
+  const start = next.keys().next().value, steps = [];
+  for (let key = start; ;) { const [i, j] = key.split(',').map(Number), [a, b] = next.get(key); steps.push([AREA.x0 + i * CELL, AREA.z0 + j * CELL]); key = `${a},${b}`; if (key === start) break; }
+  return simplify(steps, CELL * 1.2);
 }
-// Cuts some corners off at an angle, up to `most` metres back along each side (never past half of either).
-function chamfer(poly, r, chance, most) {
-  return poly.flatMap((p, k) => {
-    if (r() > chance) return [p];
-    const a = poly.at(k - 1), b = poly[(k + 1) % poly.length], la = Math.hypot(a[0] - p[0], a[1] - p[1]), lb = Math.hypot(b[0] - p[0], b[1] - p[1]), d = Math.min(most * (0.4 + 0.6 * r()), la / 2.2, lb / 2.2);
-    return [[p[0] + (a[0] - p[0]) / la * d, p[1] + (a[1] - p[1]) / la * d], [p[0] + (b[0] - p[0]) / lb * d, p[1] + (b[1] - p[1]) / lb * d]];
+// Douglas-Peucker round a closed outline: drops every corner that's within `tolerance` of a straight line between those kept.
+function simplify(points, tolerance) {
+  const keep = new Uint8Array(points.length), far = points.reduce((best, p, i) => Math.hypot(p[0] - points[0][0], p[1] - points[0][1]) > Math.hypot(points[best][0] - points[0][0], points[best][1] - points[0][1]) ? i : best, 0);
+  const split = (a, b) => {
+    let worst = -1, most = tolerance;
+    for (let i = a + 1; i < b; i++) { const d = toSegment(...points[i], ...points[a], ...points[b % points.length]); if (d > most) { most = d; worst = i; } }
+    if (worst < 0) return; keep[worst] = 1; split(a, worst); split(worst, b);
+  };
+  keep[0] = keep[far] = 1; split(0, far); split(far, points.length);
+  return points.filter((_, i) => keep[i]);
+}
+// Each real corner (not a bend on a curve) is left sharp, cut off at an angle, or rounded with an arc, never more than
+// about half way along either side.
+function corners(poly, r) {
+  const out = [];
+  poly.forEach((p, k) => {
+    const a = poly.at(k - 1), b = poly[(k + 1) % poly.length], ux = a[0] - p[0], uz = a[1] - p[1], vx = b[0] - p[0], vz = b[1] - p[1], la = Math.hypot(ux, uz), lb = Math.hypot(vx, vz);
+    const angle = Math.acos(clamp((ux * vx + uz * vz) / (la * lb), -1, 1)), roll = r();
+    if (angle > Math.PI * 0.75 || roll < 0.3) { out.push(p); return; }
+    if (roll < 0.5) { const d = Math.min(0.45 * (0.4 + 0.6 * r()), la / 2.2, lb / 2.2); out.push([p[0] + ux / la * d, p[1] + uz / la * d], [p[0] + vx / lb * d, p[1] + vz / lb * d]); return; }
+    // Rounded: an arc tangent to both sides, its centre on the line halfway between them.
+    const t = Math.min((0.15 + 0.4 * r()) / Math.tan(angle / 2), la / 2.2, lb / 2.2), radius = t * Math.tan(angle / 2), bx = ux / la + vx / lb, bz = uz / la + vz / lb, bl = Math.hypot(bx, bz) || 1;
+    const cx = p[0] + bx / bl * radius / Math.sin(angle / 2), cz = p[1] + bz / bl * radius / Math.sin(angle / 2);
+    const from = Math.atan2(p[1] + uz / la * t - cz, p[0] + ux / la * t - cx); let sweep = Math.atan2(p[1] + vz / lb * t - cz, p[0] + vx / lb * t - cx) - from;
+    sweep -= Math.round(sweep / (2 * Math.PI)) * 2 * Math.PI;
+    const n = Math.max(2, Math.ceil(Math.abs(sweep) / 0.3));
+    for (let i = 0; i <= n; i++) out.push([cx + Math.cos(from + sweep * i / n) * radius, cz + Math.sin(from + sweep * i / n) * radius]);
   });
+  return out;
 }
 
 // A hole from `seed` at `difficulty`, not yet checked (see survey).
@@ -63,9 +84,19 @@ export function make(difficulty, seed) {
   const r = rng(seed), between = (a, b) => a + (b - a) * r(), d = difficulty, snap = v => Math.round(v / CELL) * CELL;
   // Laid out in (v, u), v across the area and u along it, then maybe mirrored and turned end for end.
   const V = AREA.x1 - AREA.x0, U = AREA.z1 - AREA.z0, W = snap(between(1.45, 1.7) - 0.55 * d);
-  const kind = d < 0.12 ? 'straight' : d < 0.3 ? (r() < 0.5 ? 'straight' : 'L') : ['straight', 'L', 'L', 'Z', 'Z', 'wide'][Math.floor(r() * 6)];
-  let legs, tee, cup;
-  if (kind === 'straight' || kind === 'wide') {
+  const kind = d < 0.12 ? ['straight', 'bowl'][Math.floor(r() * 2)] : d < 0.3 ? ['straight', 'L', 'bowl', 'funnel'][Math.floor(r() * 4)] : ['straight', 'L', 'L', 'Z', 'Z', 'wide', 'bowl', 'funnel', 'funnel'][Math.floor(r() * 9)];
+  // Legs are rectangles; a round green is a disc [v, u, radius]; a funnel is a four-sided piece narrowing toward the cup.
+  let legs, tee, cup, discs = [], funnels = [];
+  if (kind === 'bowl') { // a lane opening into a round green round the cup
+    const R = between(0.65, 1), vc = between(Math.max(R, W / 2), V - Math.max(R, W / 2)), L = snap(between(2.2, U - R - 0.2)), u0 = snap(between(0, U - L - R - 0.05));
+    legs = [[snap(vc - W / 2), u0, snap(vc - W / 2) + W, u0 + L]]; discs = [[vc, u0 + L, R]];
+    tee = [vc + W * between(-0.25, 0.25), u0 + 0.4]; cup = [vc + R * between(-0.45, 0.45), u0 + L + R * between(-0.2, 0.45)];
+  } else if (kind === 'funnel') { // wide at the tee, narrowing to a neck (or a little round green) with the cup
+    const wide = between(1.8, Math.min(2.8, V - 0.1)), neck = between(0.6, 0.9), vc = between(wide / 2, V - wide / 2), u0 = between(0, 0.4), u1 = u0 + between(1.6, 2.6), u2 = between(u1 + 1, U - 0.1);
+    funnels = [[[vc - wide / 2, u0], [vc + wide / 2, u0], [vc + neck / 2, u1], [vc - neck / 2, u1]]]; legs = [[vc - neck / 2, u1 - 0.05, vc + neck / 2, u2]];
+    if (r() < 0.5) discs = [[vc, u2, between(0.45, 0.65)]];
+    tee = [vc + wide * between(-0.25, 0.25), u0 + 0.35]; cup = [vc + neck * between(-0.2, 0.2), u2 - (discs.length ? 0 : between(0.3, 0.5))];
+  } else if (kind === 'straight' || kind === 'wide') {
     const w = kind === 'wide' ? snap(between(2.2, 3)) : W, L = snap(between(3.4, U - 0.1)), v0 = snap(between(0, V - w)), u0 = snap(between(0, U - L));
     legs = [[v0, u0, v0 + w, u0 + L]]; tee = [v0 + w * between(0.3, 0.7), u0 + 0.4]; cup = [v0 + w * between(0.25, 0.75), u0 + L - between(0.35, 0.9)];
   } else if (kind === 'L') {
@@ -79,7 +110,8 @@ export function make(difficulty, seed) {
   }
   const mirror = r() < 0.5, flip = r() < 0.5, at = (v, u) => [AREA.x0 + (mirror ? V - v : v), AREA.z0 + (flip ? U - u : u)];
   const rects = legs.map(([a, b, c, e]) => { const [x0, z0] = at(a, b), [x1, z1] = at(c, e); return [Math.min(x0, x1), Math.min(z0, z1), Math.max(x0, x1), Math.max(z0, z1)]; });
-  const poly = chamfer(outline(rects), r, 0.25 + 0.5 * d, 0.45);
+  const rounds = discs.map(([v, u, radius]) => [...at(v, u), radius]), quads = funnels.map(q => q.map(p => at(...p)));
+  const poly = corners(outline((x, z) => rects.some(([a, b, c, e]) => x > a && x < c && z > b && z < e) || rounds.some(([cx, cz, radius]) => Math.hypot(x - cx, z - cz) < radius) || quads.some(q => inside(q, x, z))), r);
   [tee, cup] = [tee, cup].map(p => { const [x, z] = at(...p); return { x, z }; });
   const clear = (p, gap) => near(p, tee) > gap && near(p, cup) > gap;
   // The way: tee, the middle of each corner where one leg meets the next, cup. along(random, spread) is a spot on it, up to
@@ -117,12 +149,12 @@ export function make(difficulty, seed) {
     if (!inside(poly, o.x, o.z) || fromEdge(poly, o.x, o.z) < reach + 0.12 || !clear(o, reach + 0.3) || things.some(p => near(p, o) < 0.4)) continue;
     things.push(o);
   }
-  // Gentle humps and hollows on the way, where they bend a putt rather than sit off to the side.
-  const bumps = Array.from({ length: 1 + Math.floor(2 * d) }, () => ({ ...along(r, 0.3), r: between(0.3, 0.6), a: (r() < 0.5 ? -1 : 1) * (0.015 + 0.035 * d) }));
+  // From hole 4, a mound or a hollow or two on the way, compact and high enough to see; the rest of the green is flat, so a
+  // putt only bends where you can see why.
+  const bumps = d < 0.06 ? [] : Array.from({ length: Math.floor(between(1, 2 + 1.5 * d)) }, () => ({ ...along(r, 0.3), r: between(0.3, 0.5), a: (r() < 0.6 ? 1 : -1) * (0.045 + 0.035 * d) }));
   const features = obstacles(d, rng(seed * 31 + 17), { poly, rects, tee, cup, things, inner, clear, along });
-  const lean = d < 0.1 ? 0 : 0.012 * d, dir = r() * Math.PI * 2;
   const walls = [...poly.map((p, i) => [...p, ...poly[(i + 1) % poly.length]]), ...wedges.flatMap(([p, q, s]) => [[...p, ...q], [...q, ...s]]), ...inner];
-  const c = { difficulty, seed, outline: poly, wedges, inner, things, features, walls, tee, cup, bumps, tilt: { x: Math.cos(dir) * lean, z: Math.sin(dir) * lean } };
+  const c = { difficulty, seed, outline: poly, wedges, inner, things, features, walls, tee, cup, bumps };
   c.grid = grid(c);
   return c;
 }
@@ -162,10 +194,9 @@ const footprint = f => f.kind === 'windmill' ? 0.5 : f.kind === 'spill' ? Math.m
 function grid(c) {
   const xs = c.outline.map(p => p[0]), zs = c.outline.map(p => p[1]), x0 = Math.min(...xs) - GRID, z0 = Math.min(...zs) - GRID;
   const cols = Math.ceil((Math.max(...xs) + GRID - x0) / GRID) + 1, rows = Math.ceil((Math.max(...zs) + GRID - z0) / GRID) + 1, h = new Float32Array(cols * rows);
-  const mx = (Math.min(...xs) + Math.max(...xs)) / 2, mz = (Math.min(...zs) + Math.max(...zs)) / 2;
   for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
     const x = x0 + i * GRID, z = z0 + j * GRID; if (!inside(c.outline, x, z)) continue;
-    let v = c.tilt.x * (x - mx) + c.tilt.z * (z - mz);
+    let v = 0;
     for (const b of c.bumps) v += b.a * Math.exp(-((x - b.x) ** 2 + (z - b.z) ** 2) / (b.r * b.r));
     let flat = 1;
     for (const f of c.features) for (const p of f.to ? [f, f.to] : [f]) flat *= smooth(footprint(f), footprint(f) + 0.2, Math.hypot(x - p.x, z - p.z));
@@ -272,7 +303,7 @@ export const par = c => { const it = survey(c); for (;;) { const s = it.next(); 
 
 // The course: holes 1 to 50, harder as they go, the same for everyone, each with its par worked out ahead (a test checks
 // them), so none has to be surveyed while you play.
-export const HOLE_COUNT = 50, PARS = '22222222232232222232232333233332332223233333333323';
+export const HOLE_COUNT = 50, PARS = '22222232222222222232233222223332223333233232232223';
 export const difficulty = n => Math.min(1, (n - 1) / 45);
 export const seedOf = (n, k) => n * 7919 + k * 104729;
 export const hole = n => ({ ...make(difficulty(n), seedOf(n, 0)), n, par: Number(PARS[n - 1]) });
