@@ -8,8 +8,9 @@
 // the way. `difficulty` (0 to 1) sets how much of all that a hole gets. It's makeable if some putt from the tee drops
 // (par 2) or leaves one that does (par 3).
 
-// In the secret room's frame (secret.js): x across from the doorway's wall, z along it.
-export const AREA = { x0: 4.6, x1: 9.3, z0: -3.45, z1: 2.55 };
+// In the secret room's frame (secret.js): x away from the doorway's wall, z along it. The far end of the room (SECRET.w
+// 13), 1.4 m clear of every wall, so there's room to walk round and for the view behind the ball.
+export const AREA = { x0: 6.2, x1: 11.6, z0: -2.7, z1: 1.7 };
 export const BALL = 0.022, CUP = 0.054, RAIL = 0.03, PIPE = 0.06; // radii; RAIL is half a rail's thickness
 // A windmill: the sails turn once in PERIOD seconds, and with four of them one is down across the tunnel 40% of the time.
 export const PERIOD = 3, shut = t => { const a = (t / PERIOD * 4) % 1; return a < 0.2 || a > 0.8; };
@@ -83,32 +84,34 @@ function corners(poly, r) {
 export function make(difficulty, seed) {
   const r = rng(seed), between = (a, b) => a + (b - a) * r(), d = difficulty, snap = v => Math.round(v / CELL) * CELL;
   // Laid out in (v, u), v across the area and u along it, then maybe mirrored and turned end for end.
-  const V = AREA.x1 - AREA.x0, U = AREA.z1 - AREA.z0, W = snap(between(1.45, 1.7) - 0.55 * d);
+  // A hole runs along the area's longer side.
+  const lengthwise = AREA.x1 - AREA.x0 > AREA.z1 - AREA.z0, V = lengthwise ? AREA.z1 - AREA.z0 : AREA.x1 - AREA.x0, U = lengthwise ? AREA.x1 - AREA.x0 : AREA.z1 - AREA.z0, W = snap(between(1.45, 1.7) - 0.55 * d);
   const kind = d < 0.12 ? ['straight', 'bowl'][Math.floor(r() * 2)] : d < 0.3 ? ['straight', 'L', 'bowl', 'funnel'][Math.floor(r() * 4)] : ['straight', 'L', 'L', 'Z', 'Z', 'wide', 'bowl', 'funnel', 'funnel'][Math.floor(r() * 9)];
   // Legs are rectangles; a round green is a disc [v, u, radius]; a funnel is a four-sided piece narrowing toward the cup.
   let legs, tee, cup, discs = [], funnels = [];
   if (kind === 'bowl') { // a lane opening into a round green round the cup
     const R = between(0.65, 1), vc = between(Math.max(R, W / 2), V - Math.max(R, W / 2)), L = snap(between(2.2, U - R - 0.2)), u0 = snap(between(0, U - L - R - 0.05));
     legs = [[snap(vc - W / 2), u0, snap(vc - W / 2) + W, u0 + L]]; discs = [[vc, u0 + L, R]];
-    tee = [vc + W * between(-0.25, 0.25), u0 + 0.4]; cup = [vc + R * between(-0.45, 0.45), u0 + L + R * between(-0.2, 0.45)];
+    tee = [vc + W * between(-0.25, 0.25), u0 + 0.5]; cup = [vc + R * between(-0.45, 0.45), u0 + L + R * between(-0.2, 0.45)];
   } else if (kind === 'funnel') { // wide at the tee, narrowing to a neck (or a little round green) with the cup
     const wide = between(1.8, Math.min(2.8, V - 0.1)), neck = between(0.6, 0.9), vc = between(wide / 2, V - wide / 2), u0 = between(0, 0.4), u1 = u0 + between(1.6, 2.6), u2 = between(u1 + 1, U - 0.1);
     funnels = [[[vc - wide / 2, u0], [vc + wide / 2, u0], [vc + neck / 2, u1], [vc - neck / 2, u1]]]; legs = [[vc - neck / 2, u1 - 0.05, vc + neck / 2, u2]];
     if (r() < 0.5) discs = [[vc, u2, between(0.45, 0.65)]];
-    tee = [vc + wide * between(-0.25, 0.25), u0 + 0.35]; cup = [vc + neck * between(-0.2, 0.2), u2 - (discs.length ? 0 : between(0.3, 0.5))];
+    tee = [vc + wide * between(-0.25, 0.25), u0 + 0.5]; cup = [vc + neck * between(-0.2, 0.2), u2 - (discs.length ? 0 : between(0.3, 0.5))];
   } else if (kind === 'straight' || kind === 'wide') {
     const w = kind === 'wide' ? snap(between(2.2, 3)) : W, L = snap(between(3.4, U - 0.1)), v0 = snap(between(0, V - w)), u0 = snap(between(0, U - L));
-    legs = [[v0, u0, v0 + w, u0 + L]]; tee = [v0 + w * between(0.3, 0.7), u0 + 0.4]; cup = [v0 + w * between(0.25, 0.75), u0 + L - between(0.35, 0.9)];
+    legs = [[v0, u0, v0 + w, u0 + L]]; tee = [v0 + w * between(0.3, 0.7), u0 + 0.5]; cup = [v0 + w * between(0.25, 0.75), u0 + L - between(0.35, 0.9)];
   } else if (kind === 'L') {
     const L1 = snap(between(3, U - 0.1)), L2 = snap(between(2.2, V - 0.1)), u0 = snap(between(0, U - L1)), v0 = snap(between(0, V - L2));
     legs = [[v0, u0, v0 + W, u0 + L1], [v0, u0 + L1 - W, v0 + L2, u0 + L1]];
-    tee = [v0 + W / 2, u0 + 0.4]; cup = [v0 + L2 - between(0.35, 0.8), u0 + L1 - W * between(0.3, 0.7)];
+    tee = [v0 + W / 2, u0 + 0.5]; cup = [v0 + L2 - between(0.35, 0.8), u0 + L1 - W * between(0.3, 0.7)];
   } else { // up one side, across, up the other
     const u0 = snap(between(0, 0.4)), u1 = snap(between(U - 0.5, U)), um = snap(between(u0 + 1.7, u1 - 1.7)), v1 = snap(between(W + 0.7, V - W));
     legs = [[0, u0, W, snap(um + W / 2)], [0, snap(um - W / 2), v1 + W, snap(um + W / 2)], [v1, snap(um - W / 2), v1 + W, u1]];
-    tee = [W / 2, u0 + 0.4]; cup = [v1 + W / 2, u1 - between(0.35, 0.8)];
+    tee = [W / 2, u0 + 0.5]; cup = [v1 + W / 2, u1 - between(0.35, 0.8)];
   }
-  const mirror = r() < 0.5, flip = r() < 0.5, at = (v, u) => [AREA.x0 + (mirror ? V - v : v), AREA.z0 + (flip ? U - u : u)];
+  const mirror = r() < 0.5, flip = r() < 0.5, across = v => mirror ? V - v : v, up = u => flip ? U - u : u;
+  const at = (v, u) => lengthwise ? [AREA.x0 + up(u), AREA.z0 + across(v)] : [AREA.x0 + across(v), AREA.z0 + up(u)];
   const rects = legs.map(([a, b, c, e]) => { const [x0, z0] = at(a, b), [x1, z1] = at(c, e); return [Math.min(x0, x1), Math.min(z0, z1), Math.max(x0, x1), Math.max(z0, z1)]; });
   const rounds = discs.map(([v, u, radius]) => [...at(v, u), radius]), quads = funnels.map(q => q.map(p => at(...p)));
   const poly = corners(outline((x, z) => rects.some(([a, b, c, e]) => x > a && x < c && z > b && z < e) || rounds.some(([cx, cz, radius]) => Math.hypot(x - cx, z - cz) < radius) || quads.some(q => inside(q, x, z))), r);
@@ -303,7 +306,7 @@ export const par = c => { const it = survey(c); for (;;) { const s = it.next(); 
 
 // The course: holes 1 to 50, harder as they go, the same for everyone, each with its par worked out ahead (a test checks
 // them), so none has to be surveyed while you play.
-export const HOLE_COUNT = 50, PARS = '22222232222222222232233222223332223333233232232223';
+export const HOLE_COUNT = 50, PARS = '22222232222222222222232322222332322233233332222232';
 export const difficulty = n => Math.min(1, (n - 1) / 45);
 export const seedOf = (n, k) => n * 7919 + k * 104729;
 export const hole = n => ({ ...make(difficulty(n), seedOf(n, 0)), n, par: Number(PARS[n - 1]) });
