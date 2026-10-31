@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { fitText, font } from './displays.js';
 
-const PADDING = 22, TITLE = 70, ROW = 70, GAP = 8, UNFOLD = .22, REACH = 5;
+const PADDING = 22, TITLE = 70, ROW = 70, GAP = 8, UNFOLD = .22, REACH = 3.2;
 export function hologramLayout(count, width, height) {
   const fits = Math.floor((height - TITLE - PADDING + GAP) / (ROW + GAP)), rows = [];
   for (let i = 0; i < Math.min(count, fits); i++) rows.push({ x: PADDING, y: TITLE + i * (ROW + GAP), width: width - 2 * PADDING, height: ROW });

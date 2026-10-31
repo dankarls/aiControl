@@ -5,7 +5,7 @@ import { walkGrid, findPath } from '../office/path.js';
 import { VACANT_MS } from '../office/layout.js';
 import { createBrackets } from './brackets.js';
 import { BridgeCamera } from './camera.js';
-import { CENTER, ROOM, deckColliders, stationAt } from './deck.js';
+import { CENTER, CHAIR_Z, ROOM, SEAT, deckColliders, stationAt } from './deck.js';
 import { createDisplays, stationName } from './displays.js';
 import { ROSTER, createHologram } from './hologram.js';
 import { createLights } from './lights.js';
@@ -23,7 +23,6 @@ export function webglAvailable() {
 }
 
 // Where you start: in the captain's chair, facing the window. Everything here can be reached from it; walking about is optional.
-const SEAT = { x: CENTER, y: 1.6, z: 8.72, yaw: 0, pitch: -.07 };
 const PROJECTORS = { colour: 'Colours', crew: 'Sessions' };
 const WALK = /^Key[WASD]$/;
 const shown = node => { for (let n = node; n; n = n.parent) if (!n.visible) return false; return true; };
@@ -42,9 +41,9 @@ export function mountBridge(container, hooks = {}, options = {}) {
   const place = () => { camera.position.set(view.x, view.y, view.z); camera.rotation.set(view.pitch, view.yaw, 0); camera.updateMatrixWorld(); };
 
   // The arms' projectors: colours on the right, everyone on board on the left.
-  const projected = (x) => ({ from: new THREE.Vector3(x * .5, 1.12, -.05), at: new THREE.Vector3(x * .72, 1.72, -.62), still });
+  const projected = (x) => ({ from: new THREE.Vector3(x * .5, 1.12, CHAIR_Z - .83), at: new THREE.Vector3(x * .72, 1.72, CHAIR_Z - 1.4), still });
   const phone = () => Math.min(container.clientWidth, container.clientHeight) <= 640;
-  const holograms = { colour: createHologram(room.group, { ...projected(1), phone }), crew: createHologram(room.group, { ...projected(-1), ...ROSTER, phone, at: new THREE.Vector3(-.72, 1.66, -.62) }) };
+  const holograms = { colour: createHologram(room.group, { ...projected(1), phone }), crew: createHologram(room.group, { ...projected(-1), ...ROSTER, phone, at: new THREE.Vector3(-.72, 1.66, CHAIR_Z - 1.4) }) };
   let colour = savedColour(), crew = [];
   const showColours = () => holograms.colour.show('COLOURS', Object.entries(PALETTES).map(([id, palette]) => ({ id, label: palette.name, swatch: [palette.wall, palette.trim, palette.neon], on: id === colour })));
   const showCrew = () => holograms.crew.show(crew.length ? `${crew.length} SESSIONS` : 'NO SESSIONS', crew.map(session => ({ id: session.id, label: stationName(session), swatch: [SIGNALS[signalOf(session)]] })));

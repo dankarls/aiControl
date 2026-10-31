@@ -14,7 +14,7 @@ export function createLights(world, glow, still = false) {
   const group = new THREE.Group(); group.position.set(CENTER, 0, CENTER); world.add(group);
   const point = (intensity, distance, decay, x, y, z) => { const light = new THREE.PointLight(0xffffff, intensity * LIGHT_SCALE, distance, decay); light.position.set(x, y, z); group.add(light); return light; };
   const ambient = new THREE.AmbientLight(0xffffff, 1); group.add(ambient);
-  const ring = point(1, 15, 1.1, 0, 3.5, 0), view = point(1, 9, 1.4, 0, 2, -5.4), left = point(.9, 7, 1.4, -5, 2.6, 0), right = point(.9, 7, 1.4, 5, 2.6, 0);
+  const ring = point(1, 10, 1.1, 0, 3.5, 0), view = point(1, 6, 1.4, 0, 2, -3.4), left = point(.9, 4.5, 1.4, -3.1, 2.6, 0), right = point(.9, 4.5, 1.4, 3.1, 2.6, 0);
   const tmp = new THREE.Color();
   let palette = null, neon = new THREE.Color(), hail = false, limit = false;
   return {
@@ -26,7 +26,7 @@ export function createLights(world, glow, still = false) {
       ring.color.copy(limit ? RED : hail ? tmp.copy(WARM).lerp(RED, .45 + pulse * .35) : WARM); ring.intensity = (limit ? .4 : hail ? .9 : 1) * LIGHT_SCALE;
       view.color.copy(hail ? RED : VIEW); view.intensity = (limit ? .08 : .6 + w * .4) * LIGHT_SCALE;
       glow.neon.color.copy(limit || hail ? RED : neon).multiplyScalar(limit ? .2 : hail ? .5 + pulse * 1.6 : 1.9);
-      glow.chase.color.copy(glow.neon.color); glow.rib.color.copy(glow.neon.color).multiplyScalar(.16); glow.ring.color.copy(glow.neon.color).multiplyScalar(.14); glow.wash.color.copy(glow.neon.color).multiplyScalar(.5);
+      glow.chase.color.copy(glow.neon.color); glow.rib.color.copy(glow.neon.color).multiplyScalar(.16); glow.ring.color.copy(glow.neon.color).multiplyScalar(.14);
       left.color.copy(glow.neon.color).multiplyScalar(.6); right.color.copy(left.color);
       left.intensity = right.intensity = (limit ? .05 : .9) * LIGHT_SCALE;
       if (!still) glow.chaseMap.offset.x -= dt * chaseSpeed(w);
