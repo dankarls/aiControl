@@ -233,7 +233,7 @@ export function buildRoom(world, still = false) {
   add(new THREE.CylinderGeometry(.22, .3, .34, 16), MAT.metal, null, 0, .47, CHAIR_Z);
   const shell = new THREE.Group(); shell.position.set(0, .3, CHAIR_Z); shell.userData.chair = true; group.add(shell);
   add(box(.66, .14, .62), MAT.seatTop, shell, 0, .46); add(box(.78, 1.12, .1), MAT.shell, shell, 0, 1.02, .33, .08); add(box(.82, .06, .14), MAT.trim, shell, 0, 1.6, .37, .08);
-  const pods = new THREE.Group(); group.add(pods);
+  const pods = new THREE.Group(); group.add(pods); const targets = {};
   const podBase = box(.38, .06, .36), bigLamps = [], crystals = [], hidden = new THREE.MeshBasicMaterial({ visible: false });
   let projector = null;
   for (const s of [-1, 1]) {
@@ -244,14 +244,14 @@ export function buildRoom(world, still = false) {
     add(podBase, MAT.black, pod);
     if (s < 0) {
       screen(panel('arm', 420, 170, 1.45), .32, .13, pod, 0, .035, .1, -UP);
-      add(box(.34, .06, .17), hidden, pod, 0, .05, .1).userData.hologram = 'crew';
+      (targets.crew = add(box(.34, .06, .17), hidden, pod, 0, .05, .1)).userData.hologram = 'crew';
       for (let i = 0; i < 3; i++) { const m = lit('#e4eaff', .9), mesh = add(box(.075, .035, .15), m, pod, -.1 + i * .1, .05, -.08); crystals.push({ mesh, material: m, color: C('#e4eaff', .9), near: C(SIGNALS.near), full: C(SIGNALS.need), off: C('#e4eaff', .12) }); }
     } else {
       [[SIGNALS.need, 'need'], [SIGNALS.working, 'work'], [SIGNALS.idle, 'calm']].forEach(([color, role], i) => { const m = lit(color); add(new THREE.CylinderGeometry(.052, .06, .05, 18), m, pod, -.115 + i * .115, .05, -.07); add(new THREE.CylinderGeometry(.068, .07, .025, 18), MAT.metal, pod, -.115 + i * .115, .03, -.07); bigLamps.push({ material: m, color: C(color), role }); });
       // One button opens the room's colours as a hologram; it lights in the colour chosen. A generous invisible target lies over it.
       projector = lit('#000');
       add(new THREE.CylinderGeometry(.045, .05, .025, 24), projector, pod, 0, .045, .1); add(new THREE.CylinderGeometry(.06, .062, .02, 24), MAT.metal, pod, 0, .035, .1);
-      add(box(.24, .06, .17), hidden, pod, 0, .05, .1).userData.hologram = 'colour';
+      (targets.colour = add(box(.24, .06, .17), hidden, pod, 0, .05, .1)).userData.hologram = 'colour';
     }
   }
 
@@ -302,6 +302,7 @@ export function buildRoom(world, still = false) {
       limit = state.mode === 'limit'; hail = state.mode === 'hail'; offline = state.offline; warp = state.warp;
       if (!started) { started = true; dim = limit || offline ? .3 : 1; commY = hail || limit ? 2.25 : 4.3; }
     },
+    hologramButton: name => targets[name],
     // Which hologram's button the ray lands on, if any.
     hologramAt(ray) {
       if (!pods.visible) return null;

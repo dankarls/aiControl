@@ -12,7 +12,7 @@ import { PALETTES, SIGNALS, paletteFor, saveColour, savedColour } from './palett
 import { createPost } from './post.js';
 import { createReticle } from './reticle.js';
 import { buildRoom } from './room.js';
-import { clickAction, screenPose } from './seat.js';
+import { clickAction, keyAction, screenPose } from './seat.js';
 import { assignStations, displayState, shipState, signalOf, stationSignals } from './ship.js';
 import { createSpace } from './space.js';
 
@@ -50,15 +50,15 @@ export function mountBridge(container, hooks = {}, options = {}) {
   const showHologram = { colour: showColours, crew: showCrew };
   const closeHolograms = () => { for (const hologram of Object.values(holograms)) hologram.hide(); };
   const chosen = { colour: ({ id }) => { colour = id; saveColour(id); repaint(paletteFor(id)); showColours(); }, crew: ({ id }) => bridge.talkTo(id) };
+  const toggleHologram = button => { const wasOpen = holograms[button].open; closeHolograms(); if (!wasOpen) showHologram[button](); };
   // A click belongs to an open hologram first, then to a projector's button; anywhere else it just closes what's open.
   function clickHologram(at) {
     aim(at);
     for (const [name, hologram] of Object.entries(holograms)) {
       const hit = hologram.at(ray); if (hit) { if (hit.row) chosen[name](hit.row); return true; }
     }
-    const button = room.hologramAt(ray), wasOpen = button && holograms[button].open, anyOpen = Object.values(holograms).some(hologram => hologram.open);
-    closeHolograms();
-    if (button && !wasOpen) showHologram[button]();
+    const button = room.hologramAt(ray), anyOpen = Object.values(holograms).some(hologram => hologram.open);
+    if (button) toggleHologram(button); else closeHolograms();
     return !!button || anyOpen;
   }
 
@@ -66,19 +66,21 @@ export function mountBridge(container, hooks = {}, options = {}) {
   const colliders = deckColliders(), grid = walkGrid(colliders, ROOM);
   const player = new Player(el, { colliders: () => colliders, room: () => ROOM, route: (from, to) => findPath(grid, from, to), onPick: (at, mouse) => {
     if (!zoomed && !look.overview && clickHologram(at)) return;
-    const hit = under(at), action = clickAction(hit, { seated, zoomed: !!zoomed, overview: look.overview, locked: player.locked, mouse });
-    if (action === 'back') back();
-    else if (action === 'talk') bridge.talkTo(hit.id);
-    else if (action === 'zoom') zoom(hit.mesh);
-    else if (action === 'sit') sit();
-    else if (action === 'capture') player.lock();
-    else if (action === 'walk') player.walkTo(hit.point);
+    const hit = under(at); act(clickAction(hit, { seated, zoomed: !!zoomed, overview: look.overview, locked: player.locked, mouse }), hit);
   },
   // Esc while captured reaches us only as this. The window losing focus also calls it, and that shouldn't lose your place.
   onCancel: () => { if (!zoomed || !document.hasFocus()) return false; back(); return true; } });
   player.place(SEAT.x, SEAT.z, Math.PI); player.pitch = SEAT.pitch;
   const look = new BridgeCamera(camera, player, { reducedMotion: still, container });
 
+  function act(action, hit) {
+    if (action === 'back') back();
+    else if (action === 'talk') bridge.talkTo(hit.id);
+    else if (action === 'zoom') zoom(hit.mesh);
+    else if (action === 'sit') sit();
+    else if (action === 'capture') player.lock();
+    else if (action === 'walk') player.walkTo(hit.point);
+  }
   // Close up on a screen: you stay where you are, and only the view flies over.
   function zoom(mesh) { closeHolograms(); zoomed = { mesh, yaw: player.yaw, pitch: player.pitch }; player.setOverview(true); look.closing = true; }
   function back() { if (!zoomed) return; zoomed = null; player.setOverview(false); look.closing = false; }
@@ -114,29 +116,49 @@ export function mountBridge(container, hooks = {}, options = {}) {
     aim(event);
     for (const { object, point } of ray.intersectObject(room.group, true)) {
       if (!shown(object)) continue;
-      if (object.userData.screen) return { kind: 'screen', mesh: object, label: object.userData.screen };
+      if (object.userData.screen) return { kind: 'screen', mesh: object, label: object.userData.screen, object };
       if (object.material.transparent || !object.material.visible) continue;
       for (let node = object; node; node = node.parent) {
-        if (node.userData.sessionId) return { kind: 'character', id: node.userData.sessionId };
-        if (node.userData.chair) return { kind: 'chair' };
+        if (node.userData.sessionId) return { kind: 'character', id: node.userData.sessionId, object: node.userData.bracket || node };
+        if (node.userData.chair) return { kind: 'chair', object: node };
       }
       return object.userData.floor ? { kind: 'floor', point } : null;
     }
     return null;
   }
-  // What's under the pointer or, aiming, the sight: named by a tooltip or by the sight, a few times a second.
+  // What a point on the view can use, named as it's shown: a hologram's row, a projector's button, or what `under` finds. Null if nothing,
+  // so what's named and what E acts on can't differ.
+  function targetAt(at) {
+    aim(at);
+    if (!zoomed) for (const [hologram, panel] of Object.entries(holograms)) {
+      const hit = panel.at(ray); if (hit) return hit.row ? { kind: 'row', hologram, row: hit.row, name: hit.row.label } : null;
+    }
+    const button = zoomed || look.overview ? null : room.hologramAt(ray);
+    if (button) return { kind: 'button', button, name: PROJECTORS[button], object: room.hologramButton(button) };
+    const hit = zoomed ? null : under(at), session = hit?.kind === 'character' && last?.sessions?.find(({ id }) => id === hit.id);
+    const name = session ? hooks.describe?.(session)?.title || stationName(session) : look.overview ? null : hit?.kind === 'screen' ? hit.label : hit?.kind === 'chair' && !seated ? 'Sit' : null;
+    return name ? { kind: 'hit', hit, name, object: hit.object } : null;
+  }
+  // Under the pointer or, aiming, the sight, a few times a second. After a touch, or with the mouse gone, nothing is aimed at.
   let hoverIn = 0, mouseAt = null;
   const onMove = event => { if (event.pointerType === 'mouse') mouseAt = event.buttons ? null : { clientX: event.clientX, clientY: event.clientY }; };
-  el.addEventListener('pointermove', onMove);
+  const onLeave = () => { mouseAt = null; };
+  const onDown = event => { if (event.pointerType !== 'mouse') mouseAt = null; };
+  el.addEventListener('pointermove', onMove); el.addEventListener('pointerleave', onLeave); el.addEventListener('pointerdown', onDown);
+  const aimedAt = () => { const at = player.aiming ? player.centre : mouseAt; return at && targetAt(at); };
   function hover(dt) {
     hoverIn -= dt; if (hoverIn > 0) return; hoverIn = .1;
-    const at = player.aiming ? player.centre : mouseAt; if (!at) return;
-    aim(at);
-    let row = null, onPanel = false;
-    for (const hologram of Object.values(holograms)) { const hit = !zoomed && hologram.at(ray); hologram.hover(hit?.row); row ||= hit?.row; onPanel ||= !!hit; }
-    const button = onPanel || zoomed || look.overview ? null : room.hologramAt(ray), hit = onPanel || button || zoomed ? null : under(at), session = hit?.kind === 'character' && last?.sessions?.find(({ id }) => id === hit.id);
-    const name = row ? row.label : button ? PROJECTORS[button] : session ? hooks.describe?.(session)?.title || stationName(session) : look.overview ? null : hit?.kind === 'screen' ? hit.label : hit?.kind === 'chair' && !seated ? 'Sit' : null;
+    const target = aimedAt(), name = target && `E ${target.name}`;
+    for (const [hologram, panel] of Object.entries(holograms)) panel.hover(target?.hologram === hologram ? target.row : null);
     reticle.aim(name); el.title = player.aiming ? '' : name || ''; el.style.cursor = name && !player.aiming ? 'pointer' : '';
+  }
+  // E does what a click does on what's named, and nothing anywhere else: an open hologram stays open.
+  function pressE() {
+    if (zoomed) return back();
+    const target = aimedAt();
+    if (target?.kind === 'row') chosen[target.hologram](target.row);
+    else if (target?.kind === 'button') toggleHologram(target.button);
+    else if (target) act(keyAction(target.hit, { seated, zoomed: false, overview: look.overview, locked: player.locked }), target.hit);
   }
 
   const bar = document.createElement('div'); bar.className = 'bridge-overlay'; container.append(bar);
@@ -159,6 +181,7 @@ export function mountBridge(container, hooks = {}, options = {}) {
   let wasFree = true;
   const onKey = event => {
     if (!officeHasKeys(event)) return;
+    if (event.code === 'KeyE') { if (!event.repeat) pressE(); return; }
     if (!player.locked && player.wanted && /^(Key[WASD]|Arrow\w+|Space)$/.test(event.code) && free()) player.lock();
     if (zoomed && WALK.test(event.code)) { back(); backKey = event.code; } // this press only comes back; held on, it doesn't also walk you off
     else if (event.key === 'Tab' && sceneFocused(el)) { event.preventDefault(); if (!event.repeat) setOverview(!look.overview); }
@@ -228,7 +251,7 @@ export function mountBridge(container, hooks = {}, options = {}) {
     },
     unmount() {
       stop(); observer.disconnect(); el.removeEventListener('webglcontextlost', onLost);
-      document.removeEventListener('keydown', onKey); document.removeEventListener('keyup', onKeyUp); el.removeEventListener('pointermove', onMove);
+      document.removeEventListener('keydown', onKey); document.removeEventListener('keyup', onKeyUp); el.removeEventListener('pointermove', onMove); el.removeEventListener('pointerleave', onLeave); el.removeEventListener('pointerdown', onDown);
       player.dispose(); look.dispose(); bar.remove();
       for (const scene of [world, space.scene]) scene.traverse(object => {
         object.geometry?.dispose();

@@ -14,6 +14,11 @@ export function clickAction(hit, { seated, zoomed, overview, locked, mouse }) {
   if (mouse && !locked) return 'capture';
   return hit?.kind === 'floor' && !seated ? 'walk' : null;
 }
+// E on what's aimed at: a click's meaning, but never to capture the mouse or walk you to the floor.
+export function keyAction(hit, state) {
+  const action = clickAction(hit, { ...state, mouse: false });
+  return action === 'walk' ? null : action;
+}
 
 // Square in front of a screen's lit side, with all of it in view. `userData` has its width and height.
 export function screenPose(mesh, fov, aspect) {

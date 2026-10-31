@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { clickAction, screenPose } from '../client/bridge/seat.js';
+import { clickAction, keyAction, screenPose } from '../client/bridge/seat.js';
 import { roster, shipState } from '../client/bridge/ship.js';
 import { ROSTER, carryHover, hologramLayout } from '../client/bridge/hologram.js';
 
@@ -39,6 +39,21 @@ test('in the overview, only sessions answer', () => {
   const overview = { ...standing, overview: true, locked: false };
   assert.equal(clickAction(person, overview), 'talk');
   for (const hit of [floor, screen, chair, null]) assert.equal(clickAction(hit, overview), null);
+});
+test('E does what a click does on what can be used', () => {
+  assert.equal(keyAction(person, seated), 'talk');
+  assert.equal(keyAction(screen, seated), 'zoom');
+  assert.equal(keyAction(chair, standing), 'sit');
+  assert.equal(keyAction(screen, { ...seated, zoomed: true }), 'back');
+  assert.equal(keyAction(null, { ...seated, zoomed: true }), 'back');
+  assert.equal(keyAction(person, { ...seated, overview: true }), 'talk');
+  assert.equal(keyAction(screen, { ...seated, overview: true }), null);
+});
+test('E never captures the mouse or walks you off', () => {
+  assert.equal(keyAction(null, { ...seated, locked: false }), null);
+  assert.equal(keyAction(floor, { ...standing, locked: false }), null);
+  assert.equal(keyAction(floor, standing), null);
+  assert.equal(keyAction(chair, seated), null);
 });
 
 const FOV = 68, ASPECT = 16 / 9, tan = Math.tan(FOV / 2 * Math.PI / 180);
