@@ -26,9 +26,9 @@ const hinged = (surface, hx, y0, hz, w, h, t, deg) => {
   const a = rad(deg), c = Math.cos(a), s = Math.sin(a);
   return tilt(surface, [hx + w / 2 * c - t / 2 * s, y0 + h / 2, hz + w / 2 * s + t / 2 * c], [w / 2, h / 2, t / 2], [0, -a, 0]);
 };
-// An open box: its bottom and four rims, all named after it, `r` out from the centre and `t` thick.
-const vessel = (surface, cx, y0, cz, r, h, t) => [
-  box(surface, cx - r, y0, cz - r, cx + r, y0 + t, cz + r),
+// An open box: four walls down to what it stands on, `r` out from the centre and `t` thick, and between them a bottom `d` deep, so what falls in lands on it.
+const vessel = (surface, cx, y0, cz, r, h, t, d = t) => [
+  box(surface, cx - r + t, y0, cz - r + t, cx + r - t, y0 + d, cz + r - t),
   box(surface, cx - r, y0, cz - r, cx + r, y0 + h, cz - r + t), box(surface, cx - r, y0, cz + r - t, cx + r, y0 + h, cz + r),
   box(surface, cx - r, y0, cz - r, cx - r + t, y0 + h, cz + r), box(surface, cx + r - t, y0, cz - r, cx + r, y0 + h, cz + r),
 ];
@@ -43,10 +43,11 @@ const chair = (n, x, z, yaw, tip = 0) => {
   return parts.map(({ c, half }) => tilt(`chair-${n}`, c.clone().add(at).toArray(), half, euler));
 };
 
-// Each container's cx, floor y, cz, half width, height, wall: drawn by vessel() and the "in" zone is its whole inside.
-export const VESSELS = { bin: [-0.5, 0, -2.5, 0.25, 0.6, 0.03], bucket: [-1, 0, -5.25, 0.22, 0.42, 0.03], basket: [-5.5, 0.92, -3.55, 0.2, 0.3, 0.03], tableMug: [-4.6, 0.74, 0.6, 0.095, 0.12, 0.02] };
+// Each container's cx, floor y, cz, half width, height, wall, bottom: drawn by vessel() and the "in" zone is its whole inside.
+// ponytail: 12 cm bottoms, because the floor is clamped before boxes are tried: a step at 25 m/s (.104 m) mustn't land past a bottom into what's under it. The table's mug is too shallow for one: above about 5 m/s a shot can score the table through it.
+export const VESSELS = { bin: [-0.5, 0, -2.5, 0.25, 0.6, 0.03, 0.12], bucket: [-1, 0, -5.25, 0.22, 0.42, 0.03, 0.12], basket: [-5.5, 0.92, -3.55, 0.2, 0.3, 0.03, 0.12], tableMug: [-4.63, 0.74, 0.6, 0.125, 0.12, 0.02] };
 const SHELF = { z0: -4.6, z1: -3.2 }; // on the west wall, past the fridge door's swing: a throw off the door can reach it
-const T = WALL_T, TABLES = [[-7.2, -1.4], [-5.2, -1.4], [-7.2, 0.5], [-5.2, 0.5]], COUPLE = 1.18, COUNTER_X = -8.6;
+const T = WALL_T, TABLES = [[-7.2, -1.4], [-5.2, -1.4], [-7.6, 0.5], [-5.2, 0.5]], COUPLE = 1.18, COUNTER_X = -8.6;
 // Door-wall pieces beside the doorway. Shut, the doorway is filled with more of the same wall.
 const edges = shut => [
   box('wall-n', -10 - T, 0, -6 - T, T, WALL_H, -6), box('wall-s', -10 - T, 0, 1, T, WALL_H, 1 + T), box('wall-w', -10 - T, 0, -6, -10, WALL_H, 1),
@@ -70,7 +71,7 @@ const PARTS = shut => [
   tilt('tray', [-9.642, 0.2376, -0.5], [0.4, 0.01, 0.25], [0, 0, rad(-35)]),
   ...TABLES.map(([x, z], i) => box(`table-${i + 1}`, x - 0.7, 0.7, z - 0.4, x + 0.7, 0.74, z + 0.4)),
   ...vessel('tableMug', ...VESSELS.tableMug),
-  ...[[-7.6, -1.95, 15], [-6.9, -1.95, -30], [-5.8, -1.95, 40], [-4.9, -1.95, -20], [-8.3, -1.4, 140], [-3.05, -1.4, 255], [-4.25, 0.6, 100], [-6.2, 0.6, 200]].flatMap(([x, z, yaw], i) => chair(i + 1, x, z, yaw)),
+  ...[[-7.6, -1.95, 15], [-6.9, -1.95, -30], [-5.8, -1.95, 40], [-4.9, -1.95, -20], [-8.3, -1.4, 140], [-3.05, -1.4, 255], [-4.24, 0.6, 100], [-8.8, 0.5, 200]].flatMap(([x, z, yaw], i) => chair(i + 1, x, z, yaw)),
   ...chair(9, -2.9, -0.2, 50, 90),
   box('vending', -10, 0, 0, -9.2, 1.9, 0.8),
   // ponytail: the bucket's bottom is its mop water, which keeps what lands in it: a rubber ball would bounce out of any bucket this size.
@@ -81,7 +82,7 @@ const PARTS = shut => [
 // a centimetre so a rest touching the rim counts. Derived from the containers, so the two cannot drift apart.
 const EPS = 0.01;
 const inside = (x0, y0, z0, x1, y1, z1) => ({ centre: new THREE.Vector3((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2), half: new THREE.Vector3((x1 - x0) / 2 + EPS, (y1 - y0) / 2 + EPS, (z1 - z0) / 2 + EPS) });
-const within = ([cx, y0, cz, r, h, t]) => inside(cx - r + t, y0 + t, cz - r + t, cx + r - t, y0 + h, cz + r - t);
+const within = ([cx, y0, cz, r, h, t, d = t]) => inside(cx - r + t, y0 + d, cz - r + t, cx + r - t, y0 + h, cz + r - t);
 export const ZONES = {
   ...Object.fromEntries(Object.entries(VESSELS).map(([name, v]) => [name, within(v)])),
   shelf: inside(-10, 1.5, SHELF.z0 + 0.03, -9.73, 1.6, SHELF.z1 - 0.03),

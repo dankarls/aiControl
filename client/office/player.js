@@ -10,6 +10,7 @@ import * as THREE from 'three';
 import { isTypingTarget } from './status.js';
 
 export const EYE = 1.5;
+export const LOOK_UP = 0.8; // radians: as high as you can look
 const reduceMotion = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)');
 // How far (px) a press can move and still be a tap, not a drag (darts.js tells them apart the same way).
 export const DRAG_SLOP = 6;
@@ -58,7 +59,7 @@ export class Player {
       if (lost) setTimeout(() => { if (document.hasFocus() && !document.hidden) this.wanted = false; }, 100);
     });
     listen(document, 'pointerlockerror', () => { this.asking = false; });
-    const look = (x, y, speed) => { this.yaw -= x * speed; this.pitch = THREE.MathUtils.clamp(this.pitch - y * speed, -1.1, 0.8); if (this.target) this.target.looked += (Math.abs(x) + Math.abs(y)) * speed; };
+    const look = (x, y, speed) => { this.yaw -= x * speed; this.pitch = THREE.MathUtils.clamp(this.pitch - y * speed, -1.1, LOOK_UP); if (this.target) this.target.looked += (Math.abs(x) + Math.abs(y)) * speed; };
     // Captured: every move looks, a left click picks under the dot, a right click lets go.
     // Otherwise a drag looks around and a press that barely moves is a click on what's under it; a second finger makes it neither.
     listen(canvas, 'contextmenu', event => event.preventDefault());
@@ -147,7 +148,7 @@ export class Player {
     if (this.rise || this.height) { this.rise -= GRAVITY * dt; this.height = Math.max(0, this.height + this.rise * dt); if (!this.height) this.rise = 0; this.position.y = EYE + this.height; }
     const speed = SPEED * (this.shift ? RUN : 1), move = new THREE.Vector3();
     for (const code of this.held) {
-      if (turns[code]) { const [yaw, pitch] = turns[code]; this.yaw += yaw * TURN * dt; this.pitch = THREE.MathUtils.clamp(this.pitch + pitch * TILT * dt, -1.1, 0.8); if (this.target) this.target.looked += TURN * dt; }
+      if (turns[code]) { const [yaw, pitch] = turns[code]; this.yaw += yaw * TURN * dt; this.pitch = THREE.MathUtils.clamp(this.pitch + pitch * TILT * dt, -1.1, LOOK_UP); if (this.target) this.target.looked += TURN * dt; }
       else { const [x, z] = keys[code]; move.x += x; move.z += z; this.target = null; } // also a walk begun with this key already down
     }
     if (move.lengthSq()) {

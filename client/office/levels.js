@@ -17,18 +17,20 @@ export const STARTS = {
   doors: mark(-1, 0, -5, -2.5),
   island: mark(-7.5, -3.6, -5, -2.5),
   farTable: mark(-6.25, -0.5, -5, -2.5),
+  betweenTables: mark(-6.35, 0.45, -5, -2.5),
   fridge: mark(-8.4, -4.8, -5, -2.5),
   vending: mark(-8.6, -0.4, -5, -2.5),
   stove: mark(-3, -4.8, -5, -2.5),
 };
 
+// ponytail: the tea bag's set is its trick again. From between the tables the chair is all that scores, and always 200.
 export const MONDAY = [
   { id: 'paper', item: 'paper', start: 'stove', target: 'bin', trick: { name: 'bin, off the wall', via: 'wall-e' }, set: 100 },
   { id: 'rubber', item: 'rubber', start: 'doors', target: 'bucket', trick: { name: 'bucket, off the ceiling', via: 'ceiling' }, set: 600 },
-  { id: 'roll', item: 'roll', start: 'island', target: 'basket', trick: { name: 'basket, off a pan', via: 'pan-' }, set: 600 },
-  { id: 'mug', item: 'mug', start: 'fridge', target: 'shelf', trick: { name: 'mug on the shelf, off the fridge', via: 'fridge' }, set: 600 },
-  { id: 'plate', item: 'plate', start: 'island', target: 'sink', trick: { name: 'sink, off a cupboard', via: 'cupboard-' }, set: 600 },
-  { id: 'teabag', item: 'teabag', start: 'farTable', target: 'tableMug', trick: { name: 'mug, off a chair', via: 'chair-' }, set: 200 },
+  { id: 'roll', item: 'roll', start: 'island', target: 'basket', trick: { name: 'basket, off a pan', via: 'pan-' }, set: 400 },
+  { id: 'mug', item: 'mug', start: 'fridge', target: 'shelf', trick: { name: 'mug on the shelf, off the fridge', via: 'fridge' }, set: 500 },
+  { id: 'plate', item: 'plate', start: 'fridge', target: 'sink', trick: { name: 'sink, off a cupboard', via: 'cupboard-' }, set: 400 },
+  { id: 'teabag', item: 'teabag', start: 'betweenTables', target: 'tableMug', trick: { name: 'mug, off a chair', via: 'chair-' }, set: 200 },
 ];
 
 // What else each item can do, for the daily challenges: [start, target]. A rubber ball only ever stays in the bucket's water.
