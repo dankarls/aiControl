@@ -226,7 +226,7 @@ export function createProps(scene, { room, cast, camera, player, view, bounds, r
       if (drop && reducedMotion() && building) { settle(b); show(b); }
     },
     // The kitchen moved `dz` with the room growing, and what lies in it (`inside`, still where it was) with it. In the air or in hand it's its own.
-    shift(inside, dz) { for (const b of bodies) { if (b.held || b.carried) continue; if (inside(b.pos)) { b.pos.z += dz; show(b); } if (inside(b.home)) b.home.z += dz; } },
+    shift(inside, dz) { for (const b of bodies) { if (b.held || b.carried) continue; if (inside(b.pos)) { b.pos.z += dz; show(b); } if (inside(b.home)) b.home.z += dz; } for (const p of puddles) if (inside(p)) p.z += dz; },
     // Outline the thing a click or E would pick up.
     aim(b) { if (b === aimed) return; if (aimed) light(aimed, false); if (b) light(b, true); aimed = b; },
     pour(on) { if (on && !pouring && reducedMotion() && boxes) splash(performance.now() / 1000); pouring = on; },
@@ -323,7 +323,7 @@ export function createProps(scene, { room, cast, camera, player, view, bounds, r
         const top = surface(x, y, z), who = people.find(p => Math.hypot(p.x - x, p.z - z) < p.r && y < p.top);
         if (who) hit(who.id, now, 'coffee');
         else if (top !== undefined) { if (top !== null) land(x, top, z, DROP, now); if (wet) hit(wet, now, 'desk'); }
-        if (who || top !== undefined || x < 0 || z < 0 || x > w || z > d) drops.splice(i, 1);
+        if (who || top !== undefined || !reachable(drop.pos)) drops.splice(i, 1);
       }
       drops.forEach((drop, i) => drop.pos.toArray(dropPositions, i * 3));
       dropGeometry.setDrawRange(0, drops.length); dropGeometry.attributes.position.needsUpdate = true; stream.visible = drops.length > 0;

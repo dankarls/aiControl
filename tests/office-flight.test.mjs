@@ -4,6 +4,9 @@ import * as THREE from 'three';
 import { STEP, TiltedBox, makeBody, stepBody, advance, simulate, escaped, stopShort } from '../client/office/flight.js';
 import { createProps, moveBody } from '../client/office/props.js';
 import { createHand } from '../client/office/throwing.js';
+import { KITCHEN } from '../client/office/kitchen-plan.js';
+import { WALL_T } from '../client/office/furniture.js';
+import { kitchenDoor } from '../client/office/layout.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const kind = (extra = {}) => ({ radius: 0.1, low: 0.1, bounce: 0.5, roll: 1, drag: 0.1, throw: 8, tumble: 4, upright: false, centre: V(0, 0, 0), ...extra });
@@ -238,9 +241,10 @@ test('a body rests where its home is, and an escaped one goes back there still',
 // The real props on a stand-in office: no document in Node, so a blank canvas for its textures.
 const blank = () => new Proxy({}, { get: (t, k) => k in t ? t[k] : () => ({ addColorStop() {} }), set: (t, k, v) => { t[k] = v; return true; } });
 const box3 = (x0, y0, z0, x1, y1, z1, extra) => Object.assign(box(x0, y0, z0, x1, y1, z1), extra);
+const WEST = -(WALL_T + KITCHEN.width); // how far the building goes that way
 function office({ colliders = [], still = false, people = [] } = {}) {
   const heard = [], scene = new THREE.Scene(), player = { position: V(1, 1.6, 1), forward: V(0, 0, -1), yaw: 0, flight: null }, size = { width: 10, depth: 10 };
-  const room = { flightColliders: colliders, kitchen: { inside: p => p.x < -0.1 && p.x > -10.2 && p.z > size.depth - 7.5 && p.z < size.depth - 0.5 }, secret: { bounds: r => ({ left: -10.2, width: r.width + 13.2, depth: r.depth }), inside: p => p.x > 10.1 && p.z > size.depth - 7.9 && p.z < size.depth - 0.7, get spot() { return V(9.1, 0, size.depth - 3.8); } } };
+  const room = { flightColliders: colliders, kitchen: { inside: p => { const z = p.z - kitchenDoor(size.depth); return p.x < -WALL_T / 2 && p.x > WEST && z > KITCHEN.back && z < KITCHEN.front; } }, secret: { bounds: r => ({ left: WEST, width: r.width + 3 - WEST, depth: r.depth }), inside: p => p.x > 10.1 && p.z > size.depth - 7.9 && p.z < size.depth - 0.7, get spot() { return V(9.1, 0, size.depth - 3.8); } } };
   const characters = new Map(people.map(p => [p.id, { scale: 1, root: { visible: true } }]));
   const cast = { characters, positionOf: id => { const p = people.find(p => p.id === id); return p && V(p.x, p.top + 0.08, p.z); } };
   const camera = new THREE.PerspectiveCamera(); camera.position.set(1, 1.6, 1);
@@ -461,6 +465,37 @@ test('a thing that comes to rest in the kitchen stays there, out of the goose\'s
   assert.ok(ball.rest && ball.pos.x === -3, 'it lies where it fell');
   assert.ok(ball.home.x === -3);
   assert.ok(!props.loose().includes(ball));
+});
+
+// A mug tipped over at this spot, facing away from you: the stream and what it leaves.
+const pourAt = (a, x, z) => {
+  a.view.mug = new THREE.Object3D(); a.view.mug.position.set(x, 1.2, z); a.scene.add(a.view.mug);
+  a.camera.position.set(x, 1.6, z); a.props.pour(true); a.run(1);
+  let stream, pool; a.scene.traverse(o => { if (o.isPoints) stream = o; else if (o.isInstancedMesh && o.geometry.type === 'PlaneGeometry') pool = o; });
+  return { stream, pool };
+};
+const puddleAt = pool => { const m = new THREE.Matrix4(); pool.getMatrixAt(0, m); return new THREE.Vector3().setFromMatrixPosition(m); };
+
+test('coffee poured in the kitchen is a stream, and a puddle where it lands', () => {
+  const a = office(), { stream, pool } = pourAt(a, -3, 5);
+  assert.ok(stream.visible, 'a stream'); assert.ok(pool.count > 0, 'a puddle');
+  const at = puddleAt(pool);
+  assert.ok(a.room.kitchen.inside(at), `${at.toArray()}`);
+});
+
+test('coffee poured in the doorway lands too, and past the building it is gone', () => {
+  assert.ok(pourAt(office(), -0.05, 8.5).pool.count > 0, 'the kitchen\'s doorway');
+  assert.ok(pourAt(office(), 3, 5).pool.count > 0, 'the office');
+  assert.equal(pourAt(office(), -12, 5).pool.count, 0, 'outside');
+});
+
+test('the room grows: a puddle in the kitchen goes along with it, and one in the office stays', () => {
+  const a = office(), there = pourAt(a, -3, 5).pool, b = office(), here = pourAt(b, 3, 5).pool;
+  a.props.pour(false); b.props.pour(false); a.run(1); b.run(1);
+  const was = puddleAt(there).z, stays = puddleAt(here).z;
+  a.props.shift(a.room.kitchen.inside, 2); b.props.shift(b.room.kitchen.inside, 2); a.run(0.1); b.run(0.1);
+  assert.ok(Math.abs(puddleAt(there).z - was - 2) < 1e-6);
+  assert.ok(Math.abs(puddleAt(here).z - stays) < 1e-6);
 });
 
 test('thrown past the kitchen, a thing goes back where it was', () => {
