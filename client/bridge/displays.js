@@ -3,14 +3,13 @@
 import { monitorLines } from '../office/status.js';
 import { usageWindowView } from '../usage-presentation.js';
 import { SIGNALS } from './palettes.js';
-import { seeded } from './parts.js';
 import { signalOf, stationSignals } from './ship.js';
 
 const INK = '#f2f4ff', DIM = '#aeb4c6', Y = '#eef0f6', O = '#c4cad8', BACK = '#050406', OFF = '#262c33', { need: RED, working: TEAL, idle: BLUE, near: ORANGE } = SIGNALS;
 const SIGNAL_COLOUR = { need: RED, working: TEAL, idle: BLUE };
 const LABELS = { question: 'HAILING', permission: 'AUTHORIZE', working: 'ON DUTY', idle: 'STANDBY', error: 'FAULT', offline: 'OFFLINE' };
 const GLYPHS = { claude: '✳', codex: '⌘' };
-const MAX_LIMIT_ROWS = 5, MAX_SPENDERS = 4;
+const MAX_LIMIT_ROWS = 5, MAX_SPENDERS = 4, MAX_FEED = 7;
 export const font = (weight, size) => `${weight} ${size}px Antonio, 'Arial Narrow', 'Liberation Sans Narrow', sans-serif`;
 const graphemes = text => [...new Intl.Segmenter().segment(text)].map(part => part.segment);
 
@@ -28,84 +27,83 @@ export const stationName = session => session.title?.trim() || session.project |
 const glyph = provider => GLYPHS[provider] || '◆';
 const dollars = usd => `$${usd.toFixed(2)}`;
 const clock = now => new Date(now).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
-const rr = (g, x, y, w, h, r) => { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); };
 const fit = (g, text, width) => fitText(text, width, part => g.measureText(part).width);
-function wrap(g, text, x, y, width, lineH, max) {
-  let line = '', rest = String(text ?? '').replace(/\s+/g, ' ').trim(), n = 0;
-  for (const word of rest.split(' ')) {
-    const next = line ? `${line} ${word}` : word;
-    if (g.measureText(next).width <= width || !line) { line = next; rest = rest.slice(word.length + 1); continue; }
-    if (++n === max) { g.fillText(fit(g, `${line} ${word} ${rest}`, width), x, y); return y + lineH; }
-    g.fillText(fit(g, line, width), x, y); y += lineH; line = word; rest = rest.slice(word.length + 1);
+// A word too long for a line carries on to the next, and the last line that's allowed takes all that's left, cut to fit.
+export function wrapLines(text, width, max, measure) {
+  const words = String(text ?? '').replace(/\s+/g, ' ').trim().split(' '), lines = [];
+  let line = '';
+  for (let i = 0; i < words.length; i++) {
+    const next = line ? `${line} ${words[i]}` : words[i];
+    if (measure(next) <= width) { line = next; continue; }
+    if (lines.length === max - 1) return [...lines, fitText([line, ...words.slice(i)].filter(Boolean).join(' '), width, measure)];
+    if (line) { lines.push(line); line = ''; i--; continue; }
+    const parts = graphemes(words[i]); let n = 1;
+    while (n < parts.length && measure(parts.slice(0, n + 1).join('')) <= width) n++;
+    lines.push(parts.slice(0, n).join('')); words[i] = parts.slice(n).join(''); i--;
   }
-  g.fillText(fit(g, line, width), x, y); return y + lineH;
+  return line || !lines.length ? [...lines, line] : lines;
+}
+function wrap(g, text, x, y, width, lineH, max) {
+  for (const line of wrapLines(text, width, max, part => g.measureText(part).width)) { g.fillText(line, x, y); y += lineH; }
+  return y;
 }
 function cells(g, x, y, w, h, level, color) {
   const n = 24, gap = 3, cw = (w - gap * (n - 1)) / n, on = Math.round(Math.min(1, Math.max(0, level)) * n);
   for (let i = 0; i < n; i++) { g.fillStyle = i < on ? color : OFF; g.fillRect(x + i * (cw + gap), y, cw, h); }
 }
-function tile(g, x, y, w, h, draw) { g.save(); rr(g, x, y, w, h, 10); g.fillStyle = BACK; g.fill(); g.clip(); g.translate(x, y); draw(w, h); g.restore(); }
-// The decorative kinds are the wall's texture; a session's own tiles hold its data.
-function decor(g, w, h, kind, rnd, pal) {
-  const hue = () => pal.tones[Math.floor(rnd() * 3)];
-  if (kind === 0) for (let r = 0; r < 6; r++) { let x = 12; const y = 16 + r * (h - 24) / 6; while (x < w - 16) { const len = 10 + rnd() * 34; if (rnd() > .3) { g.fillStyle = hue(); g.fillRect(x, y, Math.min(len, w - 12 - x), (h - 24) / 6 - 10); } x += len + 8; } }
-  if (kind === 1) for (let r = 0; r < 5; r++) for (let c = 0; c < 6; c++) { if (rnd() < .3) continue; g.fillStyle = hue(); g.beginPath(); g.arc(20 + c * (w - 40) / 5, 26 + r * (h - 52) / 4, 8, 0, 7); g.fill(); }
-  if (kind === 2) { const bands = [pal.mount, pal.console, pal.trim, pal.tones[0]]; bands.forEach((color, b) => { g.fillStyle = color; g.beginPath(); g.moveTo(0, h); for (let x = 0; x <= w; x += 12) g.lineTo(x, h - (h * .82 - b * h * .18) * Math.pow(x / w, .6) * (.86 + .14 * Math.sin(x * .05 + b))); g.lineTo(w, h); g.fill(); }); }
-  if (kind === 4) { g.lineWidth = 5; for (let i = 0; i < 6; i++) { g.strokeStyle = hue(); const y = 26 + i * (h - 48) / 5, a = 14 + rnd() * 50; g.beginPath(); g.moveTo(a, y); g.lineTo(w - 14 - rnd() * 40, y); g.stroke(); } }
-}
-
 // What a waiting session is actually asking; a question's title is only ever "A question for you".
 const requestText = session => { const request = session.requests?.[0]; return request?.questions?.[0]?.question || request?.title || session.asks; };
 
-// The plain facts a station's tiles show, so a tile is redrawn only when one of them changes.
-function rowFacts(session, unread, offline) {
-  const signal = offline ? 'idle' : signalOf(session), request = requestText(session), used = session.context?.used || 0;
+// The plain facts a station's display shows, so it's redrawn only when one of them changes.
+export function agentFacts(session, unread, offline, helpers = 0) {
+  const signal = offline ? 'idle' : signalOf(session), used = session.context?.used || 0, lines = monitorLines(session, MAX_FEED).lines.filter(({ text }) => text);
+  const steps = session.plan?.length ? session.plan : null, current = steps && (steps.find(step => step.status === 'active') || steps.find(step => step.status === 'pending'));
   return {
     id: session.id, signal, unread, label: offline ? 'NO SIGNAL' : LABELS[session.status] || 'STANDBY', glyph: glyph(session.provider), project: session.project || '', title: stationName(session),
-    line: signal === 'need' ? request || 'Waiting for you' : session.detail || monitorLines(session, 1).lines.at(-1)?.text || '',
-    plan: session.plan?.length ? session.plan.map(step => step.status) : null, used, fill: used / (session.context?.window || (used > 200_000 ? 1_000_000 : 200_000)),
-    usd: session.cost?.usd ?? null, model: [session.model?.replace(/^claude-/, ''), session.effort].filter(Boolean).join(' · '),
+    request: signal === 'need' ? requestText(session) || 'Waiting for you' : null,
+    feed: lines.length ? lines : session.detail ? [{ kind: 'assistant', text: session.detail }] : [],
+    progress: steps && { done: steps.filter(step => step.status === 'done').length, total: steps.length, statuses: steps.map(step => step.status), current: current?.step || 'All steps done' },
+    used, usd: session.cost?.usd ?? null, model: [session.model?.replace(/^claude-/, ''), session.effort].filter(Boolean).join(' · '), helpers,
   };
 }
-function drawRow(g, W, H, facts, seed, pal) {
-  g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
-  const pad = 8, h = H - pad * 2, widths = [580, 190, 190, 190, 192]; let x = pad;
-  const at = widths.map(w => { const here = x; x += w + 10; return [here, w]; });
-  if (facts === null) {
-    const rnd = seeded(seed); g.globalAlpha = .4;
-    at.forEach(([ax, w], i) => tile(g, ax, pad, w, h, (tw, th) => decor(g, tw, th, i === 0 ? 0 : [1, 4, 2, 0][i - 1], rnd, pal)));
-    g.globalAlpha = 1; return;
-  }
+// Sizes on the 1024 × 1054 canvas, big enough that the title and feed read from the chair; the strip is for when you've flown in.
+const PAD = 32, BAND = 110, TITLE = [600, 116, 128], REQUEST = [600, 76, 88], FEED = [400, 76, 88], PROGRESS = 130, STRIP = 70;
+// `measure(text, weight, size)` gives a line's width in that font.
+export function agentLayout(facts, W, H, measure) {
+  const width = W - 2 * PAD, sized = ([weight, size]) => text => measure(text, weight, size);
+  const dot = !!facts.unread, title = wrapLines(facts.title, width - (dot ? 44 : 0), 2, sized(TITLE));
+  const request = facts.request ? fitText(facts.request, width, sized(REQUEST)) : null, strip = [facts.used ? `${Math.round(facts.used / 1000)}K` : '—'];
+  if (facts.usd != null) strip.push(dollars(facts.usd));
+  if (facts.model) strip.push(facts.model);
+  if (facts.helpers) strip.push(`${facts.helpers} HELPER${facts.helpers > 1 ? 'S' : ''}`);
+  const room = H - BAND - PAD / 2 - title.length * TITLE[2] - (request ? REQUEST[2] : 0) - (facts.progress ? PROGRESS : 0) - STRIP;
+  const fits = Math.max(0, Math.floor(room / FEED[2])), feed = (fits ? facts.feed.slice(-fits) : []).map(({ kind, text }) => ({ kind, text: fitText(text, width, sized(FEED)) }));
+  return { band: { height: BAND, colour: SIGNAL_COLOUR[facts.signal] }, label: `${facts.glyph} ${facts.label}`, project: facts.project, title, request, feed, progress: facts.progress, strip, dot };
+}
+const FEED_TONE = { tool: DIM, assistant: INK, user: O };
+// What the session itself is doing, as an Office monitor shows it. An empty bay is dark but for its number.
+function drawAgent(g, W, H, facts, index) {
+  g.fillStyle = facts === 'dark' ? '#000' : BACK; g.fillRect(0, 0, W, H);
   if (facts === 'dark') return;
-  const color = SIGNAL_COLOUR[facts.signal], rnd = seeded(facts.id);
-  tile(g, at[0][0], pad, at[0][1], h, w => {
-    g.fillStyle = color; g.fillRect(0, 0, w, 54);
-    g.fillStyle = '#0b0506'; g.font = font(700, 38); const label = `${facts.glyph} ${facts.label}`; g.fillText(label, 18, 41);
-    g.textAlign = 'right'; g.font = font(600, 30); g.fillText(fit(g, facts.project.toUpperCase(), w - g.measureText(label).width - 60), w - 16, 40); g.textAlign = 'left';
-    g.fillStyle = INK; g.font = font(600, 42);
-    const left = facts.unread ? 44 : 18; if (facts.unread) { g.beginPath(); g.arc(28, 88, 9, 0, 7); g.fill(); }
-    const y = wrap(g, facts.title, left, 102, w - left - 18, 46, 2);
-    g.fillStyle = facts.signal === 'need' ? '#ffc4b6' : DIM; g.font = font(400, 28); g.fillText(fit(g, facts.line, w - 36), 18, Math.max(y + 4, 196));
-  });
-  tile(g, at[1][0], pad, at[1][1], h, w => {
-    const plan = facts.plan, done = plan ? plan.filter(step => step === 'done').length : 0;
-    g.fillStyle = Y; g.font = font(600, 30); g.fillText(plan ? `PLAN ${done}/${plan.length}` : 'NO PLAN', 16, 40);
-    if (plan) { const each = Math.min(30, (h - 70) / plan.length); plan.forEach((step, i) => { g.fillStyle = step === 'done' ? Y : step === 'active' ? O : OFF; g.fillRect(16, 60 + i * each, w - 32, each - 8); }); return; }
-    const faint = seeded(`${facts.id}p`);
-    for (let i = 0; i < 12; i++) { g.fillStyle = faint() > .5 ? pal.mount : OFF; g.fillRect(16 + i % 3 * 54, 66 + Math.floor(i / 3) * 40, 44, 28); }
-  });
-  tile(g, at[2][0], pad, at[2][1], h, () => {
-    g.fillStyle = Y; g.font = font(700, 62); g.fillText(facts.used ? `${Math.round(facts.used / 1000)}K` : '—', 16, 74);
-    g.fillStyle = DIM; g.font = font(400, 24); g.fillText('CONTEXT', 16, 106);
-    const n = 8, on = Math.round(Math.min(1, facts.fill) * n);
-    for (let i = 0; i < n; i++) { g.fillStyle = i >= on ? OFF : O; g.fillRect(16 + i * 20, 124, 14, 90); }
-  });
-  tile(g, at[3][0], pad, at[3][1], h, (w, th) => decor(g, w, th, facts.signal === 'working' ? 0 : 1, rnd, pal));
-  tile(g, at[4][0], pad, at[4][1], h, w => {
-    g.fillStyle = O; g.font = font(700, 60); g.fillText(facts.glyph, 16, 72);
-    if (facts.usd != null) { g.fillStyle = Y; g.font = font(600, 34); g.textAlign = 'right'; g.fillText(dollars(facts.usd), w - 16, 62); g.textAlign = 'left'; }
-    g.fillStyle = INK; g.font = font(400, 26); wrap(g, facts.model, 16, 118, w - 28, 32, 3);
-  });
+  if (!facts) { g.fillStyle = '#3a404e'; g.font = font(600, 120); g.textAlign = 'center'; g.fillText(`BAY ${index + 1}`, W / 2, H / 2 + 40); g.textAlign = 'left'; return; }
+  const measure = (text, weight, size) => { g.font = font(weight, size); return g.measureText(text).width; }, out = agentLayout(facts, W, H, measure), right = W - PAD;
+  g.fillStyle = out.band.colour; g.fillRect(0, 0, W, BAND);
+  g.fillStyle = '#0b0506'; g.font = font(700, 82); g.fillText(out.label, PAD, 82); const taken = g.measureText(out.label).width;
+  g.font = font(600, 64); g.textAlign = 'right'; g.fillText(fit(g, out.project.toUpperCase(), right - PAD - taken - 40), right, 80); g.textAlign = 'left';
+  let y = BAND + PAD / 2;
+  g.fillStyle = INK; g.font = font(TITLE[0], TITLE[1]);
+  if (out.dot) { g.beginPath(); g.arc(PAD + 14, y + 72, 14, 0, 7); g.fill(); }
+  for (const line of out.title) { y += TITLE[2]; g.fillText(line, PAD + (out.dot ? 44 : 0), y - 22); }
+  if (out.request) { y += REQUEST[2]; g.fillStyle = '#ffc4b6'; g.font = font(REQUEST[0], REQUEST[1]); g.fillText(out.request, PAD, y - 16); }
+  g.font = font(FEED[0], FEED[1]);
+  for (const { kind, text } of out.feed) { y += FEED[2]; g.fillStyle = FEED_TONE[kind]; g.fillText(text, PAD, y - 16); }
+  if (out.progress) {
+    const { done, total, statuses, current } = out.progress, top = H - STRIP - PROGRESS, count = `${done}/${total}`, gap = 6, each = (W - 2 * PAD - gap * (total - 1)) / total;
+    g.fillStyle = Y; g.font = font(700, 62); g.fillText(count, PAD, top + 58); const used = g.measureText(count).width + 24;
+    g.fillStyle = O; g.font = font(400, 58); g.fillText(fit(g, current, W - 2 * PAD - used), PAD + used, top + 58);
+    statuses.forEach((status, i) => { g.fillStyle = status === 'done' ? Y : status === 'active' ? O : OFF; g.fillRect(PAD + i * (each + gap), top + 78, each, 28); });
+  }
+  g.fillStyle = DIM; g.font = font(400, 46); g.fillText(fit(g, out.strip.join('   '), W - 2 * PAD), PAD, H - 18);
 }
 // Text that fills `width`, up to a size.
 function big(g, weight, size, text, width) {
@@ -205,7 +203,7 @@ export function createDisplays(room) {
   function draw() {
     if (!facts) return;
     const d = facts, pal = palette, helmColor = d.warp ? TEAL : O;
-    room.stations.forEach((station, i) => paint(`row${i}`, d.rows[i], (g, w, h) => drawRow(g, w, h, d.rows[i], `bay${station.angle}`, pal)));
+    room.stations.forEach((_, i) => paint(`row${i}`, d.rows[i], (g, w, h) => drawAgent(g, w, h, d.rows[i], i)));
     paint('shipLeft', [d.mode, d.warp, d.left, d.engineLine, d.offline, d.limitRows], (g, w, h) => drawShipLeft(g, w, h, d));
     paint('shipRight', [d.waiting, d.rightName, d.offline, d.overflow, d.total, d.credits], (g, w, h) => drawShipRight(g, w, h, d));
     paint('arm', [d.waiting, d.warp, d.offline, d.rightName], (g, w, h) => drawArm(g, w, h, d));
@@ -223,7 +221,8 @@ export function createDisplays(room) {
   }
   return {
     update({ state, stations, overflow = 0, sessions, usage, machine, unread = () => false, now = Date.now() }) {
-      const byId = new Map(sessions.map(session => [session.id, session])), main = sessions.filter(session => !session.parentId);
+      const byId = new Map(sessions.map(session => [session.id, session])), main = sessions.filter(session => !session.parentId), helpers = new Map();
+      for (const { parentId } of sessions) if (parentId) helpers.set(parentId, (helpers.get(parentId) || 0) + 1);
       const limitRows = state.limits.map(limit => {
         const view = usageWindowView({ label: limit.window, usedPercent: limit.usedPercent, resetsAt: limit.resetsAt }, now);
         return { name: `${glyph(limit.provider)} ${(limit.label || limit.provider || '').toUpperCase()}`, text: `${view.shortLabel.toUpperCase()} ${Math.round(limit.usedPercent)}%`, used: view.expired ? 0 : limit.usedPercent, left: view.resetIn.toUpperCase(), near: limit.near, full: limit.full, label: limit.window };
@@ -240,7 +239,7 @@ export function createDisplays(room) {
         total: spent.reduce((sum, session) => sum + session.cost.usd, 0), credits: spent.slice(0, MAX_SPENDERS).map(session => [stationName(session), session.cost.usd]),
         comm, crystals: worst.slice(0, room.crystals.length),
         signals: stationSignals(stations, sessions, state.offline),
-        rows: stations.map(seat => { if (!seat) return null; const session = seat.goneAt == null && byId.get(seat.id); return session ? rowFacts(session, unread(session), state.offline) : 'dark'; }),
+        rows: stations.map(seat => { if (!seat) return null; const session = seat.goneAt == null && byId.get(seat.id); return session ? agentFacts(session, unread(session), state.offline, helpers.get(session.id) || 0) : 'dark'; }),
       };
       draw();
     },

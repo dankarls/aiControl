@@ -149,7 +149,7 @@ export function buildRoom(world, still = false) {
     const rnd = seeded(seed);
     for (let r = 0; r < 4; r++) { const n = 5 + r * 2; for (let i = 0; i < n; i++) { const a = (15 + 150 * i / (n - 1)) * DEG, rad = (.12 + r * .065) * K; if (rnd() < .12) continue; jewel(desk, cx + Math.cos(a) * rad * 1.5, .035, .23 * K - Math.sin(a) * rad * 1.2, Math.floor(rnd() * 3), .7, rnd, rnd() > .6 ? 1 : 0, owner); } }
   }
-  // The bays around the wall. Each has a console, a row of lit tiles on a dark mount, a cove light and a row of tiles in the step.
+  // The bays around the wall. Each has a console, the agent's display on a dark mount, a cove light and a row of tiles in the step.
   const stations = STATION_ANGLES.map((theta, index) => {
     const g = around(theta, WALL), width = 2 * HW, seed = `bay${theta}`;
     const station = { index, angle: theta, group: g, status: null, lamps: [] };
@@ -161,9 +161,12 @@ export function buildRoom(world, still = false) {
     add(box(width, .05, .04), MAT.rail, g, 0, .66, .52);
     fan(desk, -.82 * K, `${seed}a`, station); fan(desk, .82 * K, `${seed}b`, station);
     add(box(width, .42, .09), MAT.black, g, 0, 1.22, .08);
-    add(box(width, 1.75, .1), MAT.black, g, 0, DISPLAY.bottom + .875, .05);
-    station.row = panel(`row${index}`, 1408, 256, .75);
+    add(box(width, DISPLAY.height, .1), MAT.black, g, 0, DISPLAY.bottom + DISPLAY.height / 2, .05);
+    station.row = panel(`row${index}`, 1024, 1054, .75);
     station.mesh = screen(station.row, DISPLAY.width, DISPLAY.height, g, 0, DISPLAY.bottom + DISPLAY.height / 2, DISPLAY.z);
+    // Darkens the display's band in time, for someone waiting. The canvas's band is 110 of its 1054.
+    const bandHeight = DISPLAY.height * 110 / 1054;
+    station.pulse = add(new THREE.PlaneGeometry(DISPLAY.width, bandHeight), new THREE.MeshBasicMaterial({ color: 0, transparent: true, opacity: 0, depthWrite: false }), g, 0, DISPLAY.bottom + DISPLAY.height - bandHeight / 2, DISPLAY.z + .004); station.pulse.renderOrder = 2;
     station.chair = chair(g, 0, DECK, CREW_Z); station.chair.visible = false;
     rib(theta + 12);
     // Coved light in the ceiling, and lit tiles in the step down to the pit: both show the session's state.
@@ -295,6 +298,7 @@ export function buildRoom(world, still = false) {
     tick(dt, t, camera) {
       const pulse = still ? 1 : .5 + .5 * Math.sin(t * 3.4);
       dim += ((limit || offline ? .3 : 1) - dim) * (still ? 1 : 1 - Math.pow(.08, dt));
+      for (const station of stations) station.pulse.material.opacity = station.status === 'need' && !still ? (1 - pulse) * .55 : 0;
       for (const station of stations) for (const lamp of station.lamps) {
         if (!station.status) { lamp.material.color.copy(lamp.vacant).multiplyScalar(dim); continue; }
         const level = station.status === 'need' ? .3 + pulse * 1.2 : station.status === 'working' ? 1 : .45;

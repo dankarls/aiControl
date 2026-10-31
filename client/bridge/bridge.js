@@ -243,6 +243,7 @@ export function mountBridge(container, hooks = {}, options = {}) {
       stationSignals(stations, sessions, state.offline).forEach((signal, i) => {
         room.setStation(i, signal);
         const seat = stations[i]; room.stations[i].group.userData.sessionId = seat && seat.goneAt == null ? seat.id : null;
+        const session = seat && seat.goneAt == null && sessions.find(({ id }) => id === seat.id); room.stations[i].mesh.userData.screen = session ? stationName(session) : undefined;
       });
       displays.update({ state, stations, overflow, sessions, usage: snapshot.usage, machine: snapshot.machine, unread: hooks.isUnread, now });
       next.hidden = !state.waiting; next.textContent = `⚠ ${state.waiting}`;
