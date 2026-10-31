@@ -63,12 +63,12 @@ test('each cupboard door has a solid body behind it, at height', () => {
   assert.ok(out.contacts.some(c => /^cupboard-/.test(c.surface)) && !out.contacts.some(c => c.surface === 'wall-n'), 'a ball at a cupboard meets the cupboard');
 });
 
-// Drops over a grid inside each container, with items of different `low`: all stay and end in the zone.
+// Drops over a grid inside each container, with items of different `low`: all stay and end in the zone. From under what hangs over the sink (cupboards) and basket (pans).
 test('an item dropped anywhere into a container stays in it, in the zone', () => {
   for (const [name, zone] of Object.entries(ZONES)) {
     for (const item of [ball, plate, teabag]) for (const fx of [-0.8, 0, 0.8]) for (const fz of [-0.8, 0, 0.8]) {
       const room = V(zone.half.x - 0.01 - item.radius, 0, zone.half.z - 0.01 - item.radius); // the centre may be this far out and still clear the rim
-      const top = name === 'sink' ? 1.4 : zone.centre.y + zone.half.y + 0.8, b = makeBody(item, V(zone.centre.x + fx * room.x, top, zone.centre.z + fz * room.z), V(0, 0, 0));
+      const top = { sink: 1.4, basket: 1.5 }[name] ?? zone.centre.y + zone.half.y + 0.8, b = makeBody(item, V(zone.centre.x + fx * room.x, top, zone.centre.z + fz * room.z), V(0, 0, 0));
       const out = simulate(b, levelWorld(), { maxTime: 10 });
       assert.ok(out.rest && inZone(out.pos, zone), `${name} (${item.low}) from ${fx},${fz} ended at ${out.pos}`);
       assert.ok(out.contacts.some(c => c.box?.surface === name), `${name} was landed on`);
@@ -156,8 +156,8 @@ const kitchenGrid = (depth, dx = 0) => {
   return { origin, at: (x, z) => V(x + origin.x, 0, z + origin.z), grid: walkGrid([...flightBoxes(origin, { doorShut: false }).filter(b => b.surface.startsWith('wall-')), ...walkBoxes(origin), behind(origin)], room) };
 };
 const MARKS = {
-  doorway: [-0.7, 0], bin: [-1.4, -2.5], eastOfIsland: [-3, -3.6], westOfIsland: [-7.5, -3.6], sink: [-6.8, -4.8], stove: [-3, -4.8], fridge: [-8.4, -4.8], bucket: [-8.6, -4.2],
-  shelf: [-9.2, -2.6], farTable: [-6, -0.45], tray: [-8.6, -0.5], vending: [-8.7, 0.4], mug: [-5.2, -0.5],
+  doorway: [-0.7, 0], bin: [-1.4, -2.5], eastOfIsland: [-3, -3.6], westOfIsland: [-7.5, -3.6], sink: [-6.8, -4.8], stove: [-3, -4.8], fridge: [-8.4, -4.8], bucket: [-1.8, -4.9],
+  shelf: [-9.2, -3.9], farTable: [-6.25, -0.5], tray: [-8.6, -0.5], vending: [-8.6, -0.4], mug: [-5.2, -0.5],
 };
 
 test('every area a start mark can go is routable from the doorway', () => {

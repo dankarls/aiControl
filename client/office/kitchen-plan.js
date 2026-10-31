@@ -44,7 +44,8 @@ const chair = (n, x, z, yaw, tip = 0) => {
 };
 
 // Each container's cx, floor y, cz, half width, height, wall: drawn by vessel() and the "in" zone is its whole inside.
-const VESSELS = { bin: [-0.5, 0, -2.5, 0.25, 0.6, 0.03], bucket: [-9.5, 0, -4.2, 0.2, 0.4, 0.03], basket: [-3.9, 0.92, -3.6, 0.2, 0.3, 0.03], tableMug: [-5.2, 0.74, 0.5, 0.095, 0.12, 0.02] };
+export const VESSELS = { bin: [-0.5, 0, -2.5, 0.25, 0.6, 0.03], bucket: [-1, 0, -5.25, 0.22, 0.42, 0.03], basket: [-5.5, 0.92, -3.55, 0.2, 0.3, 0.03], tableMug: [-4.6, 0.74, 0.6, 0.095, 0.12, 0.02] };
+const SHELF = { z0: -4.6, z1: -3.2 }; // on the west wall, past the fridge door's swing: a throw off the door can reach it
 const T = WALL_T, TABLES = [[-7.2, -1.4], [-5.2, -1.4], [-7.2, 0.5], [-5.2, 0.5]], COUPLE = 1.18, COUNTER_X = -8.6;
 // Door-wall pieces beside the doorway. Shut, the doorway is filled with more of the same wall.
 const edges = shut => [
@@ -65,14 +66,15 @@ const PARTS = shut => [
   box('island', -6.5, 0, -4.15, -3.5, 0.92, -3.05),
   ...[6, 10, 14].map((deg, i) => tilt(`pan-${i + 1}`, [-6 + i * 0.6, 1.7, -3.6], [0.16, 0.012, 0.12], [0, 0, rad(deg)])),
   ...vessel('basket', ...VESSELS.basket),
-  box('shelf', -10, 1.46, -3.3, -9.7, 1.5, -1.9), box('shelf', -9.73, 1.5, -3.3, -9.7, 1.6, -1.9), box('shelf', -10, 1.5, -3.3, -9.7, 1.6, -3.27), box('shelf', -10, 1.5, -1.93, -9.7, 1.6, -1.9),
+  box('shelf', -10, 1.46, SHELF.z0, -9.7, 1.5, SHELF.z1), box('shelf', -9.73, 1.5, SHELF.z0, -9.7, 1.6, SHELF.z1), box('shelf', -10, 1.5, SHELF.z0, -9.7, 1.6, SHELF.z0 + 0.03), box('shelf', -10, 1.5, SHELF.z1 - 0.03, -9.7, 1.6, SHELF.z1),
   tilt('tray', [-9.642, 0.2376, -0.5], [0.4, 0.01, 0.25], [0, 0, rad(-35)]),
   ...TABLES.map(([x, z], i) => box(`table-${i + 1}`, x - 0.7, 0.7, z - 0.4, x + 0.7, 0.74, z + 0.4)),
   ...vessel('tableMug', ...VESSELS.tableMug),
-  ...[[-7.6, -1.95, 15], [-6.9, -1.95, -30], [-5.8, -1.95, 40], [-4.9, -1.95, -20], [-8.3, -1.4, 140], [-3.05, -1.4, 255], [-4.2, 0.6, 100], [-6.2, 0.6, 200]].flatMap(([x, z, yaw], i) => chair(i + 1, x, z, yaw)),
+  ...[[-7.6, -1.95, 15], [-6.9, -1.95, -30], [-5.8, -1.95, 40], [-4.9, -1.95, -20], [-8.3, -1.4, 140], [-3.05, -1.4, 255], [-4.25, 0.6, 100], [-6.2, 0.6, 200]].flatMap(([x, z, yaw], i) => chair(i + 1, x, z, yaw)),
   ...chair(9, -2.9, -0.2, 50, 90),
   box('vending', -10, 0, 0, -9.2, 1.9, 0.8),
-  ...vessel('bin', ...VESSELS.bin), ...vessel('bucket', ...VESSELS.bucket),
+  // ponytail: the bucket's bottom is its mop water, which keeps what lands in it: a rubber ball would bounce out of any bucket this size.
+  ...vessel('bin', ...VESSELS.bin), ...vessel('bucket', ...VESSELS.bucket).map((b, i) => i ? b : { ...b, bounce: 0 }),
 ];
 
 // Where a drop is meant to end: "came to rest inside" means anywhere in the container's whole inside, its floor to its rim, give or take
@@ -82,7 +84,7 @@ const inside = (x0, y0, z0, x1, y1, z1) => ({ centre: new THREE.Vector3((x0 + x1
 const within = ([cx, y0, cz, r, h, t]) => inside(cx - r + t, y0 + t, cz - r + t, cx + r - t, y0 + h, cz + r - t);
 export const ZONES = {
   ...Object.fromEntries(Object.entries(VESSELS).map(([name, v]) => [name, within(v)])),
-  shelf: inside(-10, 1.5, -3.27, -9.73, 1.6, -1.93),
+  shelf: inside(-10, 1.5, SHELF.z0 + 0.03, -9.73, 1.6, SHELF.z1 - 0.03),
   sink: inside(-7.1, 0.6, -5.92, -6.5, 0.91, -5.62),
 };
 
@@ -92,10 +94,11 @@ export const SPOTS = {
   scores: { x: -1.6, y: 1.9, z: 0.98, facing: 'north', w: 1.4, h: 0.8 }, // south wall, by the doors
   lunchTables: TABLES.map(([x, z]) => ({ x, z, w: 1.4, d: 0.8, h: 0.74 })),
   panRack: { x: -5.4, y: 2, z: -3.6, w: 2.2 },
+  shelf: SHELF,
   tap: { x: -6.8, y: 0.91, z: -5.9 },
 };
 
-const shifted = (o, p) => Object.assign(new THREE.Box3(new THREE.Vector3(p.min[0] + o.x, p.min[1], p.min[2] + o.z), new THREE.Vector3(p.max[0] + o.x, p.max[1], p.max[2] + o.z)), { surface: p.surface });
+const shifted = (o, p) => Object.assign(new THREE.Box3(new THREE.Vector3(p.min[0] + o.x, p.min[1], p.min[2] + o.z), new THREE.Vector3(p.max[0] + o.x, p.max[1], p.max[2] + o.z)), p.bounce === undefined ? { surface: p.surface } : { surface: p.surface, bounce: p.bounce }); // only a box with its own bounce has the field
 export function flightBoxes(origin = { x: 0, z: 0 }, { doorShut = true } = {}) {
   return PARTS(doorShut).map(p => p.centre ? new TiltedBox({ centre: [p.centre[0] + origin.x, p.centre[1], p.centre[2] + origin.z], half: p.half, rotation: p.rotation, surface: p.surface }) : shifted(origin, p));
 }

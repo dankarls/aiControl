@@ -8,7 +8,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { WALL_H, WALL_T, canvasTexture, floorShadow, glowTexture, once, paint, piece, swingDoor } from './furniture.js';
-import { DOOR_H, DOOR_W, KITCHEN, SPOTS, behind, flightBoxes, walkBoxes } from './kitchen-plan.js';
+import { DOOR_H, DOOR_W, KITCHEN, SPOTS, VESSELS, behind, flightBoxes, walkBoxes } from './kitchen-plan.js';
 import { kitchenDoor, kitchenShift } from './layout.js';
 import { dims } from './lights.js';
 import { createWindows } from './windows.js';
@@ -18,7 +18,7 @@ export const DOOR_NEAR = 2.5, DOOR_FAR = 3; // they open within the one, and onc
 const MOVE = 0.45, SWUNG = 1.62; // seconds to swing; radians, a little past square to the wall
 
 const LOOK = { fridge: '#dfe3e6', counter: '#7aa095', sink: '#b9bec6', cupboard: '#8bb0a4', island: '#b5653a', pan: '#2c2f36', basket: '#b98a4e', shelf: '#8a5a33', tray: '#3f78b5', table: '#e8d9b8', tableMug: '#f4efe6', chair: '#d65a4a', vending: '#c83b3b', bin: '#3a3d46', bucket: '#c9ccd2' };
-const METAL = '#5a5f68', GROUT = '#b7c7c2', TILE = '#dfe9e6', PLASTER = '#f3ead6', DARK = '#2b2f33', STEEL = '#b9bec6';
+const METAL = '#5a5f68', WATER = '#5f8796', GROUT = '#b7c7c2', TILE = '#dfe9e6', PLASTER = '#f3ead6', DARK = '#2b2f33', STEEL = '#b9bec6';
 
 // A box from corner to corner, and one from a plan's box or tilted box.
 const B = (x0, y0, z0, x1, y1, z1) => new THREE.BoxGeometry(x1 - x0, y1 - y0, z1 - z0).translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
@@ -30,7 +30,7 @@ const kind = b => b.surface.replace(/-.*$/, '');
 
 // What stands in the room: every box of the plan in its colour, then what has no box of its own (legs, handles, the tap, the rack's wires).
 function roomParts() {
-  const boxes = flightBoxes().filter(b => kind(b) !== 'wall'), parts = boxes.map(b => [shaped(b), LOOK[kind(b)]]);
+  const boxes = flightBoxes().filter(b => kind(b) !== 'wall'), parts = boxes.map(b => [shaped(b), b.bounce === 0 ? WATER : LOOK[kind(b)]]);
   const add = (geometry, color) => parts.push([geometry, color]), of = name => boxes.filter(b => b.surface === name);
 
   // Chairs: legs and back posts in the seat's frame, so they lie down with the tipped one.
@@ -80,9 +80,9 @@ function roomParts() {
 
   // The fridge's handle; the shelf's brackets; handles for the bucket and the mug.
   const [, fridgeDoor] = of('fridge'); add(turned(fridgeDoor, V(0.34, 0.1, fridgeDoor.half.z + 0.016), V(0.012, 0.3, 0.016)), METAL);
-  for (const z of [-3.1, -2.1]) add(B(-10, 1.3, z - 0.012, -9.99, 1.46, z + 0.012), METAL), add(B(-10, 1.44, z - 0.012, -9.74, 1.46, z + 0.012), METAL);
-  add(new THREE.TorusGeometry(0.2, 0.006, 6, 18, Math.PI).translate(-9.5, 0.4, -4.2), METAL);
-  add(new THREE.TorusGeometry(0.035, 0.009, 6, 12).rotateY(Math.PI / 2).translate(-5.2, 0.8, 0.615), LOOK.tableMug);
+  for (const z of [SPOTS.shelf.z0 + 0.2, SPOTS.shelf.z1 - 0.2]) add(B(-10, 1.3, z - 0.012, -9.99, 1.46, z + 0.012), METAL), add(B(-10, 1.44, z - 0.012, -9.74, 1.46, z + 0.012), METAL);
+  add(new THREE.TorusGeometry(VESSELS.bucket[3], 0.006, 6, 18, Math.PI).translate(VESSELS.bucket[0], VESSELS.bucket[4], VESSELS.bucket[2]), METAL);
+  add(new THREE.TorusGeometry(0.035, 0.009, 6, 12).rotateY(Math.PI / 2).translate(VESSELS.tableMug[0], VESSELS.tableMug[1] + 0.06, VESSELS.tableMug[2] + VESSELS.tableMug[3] + 0.02), LOOK.tableMug);
 
   // The clipboard and the score board, blank for now.
   { const { x, y, z, w, h } = SPOTS.clipboard; add(B(x - 0.012, y - h / 2, z - w / 2, x + 0.012, y + h / 2, z + w / 2), '#a87b4f'); add(B(x - 0.016, y - h / 2 + 0.02, z - w / 2 + 0.02, x - 0.012, y + h / 2 - 0.03, z + w / 2 - 0.02), '#fbfaf5'); add(B(x - 0.024, y + h / 2 - 0.05, z - 0.05, x - 0.012, y + h / 2 - 0.005, z + 0.05), METAL); }

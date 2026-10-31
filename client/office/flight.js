@@ -53,12 +53,12 @@ export function stopShort(from, to, { radius: r, low }, colliders) {
   return first < 1 ? to.lerpVectors(from, to, first) : to;
 }
 
-// Reports a hit before resolving it (the speed into the surface), then bounces: a hard knock keeps `bounce`, a soft one just stops.
+// Reports a hit before resolving it (the speed into the surface), then bounces: a hard knock keeps `bounce` (the kind's, unless the box has its own), a soft one just stops.
 export const contact = (b, world, n, surface, box) => {
   const vn = b.vel.dot(n);
   if (vn < 0) {
     if (world.onContact) { event.surface = surface; event.box = box; event.speed = -vn; world.onContact(b, event); }
-    b.vel.addScaledVector(n, -(vn < -1 ? 1 + b.kind.bounce : 1) * vn);
+    b.vel.addScaledVector(n, -(vn < -1 ? 1 + (box?.bounce ?? b.kind.bounce) : 1) * vn);
   }
   return n.y > 0.7;
 };
