@@ -3,6 +3,7 @@ import './bridge.css';
 import { Player, menuOpen, officeHasKeys, sceneFocused } from '../office/player.js';
 import { walkGrid, findPath } from '../office/path.js';
 import { VACANT_MS } from '../office/layout.js';
+import { createBrackets } from './brackets.js';
 import { BridgeCamera } from './camera.js';
 import { CENTER, ROOM, deckColliders, stationAt } from './deck.js';
 import { createDisplays, stationName } from './displays.js';
@@ -87,9 +88,9 @@ export function mountBridge(container, hooks = {}, options = {}) {
   function sit() { closeHolograms(); player.flyTo(new THREE.Vector3(SEAT.x, 0, SEAT.z), new THREE.Vector3(CENTER, 0, 0), () => { seated = true; }, still, SEAT.pitch); }
   const leaveChair = () => { seated = false; player.walkTo(new THREE.Vector3(CENTER, 0, SEAT.z - .95)); };
 
-  const reticle = createReticle(camera, still); world.add(camera);
+  const reticle = createReticle(camera, still), brackets = createBrackets(camera); world.add(camera);
   const displays = createDisplays(room, still);
-  function repaint(palette) { room.repaint(palette); lights.repaint(palette); space.repaint(palette); displays.repaint(palette); container.style.setProperty('--bridge-accent', palette.trim); for (const painted of [...Object.values(holograms), reticle]) painted.paint(palette.tones[2], palette.tones[0]); }
+  function repaint(palette) { room.repaint(palette); lights.repaint(palette); space.repaint(palette); displays.repaint(palette); container.style.setProperty('--bridge-accent', palette.trim); for (const painted of [...Object.values(holograms), reticle, brackets]) painted.paint(palette.tones[2], palette.tones[0]); }
   repaint(paletteFor(savedColour()));
   const setMode = state => { room.setMode(state); lights.setMode(state); space.setMode(state); };
   setMode({ mode: 'orbit', warp: 0, offline: false });
@@ -150,7 +151,7 @@ export function mountBridge(container, hooks = {}, options = {}) {
     hoverIn -= dt; if (hoverIn > 0) return; hoverIn = .1;
     const target = aimedAt(), name = target && `E ${target.name}`;
     for (const [hologram, panel] of Object.entries(holograms)) panel.hover(target?.hologram === hologram ? target.row : null);
-    reticle.aim(name); el.title = player.aiming ? '' : name || ''; el.style.cursor = name && !player.aiming ? 'pointer' : '';
+    reticle.aim(name); brackets.aim(target?.object ?? null); el.title = player.aiming ? '' : name || ''; el.style.cursor = name && !player.aiming ? 'pointer' : '';
   }
   // E does what a click does on what's named, and nothing anywhere else: an open hologram stays open.
   function pressE() {
@@ -221,7 +222,7 @@ export function mountBridge(container, hooks = {}, options = {}) {
       if (options.view) place();
       room.ceiling.visible = !look.amount;
       showLeave(); hover(dt);
-      reticle.show(player.aiming && !zoomed && !look.overview); reticle.tick(dt, container.clientHeight || 1);
+      reticle.show(player.aiming && !zoomed && !look.overview); reticle.tick(dt, container.clientHeight || 1); brackets.tick(container.clientHeight || 1);
       for (const hologram of Object.values(holograms)) hologram.tick(dt, T, camera);
       space.tick(dt, T); lights.tick(dt, T, space); room.tick(dt, T, camera); displays.tickLive(T);
       post.flash = space.flash; post.time = T; post.render(world, space.scene, camera);
