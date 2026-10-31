@@ -170,7 +170,8 @@ export function createOverlays(container, { onNext, onList, onOverview, onNew, o
   const eye = button('office-eye', '👁', 'Overview (Tab)', () => onOverview()); eye.setAttribute('aria-pressed', 'false');
   const dot = document.createElement('div'); dot.className = 'office-dot'; dot.hidden = true; container.append(dot);
   const meter = document.createElement('div'); meter.className = 'office-charge'; meter.hidden = true; const fill = meter.appendChild(document.createElement('i')); container.append(meter);
-  let charged = null;
+  const mark = document.createElement('div'); mark.className = 'office-mark'; mark.hidden = true; container.append(mark);
+  let charged = null, marked = null;
   let seen = false; try { seen = !!localStorage.getItem(hintKey); } catch { /* storage may be off */ }
   const hint = document.createElement('div'); hint.className = 'office-hint'; hint.textContent = 'Click or arrows to look · WASD · Shift run · Space jump · E grab · F pour · Tab overview'; hint.hidden = seen; container.append(hint);
   return {
@@ -182,8 +183,10 @@ export function createOverlays(container, { onNext, onList, onOverview, onNew, o
     setAim(on) { dot.classList.toggle('aim', on); },
     // How far a throw's charged, 0 to 1; null hides it. Once a frame while it's up, and nothing once it's full.
     setCharge(level) { if (level === charged) return; charged = level; meter.hidden = level === null; if (level !== null) fill.style.transform = `scaleX(${level})`; },
+    // Where a finger's throw will go, its screen point; null hides it. Once a frame, and nothing unless it changed.
+    setMark(at) { if (at === marked) return; marked = at; mark.hidden = !at; if (at) { const r = container.getBoundingClientRect(); mark.style.left = `${at.clientX - r.left}px`; mark.style.top = `${at.clientY - r.top}px`; } },
     // The hint goes once you've used the overview.
     overviewUsed() { if (hint.hidden) return; hint.classList.add('gone'); setTimeout(() => { hint.hidden = true; }, 600); try { localStorage.setItem(hintKey, '1'); } catch { /* per tab only */ } },
-    dispose() { bar.remove(); dot.remove(); meter.remove(); hint.remove(); },
+    dispose() { bar.remove(); dot.remove(); meter.remove(); mark.remove(); hint.remove(); },
   };
 }
