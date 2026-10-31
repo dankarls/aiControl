@@ -6,10 +6,10 @@ import { C, STD, add as place, box, canvas, canvasTexture, lit, seeded } from '.
 
 const DEG = Math.PI / 180, HW = R * Math.sin(12 * DEG), UP = Math.PI / 2;
 const BAY_Z_BACK = -6.12, SILL = .44, TOP = 3.3, HOLE = 3.3, EDGE = [4.0, -8.1], MID = [2.1, -8.65], GLASS_TOP = 3.62, CHAIR_Z = .78;
-// A station's upper display, by index: the signs up front, the live displays at the back.
+// A station's upper display, by index: the signs up front. The bays behind have none.
 // The screens you can fly over to and read, by panel. The stations' rows are the sessions themselves.
-const SCREENS = { engineSign: 'Engine', hailSign: 'Hails', decks: 'Decks', engineering: 'Engineering', shuttles: 'Shuttles', credits: 'Credits', radar: 'Radar', wave: 'Trace', spectrum: 'Spectrum', nebula: 'Nebula', clock: 'Ship time', door: 'Door', helmLeft: 'Helm', helmRight: 'Helm', comm: 'Comm' };
-const UPPER = [['engineSign', 1.35], ['hailSign', 1.35], ['decks'], ['engineering'], ['shuttles'], ['credits'], ['radar', 1.25, true], ['wave', 1.25, true], ['spectrum', 1.25, true], ['nebula', 1.2]];
+const SCREENS = { engineSign: 'Engine', hailSign: 'Hails', decks: 'Decks', engineering: 'Engineering', shuttles: 'Shuttles', credits: 'Credits', clock: 'Ship time', door: 'Door', helmLeft: 'Helm', helmRight: 'Helm', comm: 'Comm' };
+const UPPER = [['engineSign', 1.35], ['hailSign', 1.35], ['decks'], ['engineering'], ['shuttles'], ['credits']];
 const BLACK = new THREE.Color(0);
 
 function roundedPath(path, x, y, w, h, r) { path.moveTo(x + r, y); path.lineTo(x + w - r, y); path.quadraticCurveTo(x + w, y, x + w, y + r); path.lineTo(x + w, y + h - r); path.quadraticCurveTo(x + w, y + h, x + w - r, y + h); path.lineTo(x + r, y + h); path.quadraticCurveTo(x, y + h, x, y + h - r); path.lineTo(x, y + r); path.quadraticCurveTo(x, y, x + r, y); return path; }
@@ -155,15 +155,13 @@ export function buildRoom(world, still = false) {
   }
   // The bays around the wall. Each has a console, a row of lit tiles, an alcove above it, a cove light and a row of tiles in the step.
   const stations = STATION_ANGLES.map((theta, index) => {
-    const g = around(theta, WALL), width = 2 * HW, seed = `bay${theta}`, [upperName, upperGain, live] = UPPER[index];
+    const g = around(theta, WALL), width = 2 * HW, seed = `bay${theta}`, [upperName, upperGain] = UPPER[index] || [];
     const station = { index, angle: theta, group: g, status: null, lamps: [] };
     add(box(width, 1.66, .12), MAT.wall, g, 0, DECK + .83, -.06);
     add(frameGeometry(width, 1.3, width - .5, 1, .16, .2, 0), MAT.wall, g, 0, 2.63, 0);
     // Backlight in the alcove, its display on a dark mount.
-    add(new THREE.PlaneGeometry(width - .4, 1), glow.wash, g, 0, 2.63, .02);
     add(box(2.34, .9, .04), MAT.black, g, 0, 2.63, .06);
-    station.upper = live ? panel(upperName, 512, 188, upperGain) : panel(upperName, 1024, 375, upperGain);
-    screen(station.upper, 2.24, .82, g, 0, 2.63, .085);
+    if (upperName) { add(new THREE.PlaneGeometry(width - .4, 1), glow.wash, g, 0, 2.63, .02); station.upper = panel(upperName, 1024, 375, upperGain); screen(station.upper, 2.24, .82, g, 0, 2.63, .085); }
     // The console: kick plate, sloped desk with jewels, a pale lip, tiles behind a hood.
     add(box(width, .5, .62), MAT.body, g, 0, .62, .31);
     const desk = new THREE.Group(); desk.position.set(0, .92, .42); desk.rotation.x = .28; g.add(desk);
@@ -209,7 +207,6 @@ export function buildRoom(world, still = false) {
 
   // The helm: a stepped plinth, a blue block and a round dial with a lamp per session.
   const helm = new THREE.Group(); helm.position.set(0, 0, -2.85); group.add(helm);
-  let sweep;
   {
     add(box(3.5, .08, 2), MAT.black, helm, 0, .04, .28); add(box(3.3, .08, 1.8), MAT.trim, helm, 0, .1, .28);
     add(box(2.7, .78, .66), MAT.body, helm, 0, .53, 0);
@@ -218,8 +215,6 @@ export function buildRoom(world, still = false) {
     const top = new THREE.Group(); top.position.set(0, .94, .02); top.rotation.x = .3; helm.add(top);
     add(box(2.82, .05, .8), MAT.black, top);
     const dial = add(new THREE.CircleGeometry(.33, 40), panel('dial', 512, 512, 1.4, true).material, top, 0, .03, 0, -UP); dial.renderOrder = 2; Object.assign(dial.userData, { screen: 'Helm', width: .66, height: .66 });
-    const sweepMap = canvasTexture(canvas(256, 256, g => { for (let i = 0; i < 30; i++) { g.fillStyle = `rgba(225,240,255,${.02 + i * .012})`; g.beginPath(); g.moveTo(128, 128); g.arc(128, 128, 128, -1.2 + i * .04, -1.2 + i * .04 + .06); g.fill(); } }), false);
-    sweep = add(new THREE.CircleGeometry(.33, 40), additive({ map: sweepMap }), top, 0, .033, 0, -UP); sweep.renderOrder = 3;
     screen(panel('helmLeft', 320, 110, 1.4), .56, .19, top, -.9, .03, -.06, -UP);
     screen(panel('helmRight', 420, 110, 1.4), .62, .16, top, .88, .03, -.06, -UP);
     const rnd = seeded('helm');
@@ -272,9 +267,9 @@ export function buildRoom(world, still = false) {
   });
   group.position.set(8, 0, 8);
 
-  let palette = null, hail = false, limit = false, offline = false, warp = 0, started = false, dim = 1, commY = 4.3, jewelClock = 0;
+  let palette = null, hail = false, limit = false, offline = false, warp = 0, started = false, dim = 1, commY = 4.3;
   const paintRow = station => { station.row.gain = (station.status ? 1.3 : .75) * (station.marked ? 1.7 : station.marked === false ? .45 : 1); };
-  const tmp = new THREE.Color(), off = new THREE.Color(), seat = new THREE.Vector3(), mark = new THREE.Vector3(), SIGNAL = { need: C(SIGNALS.need), working: C(SIGNALS.working), idle: C(SIGNALS.idle) };
+  const tmp = new THREE.Color(), seat = new THREE.Vector3(), mark = new THREE.Vector3(), SIGNAL = { need: C(SIGNALS.need), working: C(SIGNALS.working), idle: C(SIGNALS.idle) };
   const paintJewel = j => { j.base.copy(C(palette.tones[j.color])).multiplyScalar(j.bright * .7); j.mesh.setColorAt(j.index, j.on ? j.base : tmp.copy(j.base).multiplyScalar(.07)); j.mesh.instanceColor.needsUpdate = true; };
   return {
     group, stations, panels, glow, ceiling: overhead, crystals,
@@ -322,12 +317,6 @@ export function buildRoom(world, still = false) {
         lamp.material.color.copy(lamp.color).multiplyScalar(on ? (lamp.role === 'need' ? .5 + pulse * .5 : 1) : .1);
       }
       commY += ((hail || limit ? 2.25 : 4.3) - commY) * (still ? 1 : 1 - Math.pow(.05, dt)); comm.position.y = commY; comm.visible = commY < 4.15;
-      sweep.rotation.z = still ? 0 : -t * 1.1;
-      jewelClock += dt;
-      if (!still && jewelClock > .35) {
-        jewelClock = 0;
-        for (let i = 0; i < 8; i++) { const j = jewels[Math.floor(Math.random() * jewels.length)]; j.on = !j.on; j.mesh.setColorAt(j.index, j.on ? tmp.copy(j.base).multiplyScalar(limit ? .35 : 1) : off.copy(j.base).multiplyScalar(.04)); j.mesh.instanceColor.needsUpdate = true; }
-      }
       // Your own seat's back would fill the view when you turn around in it.
       seat.copy(camera.position).sub(group.position);
       shell.visible = seat.distanceTo(mark.set(0, 1.5, CHAIR_Z)) > .7;

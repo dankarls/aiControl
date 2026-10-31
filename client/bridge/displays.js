@@ -1,4 +1,4 @@
-// What's drawn on the ship's displays: tiles, signs, alcoves, the live rear displays. Canvases come from the room.
+// What's drawn on the ship's displays: tiles, signs, alcoves. Canvases come from the room.
 // Signals: red needs you, teal is working, pale blue is idle, orange is near a limit. Decoration uses the palette's other hues.
 import { monitorLines } from '../office/status.js';
 import { usageWindowView } from '../usage-presentation.js';
@@ -10,7 +10,7 @@ const INK = '#f2f4ff', DIM = '#aeb4c6', Y = '#eef0f6', O = '#c4cad8', BACK = '#0
 const SIGNAL_COLOUR = { need: RED, working: TEAL, idle: BLUE };
 const LABELS = { question: 'HAILING', permission: 'AUTHORIZE', working: 'ON DUTY', idle: 'STANDBY', error: 'FAULT', offline: 'OFFLINE' };
 const GLYPHS = { claude: '✳', codex: '⌘' };
-const LIVE_MS = 100, MAX_LIMIT_ROWS = 6, MAX_PROJECTS = 6, MAX_SHUTTLES = 3;
+const MAX_LIMIT_ROWS = 6, MAX_PROJECTS = 6, MAX_SHUTTLES = 3;
 export const font = (weight, size) => `${weight} ${size}px Antonio, 'Arial Narrow', 'Liberation Sans Narrow', sans-serif`;
 const graphemes = text => [...new Intl.Segmenter().segment(text)].map(part => part.segment);
 
@@ -154,35 +154,6 @@ function drawCredits(g, w, h, d) {
     g.textAlign = 'right'; g.fillStyle = Y; g.fillText(dollars(usd), w - 28, y); g.textAlign = 'left';
   });
 }
-function drawNebula(g, w, h, pal, seed) {
-  const hues = pal.tones.slice(1), rnd = seeded(seed); g.fillStyle = '#020104'; g.fillRect(0, 0, w, h);
-  for (let i = 0; i < 26; i++) { const x = w * (.2 + rnd() * .6), y = h * (.2 + rnd() * .6), r = 40 + rnd() * 150, grad = g.createRadialGradient(x, y, 0, x, y, r); grad.addColorStop(0, `${hues[i % hues.length]}66`); grad.addColorStop(1, `${hues[i % hues.length]}00`); g.fillStyle = grad; g.fillRect(0, 0, w, h); }
-  for (let i = 0; i < 260; i++) { g.fillStyle = `rgba(255,255,255,${.3 + rnd() * .7})`; g.fillRect(rnd() * w, rnd() * h, 2, 2); }
-}
-// The rear displays keep moving: a sweep, traces and a spectrum, in the room's neon.
-function drawRadar(g, w, h, pal, t) {
-  const cx = w / 2, cy = h / 2, r = h * .46, rnd = seeded('radar'), a = t * 1.2;
-  g.fillStyle = BACK; g.fillRect(0, 0, w, h);
-  g.strokeStyle = pal.neon; g.lineWidth = 1.5; g.globalAlpha = .5;
-  for (const k of [.33, .66, 1]) { g.beginPath(); g.arc(cx, cy, r * k, 0, 7); g.stroke(); }
-  g.beginPath(); g.moveTo(cx - r, cy); g.lineTo(cx + r, cy); g.moveTo(cx, cy - r); g.lineTo(cx, cy + r); g.stroke();
-  for (let i = 0; i < 16; i++) { g.globalAlpha = .07 * (16 - i) / 2; g.fillStyle = pal.neon; g.beginPath(); g.moveTo(cx, cy); g.arc(cx, cy, r, a - i * .07 - .07, a - i * .07); g.fill(); }
-  g.globalAlpha = 1; g.fillStyle = pal.tones[0];
-  for (let i = 0; i < 9; i++) { const angle = rnd() * 6.283, d = r * (.2 + rnd() * .75); g.fillRect(cx + Math.cos(angle) * d - 2, cy + Math.sin(angle) * d - 2, 4, 4); }
-}
-function drawWave(g, w, h, pal, t) {
-  g.fillStyle = BACK; g.fillRect(0, 0, w, h); g.lineWidth = 2.5;
-  [pal.neon, pal.tones[1], pal.tones[0]].forEach((color, i) => {
-    g.strokeStyle = color; g.beginPath();
-    for (let x = 0; x <= w; x += 6) { const y = h * (.25 + i * .25) + Math.sin(x * (.02 + i * .012) + t * (2 + i)) * Math.sin(x * .006 - t) * h * .1; x ? g.lineTo(x, y) : g.moveTo(x, y); }
-    g.stroke();
-  });
-}
-function drawSpectrum(g, w, h, pal, t) {
-  g.fillStyle = BACK; g.fillRect(0, 0, w, h);
-  const n = 32, bw = w / n;
-  for (let i = 0; i < n; i++) { const k = .2 + .4 * (.5 + .5 * Math.sin(i * .7 + t * 2.1)) + .35 * (.5 + .5 * Math.sin(i * .23 - t * 1.3)); g.fillStyle = i % 5 ? pal.neon : pal.tones[0]; g.fillRect(i * bw + 2, h * (1 - k * .9), bw - 4, h * k * .9); }
-}
 // The big alcove signs: one about the engines, one about hails.
 function drawEngineSign(g, w, h, d) {
   const limit = d.mode === 'limit', at = d.warp > 0;
@@ -234,19 +205,16 @@ function drawComm(g, w, h, d) {
   if (d.waiting > 1) { g.fillStyle = '#ffb8a6'; g.font = font(400, 40); g.fillText(`+ ${d.waiting - 1} MORE WAITING`, 34, 368); }
 }
 
-// Everything but the live rear displays redraws only when what it shows has changed.
-export function createDisplays(room, still = false) {
+// A display redraws only when what it shows has changed.
+export function createDisplays(room) {
   const { panels } = room, drawn = new Map();
-  let palette = null, facts = null, liveAt = -Infinity;
+  let palette = null, facts = null;
   const paint = (name, data, draw) => {
     const signature = JSON.stringify(data), panel = panels[name];
     if (drawn.get(name) === signature) return;
     drawn.set(name, signature); const { g, el, texture } = panel, { width, height } = el;
     g.save(); g.textAlign = 'left'; g.globalAlpha = 1; draw(g, width, height); g.restore(); texture.needsUpdate = true;
   };
-  function live(t) {
-    for (const [name, draw] of [['radar', drawRadar], ['wave', drawWave], ['spectrum', drawSpectrum]]) { const { g, el, texture } = panels[name]; g.save(); draw(g, el.width, el.height, palette, t); g.restore(); texture.needsUpdate = true; }
-  }
   function draw() {
     if (!facts) return;
     const d = facts, pal = palette, helmColor = d.warp ? TEAL : O;
@@ -257,7 +225,6 @@ export function createDisplays(room, still = false) {
     paint('decks', [d.decks, d.overflow], (g, w, h) => drawDecks(g, w, h, d));
     paint('shuttles', [d.shuttles, d.moreShuttles], (g, w, h) => drawShuttles(g, w, h, d));
     paint('credits', [d.total, d.credits], (g, w, h) => drawCredits(g, w, h, d));
-    paint('nebula', 0, (g, w, h) => drawNebula(g, w, h, pal, 'nebula'));
     paint('arm', [d.waiting, d.warp, d.offline, d.rightName], (g, w, h) => drawArm(g, w, h, d));
     paint('dial', d.signals, (g, w, h) => drawDial(g, w, h, d, pal));
     paint('helmLeft', [d.warp], (g, w, h) => drawHelmPlate(g, w, h, d.warp ? `WARP ${d.warp}` : 'COASTING', helmColor));
@@ -299,12 +266,7 @@ export function createDisplays(room, still = false) {
       };
       draw();
     },
-    // At 10 Hz at most, whatever the frame rate.
-    tickLive(t) {
-      if (still || !palette || performance.now() - liveAt < LIVE_MS) return;
-      liveAt = performance.now(); live(t);
-    },
     // Same canvases, redrawn in the new colours.
-    repaint(next) { palette = next; drawn.clear(); draw(); live(4); },
+    repaint(next) { palette = next; drawn.clear(); draw(); },
   };
 }

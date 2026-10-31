@@ -89,7 +89,7 @@ export function mountBridge(container, hooks = {}, options = {}) {
   const leaveChair = () => { seated = false; player.walkTo(new THREE.Vector3(CENTER, 0, SEAT.z - .95)); };
 
   const reticle = createReticle(camera, still), brackets = createBrackets(camera); world.add(camera);
-  const displays = createDisplays(room, still);
+  const displays = createDisplays(room);
   function repaint(palette) { room.repaint(palette); lights.repaint(palette); space.repaint(palette); displays.repaint(palette); container.style.setProperty('--bridge-accent', palette.trim); for (const painted of [...Object.values(holograms), reticle, brackets]) painted.paint(palette.tones[2], palette.tones[0]); }
   repaint(paletteFor(savedColour()));
   const setMode = state => { room.setMode(state); lights.setMode(state); space.setMode(state); };
@@ -224,8 +224,8 @@ export function mountBridge(container, hooks = {}, options = {}) {
       showLeave(); hover(dt);
       reticle.show(player.aiming && !zoomed && !look.overview); reticle.tick(dt, container.clientHeight || 1); brackets.tick(container.clientHeight || 1);
       for (const hologram of Object.values(holograms)) hologram.tick(dt, T, camera);
-      space.tick(dt, T); lights.tick(dt, T, space); room.tick(dt, T, camera); displays.tickLive(T);
-      post.flash = space.flash; post.time = T; post.render(world, space.scene, camera);
+      space.tick(dt); lights.tick(dt, T, space); room.tick(dt, T, camera);
+      post.flash = space.flash; post.render(world, space.scene, camera);
     } catch (error) { console.error(error); stop(); }
   }
   raf = requestAnimationFrame(frame);

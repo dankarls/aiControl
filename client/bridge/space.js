@@ -133,7 +133,7 @@ export function createSpace(still = false) {
     },
     repaint(palette) { stripeMat.color.copy(C(palette.console)); },
     resize(w, h) { streakU.uRes.value.set(w, h); },
-    tick(dt, t) {
+    tick(dt) {
       this.warpLevel += (goal - this.warpLevel) * (still ? 1 : 1 - Math.pow(.25, dt));
       const w = this.warpLevel, atWarp = goal > .05;
       if (atWarp !== wasWarp) { wasWarp = atWarp; if (!still) this.flash = atWarp ? .55 : .32; }
@@ -144,7 +144,7 @@ export function createSpace(still = false) {
       const fall = 1 / (1 + Math.pow(w * 6, 3)); planet.scale.setScalar(fall); planet.visible = fall > .004;
       if (!still) sky.rotation.y += dt * (.0035 + w * .002);
       nebulaU.uGain.value = limit ? .55 : 1 + w * .5; nebulaU.uBlue.value = w * .7;
-      fieldMat.color.copy(FIELD).multiplyScalar(limit ? 0 : w * (1.15 + (still ? 0 : Math.sin(t * 9) * .08)));
+      fieldMat.color.copy(FIELD).multiplyScalar(limit ? 0 : w * 1.15);
       hullMat.emissive.setScalar(limit ? .25 : 1.25);
     },
   };

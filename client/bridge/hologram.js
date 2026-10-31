@@ -40,7 +40,7 @@ export function createHologram(parent, { from, at, width = .78, height = .6, pho
   const W = 512, H = Math.round(W * height / width), canvas = document.createElement('canvas'); canvas.width = W; canvas.height = H;
   const g = canvas.getContext('2d'), map = new THREE.CanvasTexture(canvas);
   // Over anything nearer, or the chair's arms would cut into it.
-  const material = new THREE.MeshBasicMaterial({ map, transparent: true, depthWrite: false, depthTest: false, side: THREE.DoubleSide, toneMapped: false });
+  const material = new THREE.MeshBasicMaterial({ map, transparent: true, opacity: .94, depthWrite: false, depthTest: false, side: THREE.DoubleSide, toneMapped: false });
   const group = new THREE.Group(); group.position.copy(at); group.visible = false; parent.add(group);
   const plane = new THREE.Mesh(new THREE.PlaneGeometry(width, height), material); plane.renderOrder = 6; group.add(plane);
   const glow = { blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, toneMapped: false };
@@ -105,7 +105,6 @@ export function createHologram(parent, { from, at, width = .78, height = .6, pho
       group.visible = beam.visible = amount > 0; if (!amount) return;
       group.lookAt(camera.getWorldPosition(eye)); group.scale.set(size, size * Math.sin(amount * Math.PI / 2), 1);
       if (still) return;
-      material.opacity = .9 + .05 * Math.sin(t * 31) * Math.sin(t * 7);
       sweep.position.y = height * (.5 - (t * .35 % 1));
     },
   };

@@ -38,7 +38,7 @@ export function createReticle(camera, still) {
       group.scale.setScalar(2 * AWAY * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) / height * RADIUS);
       ring.scale.setScalar(1 - amount * .34); ink.color.lerpColors(calm, live, amount);
       if (still) return;
-      spin += dt * (.5 + amount * 1.6); ring.rotation.z = -spin; core.rotation.z = spin * 1.4;
+      spin += dt * amount * 2.1; ring.rotation.z = -spin; core.rotation.z = spin * 1.4;
     },
   };
 }

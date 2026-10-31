@@ -6,6 +6,8 @@ import { C } from './parts.js';
 export const LIGHT_SCALE = Math.PI;
 const RED = C('#ff2a1a'), WARM = C('#eef1ff'), LAMP = C('#f4f6ff'), RECESS = C('#f2f5ff'), VIEW = C('#dfe6ff'), DULL = C('#40120c');
 const AMBIENT = { limit: C('#b0463a'), hail: C('#f0b0a4'), calm: C('#f2f4ff') };
+// The floor rings move only because agents are at work.
+export const chaseSpeed = w => w * 1.85;
 
 // Dim overall: the colour comes from the room's own lamps, and all of it turns red with the room.
 export function createLights(world, glow, still = false) {
@@ -27,7 +29,7 @@ export function createLights(world, glow, still = false) {
       glow.chase.color.copy(glow.neon.color); glow.rib.color.copy(glow.neon.color).multiplyScalar(.16); glow.ring.color.copy(glow.neon.color).multiplyScalar(.14); glow.wash.color.copy(glow.neon.color).multiplyScalar(.5);
       left.color.copy(glow.neon.color).multiplyScalar(.6); right.color.copy(left.color);
       left.intensity = right.intensity = (limit ? .05 : .9) * LIGHT_SCALE;
-      if (!still) glow.chaseMap.offset.x = -t * (.25 + w * 1.6);
+      if (!still) glow.chaseMap.offset.x -= dt * chaseSpeed(w);
       glow.lamp.color.copy(limit ? RED : hail ? tmp.copy(WARM).lerp(RED, .6) : LAMP).multiplyScalar(limit ? .22 : hail ? .6 + pulse * .4 : 1);
       glow.recess.color.copy(limit ? RED : hail ? tmp.copy(RECESS).lerp(RED, .65) : RECESS).multiplyScalar(limit ? .2 : hail ? .35 + pulse : 1.35);
       glow.edge.color.copy(hail ? RED : limit ? DULL : neon).multiplyScalar(hail ? .4 + pulse * 1.5 : limit ? 1 : 1.7);
