@@ -7,6 +7,8 @@ import { C, STD, add as place, box, canvas, canvasTexture, lit, seeded } from '.
 const DEG = Math.PI / 180, HW = R * Math.sin(12 * DEG), UP = Math.PI / 2;
 const BAY_Z_BACK = -6.12, SILL = .44, TOP = 3.3, HOLE = 3.3, EDGE = [4.0, -8.1], MID = [2.1, -8.65], GLASS_TOP = 3.62, CHAIR_Z = .78;
 // A station's upper display, by index: the signs up front, the live displays at the back.
+// The screens you can fly over to and read, by panel. The stations' rows are the sessions themselves.
+const SCREENS = { engineSign: 'Engine', hailSign: 'Hails', decks: 'Decks', engineering: 'Engineering', shuttles: 'Shuttles', credits: 'Credits', radar: 'Radar', wave: 'Trace', spectrum: 'Spectrum', nebula: 'Nebula', clock: 'Ship time', door: 'Door', helmLeft: 'Helm', helmRight: 'Helm', comm: 'Comm' };
 const UPPER = [['engineSign', 1.35], ['hailSign', 1.35], ['decks'], ['engineering'], ['shuttles'], ['credits'], ['radar', 1.25, true], ['wave', 1.25, true], ['spectrum', 1.25, true], ['nebula', 1.2]];
 const BLACK = new THREE.Color(0);
 
@@ -34,9 +36,9 @@ export function buildRoom(world, still = false) {
   const panels = {};
   function panel(name, w, h, gain = 1.25, transparent = false) {
     const el = canvas(w, h, (g, width, height) => { g.fillStyle = '#05060f'; g.fillRect(0, 0, width, height); }), texture = canvasTexture(el); texture.anisotropy = 8;
-    return panels[name] = { el, g: el.getContext('2d'), texture, gain, material: new THREE.MeshBasicMaterial({ map: texture, transparent, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }) };
+    return panels[name] = { name, el, g: el.getContext('2d'), texture, gain, material: new THREE.MeshBasicMaterial({ map: texture, transparent, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }) };
   }
-  function screen(p, w, h, parent, x, y, z, rx = 0) { const mesh = add(new THREE.PlaneGeometry(w, h), p.material, parent, x, y, z, rx); mesh.userData.width = w; mesh.renderOrder = 1; return mesh; }
+  function screen(p, w, h, parent, x, y, z, rx = 0) { const mesh = add(new THREE.PlaneGeometry(w, h), p.material, parent, x, y, z, rx); mesh.userData.width = w; mesh.userData.height = h; mesh.userData.screen = SCREENS[p.name]; mesh.renderOrder = 1; return mesh; }
   // Placed around the ring: `theta` is measured from the window, and the group's +z faces the centre.
   function around(theta, r, parent = group) { const t = theta * DEG, g = new THREE.Group(); g.position.set(Math.sin(t) * r, 0, -Math.cos(t) * r); g.rotation.y = -t; parent.add(g); return g; }
   function polygon(points, material) {
@@ -215,7 +217,7 @@ export function buildRoom(world, still = false) {
     add(box(.08, .8, .68), MAT.black, helm, -1.36, .53, 0); add(box(.08, .8, .68), MAT.black, helm, 1.36, .53, 0);
     const top = new THREE.Group(); top.position.set(0, .94, .02); top.rotation.x = .3; helm.add(top);
     add(box(2.82, .05, .8), MAT.black, top);
-    add(new THREE.CircleGeometry(.33, 40), panel('dial', 512, 512, 1.4, true).material, top, 0, .03, 0, -UP).renderOrder = 2;
+    const dial = add(new THREE.CircleGeometry(.33, 40), panel('dial', 512, 512, 1.4, true).material, top, 0, .03, 0, -UP); dial.renderOrder = 2; Object.assign(dial.userData, { screen: 'Helm', width: .66, height: .66 });
     const sweepMap = canvasTexture(canvas(256, 256, g => { for (let i = 0; i < 30; i++) { g.fillStyle = `rgba(225,240,255,${.02 + i * .012})`; g.beginPath(); g.moveTo(128, 128); g.arc(128, 128, 128, -1.2 + i * .04, -1.2 + i * .04 + .06); g.fill(); } }), false);
     sweep = add(new THREE.CircleGeometry(.33, 40), additive({ map: sweepMap }), top, 0, .033, 0, -UP); sweep.renderOrder = 3;
     screen(panel('helmLeft', 320, 110, 1.4), .56, .19, top, -.9, .03, -.06, -UP);
@@ -229,7 +231,7 @@ export function buildRoom(world, still = false) {
   add(new THREE.CylinderGeometry(1.3, 1.36, .15, 8), MAT.black, null, 0, .075, CHAIR_Z, 0, Math.PI / 8).userData.floor = true;
   add(new THREE.CylinderGeometry(.95, 1, .15, 8), MAT.trim, null, 0, .225, CHAIR_Z, 0, Math.PI / 8).userData.floor = true;
   add(new THREE.CylinderGeometry(.22, .3, .34, 16), MAT.metal, null, 0, .47, CHAIR_Z);
-  const shell = new THREE.Group(); shell.position.set(0, .3, CHAIR_Z); group.add(shell);
+  const shell = new THREE.Group(); shell.position.set(0, .3, CHAIR_Z); shell.userData.chair = true; group.add(shell);
   add(box(.66, .14, .62), MAT.seatTop, shell, 0, .46); add(box(.78, 1.12, .1), MAT.shell, shell, 0, 1.02, .33, .08); add(box(.82, .06, .14), MAT.trim, shell, 0, 1.6, .37, .08);
   const pods = new THREE.Group(); group.add(pods);
   const podBase = box(.38, .06, .36), bigLamps = [], crystals = [], hidden = new THREE.MeshBasicMaterial({ visible: false });
@@ -242,7 +244,7 @@ export function buildRoom(world, still = false) {
     add(podBase, MAT.black, pod);
     if (s < 0) {
       screen(panel('arm', 420, 170, 1.45), .32, .13, pod, 0, .035, .1, -UP);
-      add(box(.34, .06, .17), hidden, pod, 0, .05, .1).userData.hologram = 'waiting';
+      add(box(.34, .06, .17), hidden, pod, 0, .05, .1).userData.hologram = 'crew';
       for (let i = 0; i < 3; i++) { const m = lit('#e4eaff', .9), mesh = add(box(.075, .035, .15), m, pod, -.1 + i * .1, .05, -.08); crystals.push({ mesh, material: m, color: C('#e4eaff', .9), near: C(SIGNALS.near), full: C(SIGNALS.need), off: C('#e4eaff', .12) }); }
     } else {
       [[SIGNALS.need, 'need'], [SIGNALS.working, 'work'], [SIGNALS.idle, 'calm']].forEach(([color, role], i) => { const m = lit(color); add(new THREE.CylinderGeometry(.052, .06, .05, 18), m, pod, -.115 + i * .115, .05, -.07); add(new THREE.CylinderGeometry(.068, .07, .025, 18), MAT.metal, pod, -.115 + i * .115, .03, -.07); bigLamps.push({ material: m, color: C(color), role }); });
@@ -300,7 +302,6 @@ export function buildRoom(world, still = false) {
       limit = state.mode === 'limit'; hail = state.mode === 'hail'; offline = state.offline; warp = state.warp;
       if (!started) { started = true; dim = limit || offline ? .3 : 1; commY = hail || limit ? 2.25 : 4.3; }
     },
-    // The colour button under a ray, unless something of the chair is in the way.
     // Which hologram's button the ray lands on, if any.
     hologramAt(ray) {
       if (!pods.visible) return null;

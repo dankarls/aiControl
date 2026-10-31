@@ -18,13 +18,16 @@ function limitsOf(usage, now) {
   return limits;
 }
 
+// Everyone on board, those waiting first. Helpers only show when they're the ones asking.
+export const roster = sessions => sessions.filter(session => !session.parentId || isWaiting(session)).sort(compareSessions);
+
 export function shipState(snapshot, now) {
   const sessions = snapshot?.sessions || [], limits = limitsOf(snapshot?.usage, now);
   const waiting = sessions.filter(isWaiting).sort(compareSessions), working = sessions.filter(session => session.status === 'working' && !session.parentId).length;
   const limit = limits.some(item => item.full);
   return {
     mode: limit ? 'limit' : waiting.length ? 'hail' : working ? 'warp' : 'orbit',
-    warp: limit ? 0 : working, waiting: waiting.length, next: waiting[0] || null, queue: waiting, limits,
+    warp: limit ? 0 : working, waiting: waiting.length, next: waiting[0] || null, roster: roster(sessions), limits,
   };
 }
 
