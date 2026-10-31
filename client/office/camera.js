@@ -58,8 +58,8 @@ export class OfficeCamera {
   play(pose) { this.game = !!pose; if (pose) this.pose = pose; }
 
   update(dt) {
-    this.overhead.update(dt);
     const instant = this.reducedMotion(), k = instant ? 1 : 1 - Math.exp(-dt * EASE);
+    this.overhead.update(dt, instant);
     this.amount += ((this.overview ? 1 : 0) - this.amount) * k;
     this.focusAmount += ((this.focusPoint ? 1 : 0) - this.focusAmount) * k;
     if (Math.abs(this.amount - (this.overview ? 1 : 0)) < 0.001) this.amount = this.overview ? 1 : 0;
