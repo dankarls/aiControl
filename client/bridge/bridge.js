@@ -6,6 +6,7 @@ import { VACANT_MS } from '../office/layout.js';
 import { createBrackets } from './brackets.js';
 import { BridgeCamera } from './camera.js';
 import { CENTER, CHAIR_Z, ROOM, SEAT, deckColliders, stationAt } from './deck.js';
+import { createCrew, crewArrival, crewLook } from './crew.js';
 import { createDisplays, stationName } from './displays.js';
 import { ROSTER, createHologram } from './hologram.js';
 import { createLights } from './lights.js';
@@ -88,8 +89,9 @@ export function mountBridge(container, hooks = {}, options = {}) {
   const leaveChair = () => { seated = false; player.walkTo(new THREE.Vector3(CENTER, 0, SEAT.z - .95)); };
 
   const reticle = createReticle(camera, still), brackets = createBrackets(camera); world.add(camera);
-  const displays = createDisplays(room);
-  function repaint(palette) { room.repaint(palette); lights.repaint(palette); space.repaint(palette); displays.repaint(palette); container.style.setProperty('--bridge-accent', palette.trim); for (const painted of [...Object.values(holograms), reticle, brackets]) painted.paint(palette.tones[2], palette.tones[0]); }
+  const displays = createDisplays(room), figures = room.stations.map(station => { const figure = createCrew(station, { still }); station.crew = figure; return figure; }), seatedAt = [], looks = new Map();
+  let crewStarted = false, wasOffline = false;
+  function repaint(palette) { room.repaint(palette); figures.forEach(figure => figure.paint(palette)); lights.repaint(palette); space.repaint(palette); displays.repaint(palette); container.style.setProperty('--bridge-accent', palette.trim); for (const painted of [...Object.values(holograms), reticle, brackets]) painted.paint(palette.tones[2], palette.tones[0]); }
   repaint(paletteFor(savedColour()));
   const setMode = state => { room.setMode(state); lights.setMode(state); space.setMode(state); };
   setMode({ mode: 'orbit', warp: 0, offline: false });
@@ -195,7 +197,7 @@ export function mountBridge(container, hooks = {}, options = {}) {
   // Stations the sidebar's filter takes in stand out, and the others step back.
   const mark = () => {
     const taken = picked && new Set((last?.sessions || []).filter(picked).map(session => session.parentId || session.id));
-    room.stations.forEach((station, i) => room.setMarked(i, !taken ? null : taken.has(seats?.[i]?.id)));
+    room.stations.forEach((station, i) => { const marked = !taken ? null : taken.has(seats?.[i]?.id); room.setMarked(i, marked); figures[i].setMarked(marked); });
   };
 
   let raf = 0, lastFrame = performance.now(), T = 0;
@@ -223,7 +225,7 @@ export function mountBridge(container, hooks = {}, options = {}) {
       showLeave(); hover(dt);
       reticle.show(player.aiming && !zoomed && !look.overview); reticle.tick(dt, container.clientHeight || 1); brackets.tick(container.clientHeight || 1);
       for (const hologram of Object.values(holograms)) hologram.tick(dt, T, camera);
-      space.tick(dt); lights.tick(dt, T, space); room.tick(dt, T, camera);
+      space.tick(dt); lights.tick(dt, T, space); room.tick(dt, T, camera); figures.forEach(figure => figure.tick(dt, T));
       post.flash = space.flash; post.render(world, space.scene, camera);
     } catch (error) { console.error(error); stop(); }
   }
@@ -240,11 +242,22 @@ export function mountBridge(container, hooks = {}, options = {}) {
       const state = displayState(shipState(live, now), error), { stations, overflow } = assignStations(sessions, seats, now);
       seats = stations; last = live; latest = { snapshot, error };
       setMode(state);
+      // Looks are kept while a session lasts, so an agent is the same crew member after a lost connection.
+      for (const id of looks.keys()) if (!state.offline && !sessions.some(session => session.id === id)) looks.delete(id);
       stationSignals(stations, sessions, state.offline).forEach((signal, i) => {
         room.setStation(i, signal);
-        const seat = stations[i]; room.stations[i].group.userData.sessionId = seat && seat.goneAt == null ? seat.id : null;
-        const session = seat && seat.goneAt == null && sessions.find(({ id }) => id === seat.id); room.stations[i].mesh.userData.screen = session ? stationName(session) : undefined;
+        const seat = stations[i], station = room.stations[i], figure = figures[i], live = seat && seat.goneAt == null ? seat.id : null;
+        station.group.userData.sessionId = live; station.group.userData.bracket = live ? figure.body : null;
+        const session = live && sessions.find(({ id }) => id === live); station.mesh.userData.screen = session ? stationName(session) : undefined;
+        // While offline nobody's known to have left: the figure's hidden, and its seat kept.
+        const id = state.offline ? seatedAt[i] ?? null : live && signal ? live : null;
+        const how = crewArrival({ was: seatedAt[i] ?? null, id, offline: state.offline, wasOffline, started: crewStarted, still });
+        if (id && !looks.has(id)) looks.set(id, crewLook(id, new Set(seatedAt.flatMap((other, n) => n !== i && other && looks.has(other) ? [looks.get(other).key] : []))));
+        if (id) { figure.setLook(looks.get(id)); figure.setSignal(signal); }
+        figure.present(!!id && !state.offline, how === 'none' ? 'cut' : how);
+        seatedAt[i] = id;
       });
+      crewStarted = true; wasOffline = state.offline;
       displays.update({ state, stations, overflow, sessions, usage: snapshot.usage, machine: snapshot.machine, unread: hooks.isUnread, now });
       next.hidden = !state.waiting; next.textContent = `⚠ ${state.waiting}`;
       crew = state.roster; if (holograms.crew.open) showCrew();

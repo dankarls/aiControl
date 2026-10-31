@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CHAIR_Z, CREW_Z, DECK, DISPLAY, EDGE as WALK, HELM_Z, PIT, R, STATION_ANGLES, WALL } from './deck.js';
+import { CHAIR_Z, DECK, DISPLAY, EDGE as WALK, HELM_Z, PIT, R, STATION_ANGLES, WALL } from './deck.js';
 import { LIGHT_SCALE } from './lights.js';
 import { SIGNALS } from './palettes.js';
 import { C, STD, add as place, box, canvas, canvasTexture, lit, seeded } from './parts.js';
@@ -132,14 +132,6 @@ export function buildRoom(world, still = false) {
     for (let i = 0; i < 5; i++) { const m = lit('#fff'); flankBars.push(m); add(box(.07 * K, .22, .02), m, g, (-.17 + i * .085) * K, 1.1, .03); }
   }
 
-  const shellBack = (() => { const s = new THREE.Shape(); s.moveTo(-.14, 0); s.lineTo(.14, 0); s.quadraticCurveTo(.3, .3, .24, .62); s.quadraticCurveTo(0, .74, -.24, .62); s.quadraticCurveTo(-.3, .3, -.14, 0); return new THREE.ExtrudeGeometry(s, { depth: .04, bevelEnabled: true, bevelSize: .015, bevelThickness: .015, bevelSegments: 1, curveSegments: 8 }); })();
-  function chair(parent, x, y, z) {
-    const g = new THREE.Group(); g.position.set(x, y, z); parent.add(g);
-    const foot = box(.05, .025, .34); for (let i = 0; i < 4; i++) add(foot, MAT.black, g, Math.sin(i * 1.57 + .78) * .14, .02, Math.cos(i * 1.57 + .78) * .14, 0, i * 1.57 + .78);
-    add(new THREE.CylinderGeometry(.035, .06, .42, 10), MAT.metal, g, 0, .22); add(new THREE.CylinderGeometry(.24, .2, .07, 16), MAT.seatTop, g, 0, .46);
-    add(shellBack, MAT.shell, g, 0, .46, .2, .12);
-    return g;
-  }
   function rib(theta) {
     const g = around(theta, R - .04);
     add(box(.18, 3.2, .3), MAT.trim, g, 0, DECK + 1.5, 0); add(box(.04, 3, .02), glow.neon, g, 0, DECK + 1.5, .16);
@@ -152,7 +144,7 @@ export function buildRoom(world, still = false) {
   // The bays around the wall. Each has a console, the agent's display on a dark mount, a cove light and a row of tiles in the step.
   const stations = STATION_ANGLES.map((theta, index) => {
     const g = around(theta, WALL), width = 2 * HW, seed = `bay${theta}`;
-    const station = { index, angle: theta, group: g, status: null, lamps: [] };
+    const station = { index, angle: theta, group: g, status: null, lamps: [], crew: null };
     add(box(width, 2.965, .12), MAT.wall, g, 0, DECK + 1.4825, -.06);
     // The console: kick plate, sloped desk with jewels, a pale lip, the agent's display above a dark band.
     add(box(width, .3, .42), MAT.body, g, 0, .51, .21);
@@ -167,7 +159,6 @@ export function buildRoom(world, still = false) {
     // Darkens the display's band in time, for someone waiting. The canvas's band is 110 of its 1054.
     const bandHeight = DISPLAY.height * 110 / 1054;
     station.pulse = add(new THREE.PlaneGeometry(DISPLAY.width, bandHeight), new THREE.MeshBasicMaterial({ color: 0, transparent: true, opacity: 0, depthWrite: false }), g, 0, DISPLAY.bottom + DISPLAY.height - bandHeight / 2, DISPLAY.z + .004); station.pulse.renderOrder = 2;
-    station.chair = chair(g, 0, DECK, CREW_Z); station.chair.visible = false;
     rib(theta + 12);
     // Coved light in the ceiling, and lit tiles in the step down to the pit: both show the session's state.
     const cove = around(theta, 6.42 * K, overhead), coveMat = lit('#000');
@@ -280,7 +271,7 @@ export function buildRoom(world, still = false) {
     // Signals stop at full brightness: pushed past it their channels clip, and red turns the orange of a near limit.
     setStation(index, status) {
       const station = stations[index]; if (station.status === status) return;
-      station.status = status; station.chair.visible = !!status; paintRow(station);
+      station.status = status; paintRow(station);
       for (const j of jewels) if (j.owner === station) { j.bright = status ? 1.5 : .7; if (palette) paintJewel(j); }
     },
     // A sidebar filter: true for a station it takes in, false for one it leaves out, null with no filter.
