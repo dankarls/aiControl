@@ -8,19 +8,12 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { WALL_H, WALL_T, canvasTexture, floorShadow, glowTexture, once, paint, piece, swingDoor } from './furniture.js';
-import { LIMB, outline } from './fruit.js';
+import { COPY, INK, cardsMesh, face, fit, lines, printOn } from './cutouts.js';
 import { DOOR_H, DOOR_W, KITCHEN, PAN, SPOTS, VESSELS, behind, flightBoxes, walkBoxes } from './kitchen-plan.js';
 import { kitchenDoor, kitchenShift } from './layout.js';
 import { dims } from './lights.js';
 import { createWindows } from './windows.js';
 import { toonMaterial } from './toon.js';
-
-// Every word the company has printed. Its name goes everywhere from here.
-export const COPY = {
-  company: 'LOW-HANGING FRUIT LTD.', motto: 'Ripe for disruption.', wall: 'RIPE FOR DISRUPTION', wet: ['CAUTION:', 'MOIST'], special: ["TODAY'S", 'SPECIAL:', 'SYNERGY'], juicer: ['NOT', 'FUNNY'],
-  // In the plan's order: cutout-1 is the pear.
-  cutouts: [{ fruit: 'pear', says: "LET'S PEAR PROGRAM!" }, { fruit: 'orange', says: 'ORANGE YOU GLAD IT SHIPPED?' }, { fruit: 'banana', says: 'NEVER SLIP ON A DEADLINE' }, { fruit: 'lemon', says: 'ZERO LEMONS SHIPPED*', small: '*this quarter' }],
-};
 
 export const DOOR_NEAR = 2.5, DOOR_FAR = 3; // they open within the one, and once open they stay until past the other
 const MOVE = 0.45, SWUNG = 1.62; // seconds to swing; radians, a little past square to the wall
@@ -109,80 +102,25 @@ function roomParts() {
   return parts;
 }
 
-// What's printed: one canvas, so one draw, and only built when the room is. Each of it a plane on a plan's box, so it's where a throw meets it and turns with it.
+// What's printed on this room's own canvas, so one draw, and only built when the room is; the cutouts' cards are on a sheet of their own (cutouts.js).
 const JUICER = { x: -4.7, z: -7.62 }, isCard = b => /^cutout/.test(b.surface) && b.half.y > 0.7 && b.half.x > 0.4;
-const INK = '#1b1a1f', CARDS = ['#2f6b66', '#1f7a8c', '#c9473c', '#3a6ea5'], FRUIT = ['#b5c934', '#f28c28', '#f7d23e', '#f9e04b'], KRAFT = '#b08a5a'; // the fruits' colours are status.js's
-const ATLAS = [2048, 1640], CELLS = { cutouts: [0, 1, 2, 3].map(i => [i * 512, 0, 512, 880]), banner: [0, 880, 1024, 240], motto: [904, 1140, 1144, 134], back: [0, 1120, 128, 220], wet: [128, 1120, 300, 506], special: [428, 1120, 340, 510], juicer: [768, 1120, 128, 128] };
-const face = (size, family = 'system-ui, sans-serif') => `bold ${size}px ${family}`;
-// The biggest size up to `most` at which each word of `text` fits in `w` and the wrapped lines in `h`: lines, size.
-const fit = (g, text, w, h, most) => {
-  for (let size = most; ; size -= 2) {
-    g.font = face(size);
-    const lines = []; let line = '';
-    for (const word of text.split(' ')) { const next = line ? `${line} ${word}` : word; if (line && g.measureText(next).width > w) { lines.push(line); line = word; } else line = next; }
-    lines.push(line);
-    if (size <= 16 || (lines.length * size * 1.12 <= h && !lines.some(l => g.measureText(l).width > w))) return { lines, size };
-  }
-};
-const lines = (g, list, x, y, size, step = size * 1.12) => { g.textAlign = 'center'; g.textBaseline = 'middle'; list.forEach((l, i) => g.fillText(l, x, y + (i - (list.length - 1) / 2) * step)); };
-// The fruit's own black hand (fruit.js's fistGeometry) side-on: an arm up to a wide fist, fingers stacked at the far side, a short fat thumb at the near edge leaning off them. It's on anything, so it has a light edge.
-function drawThumb(g, hx, hy, fromX, fromY) {
-  const FINGER = 100 / 3;
-  const parts = [[hx - 52, hy - 50, 100, 100, 34], ...[0, 1, 2].map(k => [hx + 4, hy - 50 + k * FINGER, 56, FINGER, FINGER / 2])];
-  g.save(); g.lineCap = g.lineJoin = 'round';
-  for (const [color, grow] of [['#fbf6e8', 8], [LIMB, 0]]) {
-    g.strokeStyle = g.fillStyle = color; g.lineWidth = 20 + grow; g.beginPath(); g.moveTo(fromX, fromY); g.quadraticCurveTo(hx - 56, fromY, hx - 38, hy + 34); g.stroke(); g.lineWidth = grow;
-    g.save(); g.translate(hx - 28, hy - 34); g.rotate(-0.26); g.beginPath(); g.roundRect(-23, -56, 46, 80, 23); g.fill(); if (grow) g.stroke(); g.restore();
-    for (const p of parts) { g.beginPath(); g.roundRect(...p); g.fill(); if (grow) g.stroke(); }
-  }
-  g.strokeStyle = '#fbf6e8'; g.lineWidth = 3; for (let k = 1; k < 3; k++) { g.beginPath(); g.moveTo(hx + 22, hy - 50 + k * FINGER); g.lineTo(hx + 52, hy - 50 + k * FINGER); g.stroke(); }
-  g.restore();
-}
-function drawCutout(g, { fruit, says, small }, i) {
-  const [cx] = CELLS.cutouts[i]; g.save(); g.translate(cx, 0);
-  g.beginPath(); g.roundRect(8, 6, 496, 868, 34); g.fillStyle = CARDS[i]; g.fill(); g.save(); g.clip();
-  g.fillStyle = '#ffffff22'; for (let a = 0; a < 12; a++) { g.beginPath(); g.moveTo(240, 590); const t = (a + 0.5) * Math.PI / 6; g.arc(240, 590, 900, t, t + 0.26); g.fill(); }
-  g.fillStyle = INK; g.fillRect(0, 806, 512, 80); g.fillStyle = '#fbf6e8'; g.font = face(30); lines(g, [COPY.company], 256, 842, 30); g.restore();
-  // The fruit, as tall as there's room for, feet on the strip.
-  const shape = outline(fruit), xs = shape.map(p => p[0]), ys = shape.map(p => p[1]), low = Math.min(...ys), high = Math.max(...ys), scale = 440 / (high - low), mid = (Math.min(...xs) + Math.max(...xs)) / 2, at = ([x, y]) => [230 + (x - mid) * scale, 796 - (y - low) * scale];
-  g.lineJoin = 'round'; g.beginPath(); shape.forEach(p => g.lineTo(...at(p))); g.closePath(); g.fillStyle = FRUIT[i]; g.fill(); g.lineWidth = 10; g.strokeStyle = INK; g.stroke();
-  const top = at([mid, high]); if (fruit !== 'banana') { g.lineWidth = 14; g.lineCap = 'round'; g.strokeStyle = '#6b4a2a'; g.beginPath(); g.moveTo(top[0], top[1] + 4); g.lineTo(top[0] + 12, top[1] - 26); g.stroke(); g.fillStyle = '#4f9a4a'; g.beginPath(); g.ellipse(top[0] + 44, top[1] - 16, 34, 15, -0.35, 0, 7); g.fill(); g.lineWidth = 6; g.strokeStyle = INK; g.stroke(); }
-  // A face, like theirs, and the thumb's arm reaching off the body: the same idea as the thumbsup pose.
-  const fy = 796 - 0.42 * 440, fx = fruit === 'banana' ? 282 : 230; g.fillStyle = INK;
-  for (const side of [-1, 1]) { g.beginPath(); g.ellipse(fx + side * 38, fy, 13, 19, 0, 0, 7); g.fill(); }
-  g.lineWidth = 9; g.lineCap = 'round'; g.strokeStyle = INK; g.beginPath(); g.arc(fx, fy + 32, 40, 0.25, Math.PI - 0.25); g.stroke();
-  drawThumb(g, 420, 566, fx + 84, 680);
-  // What it says, and a line from the bubble to the fruit.
-  const bx = 22, by = 20, bw = 468, bh = 262; g.fillStyle = '#ffffff'; g.lineWidth = 8; g.beginPath(); g.moveTo(170, by + bh - 6); g.lineTo(fx - 14, top[1] - 8 > by + bh + 6 ? top[1] - 8 : by + bh + 26); g.lineTo(270, by + bh - 6); g.closePath(); g.fill(); g.stroke();
-  g.beginPath(); g.roundRect(bx, by, bw, bh, 30); g.fill(); g.stroke(); g.beginPath(); g.moveTo(174, by + bh - 4); g.lineTo(266, by + bh - 4); g.lineWidth = 10; g.strokeStyle = '#fff'; g.stroke();
-  const room = small ? bh - 62 : bh - 28, { lines: said, size } = fit(g, says, bw - 36, room, 84); g.fillStyle = INK; g.font = face(size); lines(g, said, bx + bw / 2, by + 14 + room / 2, size);
-  if (small) { g.font = face(30); lines(g, [small], bx + bw / 2, by + bh - 30, 30); }
-  g.restore();
-}
+const ATLAS = [1156, 892], CELLS = { banner: [0, 0, 1024, 240], juicer: [1028, 0, 128, 128], motto: [0, 244, 1144, 134], wet: [0, 382, 300, 506], special: [304, 382, 340, 510] };
+const { fromCell, onFace } = printOn(ATLAS);
 function drawPrint(g, W, H) {
   g.clearRect(0, 0, W, H);
-  COPY.cutouts.forEach((c, i) => drawCutout(g, c, i));
   { const [x, y, w, h] = CELLS.banner; g.fillStyle = LOOK.banner; g.fillRect(x, y, w, h); g.strokeStyle = '#f2c230'; g.lineWidth = 8; g.strokeRect(x + 12, y + 12, w - 24, h - 24); g.fillStyle = '#fbf6e8'; const big = fit(g, COPY.company, w - 70, 120, 104); g.font = face(big.size); lines(g, big.lines, x + w / 2, y + 88, big.size); g.fillStyle = '#f2c230'; g.font = face(58); lines(g, [COPY.motto], x + w / 2, y + 176, 58); }
   { const [x, y, w, h] = CELLS.motto, { size } = fit(g, COPY.wall, w - 8, h, 124); g.fillStyle = '#2f6b66'; g.font = face(size); lines(g, [COPY.wall], x + w / 2, y + h / 2 + 4, size); }
-  { const [x, y, w, h] = CELLS.back; g.fillStyle = KRAFT; g.beginPath(); g.roundRect(x + 2, y + 1, w - 4, h - 2, 9); g.fill(); g.fillStyle = '#9a7648'; g.fillRect(x + 2, y + 150, w - 4, 3); }
   { const [x, y, w, h] = CELLS.wet; g.fillStyle = LOOK['sign-1']; g.fillRect(x, y, w, h); g.fillStyle = INK; for (const [text, mid, tall] of [[COPY.wet[0], 126, 190], [COPY.wet[1], 358, 358]]) { const { size } = fit(g, text, w - 44, h, 200); g.save(); g.translate(x + w / 2, y + mid); g.scale(1, tall / size); g.font = face(size); lines(g, [text], 0, 0, size); g.restore(); } g.lineWidth = 10; g.strokeStyle = INK; g.strokeRect(x + 7, y + 7, w - 14, h - 14); }
   { const [x, y, w, h] = CELLS.special; g.fillStyle = LOOK['sign-2']; g.fillRect(x, y, w, h); g.strokeStyle = '#a87b4f'; g.lineWidth = 16; g.strokeRect(x + 8, y + 8, w - 16, h - 16); g.fillStyle = '#fbf6e8'; const top = COPY.special.slice(0, 2), a = fit(g, top.join(' '), w - 56, 170, 72), b = fit(g, COPY.special[2], w - 50, 120, 80); g.font = face(a.size); lines(g, top, x + w / 2, y + 150, a.size); g.fillStyle = '#f2c230'; g.font = face(b.size); lines(g, [COPY.special[2]], x + w / 2, y + 340, b.size); }
   { const [x, y, w, h] = CELLS.juicer; g.fillStyle = '#ffe873'; g.fillRect(x, y, w, h); g.fillStyle = INK; const { size } = fit(g, COPY.juicer[1], w - 14, 44, 34); g.font = face(size); lines(g, COPY.juicer, x + w / 2, y + h / 2, size); }
 }
-const fromCell = (g, [x, y, w, h]) => { const uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, (x + uv.getX(i) * w) / ATLAS[0], 1 - (y + (1 - uv.getY(i)) * h) / ATLAS[1]); return g; };
-// A plane on a box's face, its picture from a cell: from the front, or (`behind`) its back as you'd read it from there.
-const onFace = (b, cell, behind = false) => {
-  const g = fromCell(new THREE.PlaneGeometry(b.half.x * 2, b.half.y * 2), cell);
-  if (behind) g.rotateY(Math.PI);
-  return g.translate(0, 0, (behind ? -1 : 1) * (b.half.z + 0.0015)).applyQuaternion(b.quaternion).translate(b.centre.x, b.centre.y, b.centre.z);
-};
 function printed() {
   const of = name => flightBoxes().filter(b => b.surface === name), cards = [1, 2, 3, 4].map(n => of(`cutout-${n}`).find(isCard)), [banner] = of('banner'), [jx, jz] = [JUICER.x, JUICER.z];
   const motto = new THREE.PlaneGeometry(SPOTS.motto.w, SPOTS.motto.h).rotateY(Math.PI / 2).translate(-KITCHEN.width + 0.006, SPOTS.motto.y, SPOTS.motto.z), note = new THREE.PlaneGeometry(0.11, 0.11).translate(jx, 0.985, jz + 0.092);
-  const all = [...cards.flatMap((c, i) => [onFace(c, CELLS.cutouts[i]), onFace(c, CELLS.back, true)]), onFace(banner, CELLS.banner), onFace(banner, CELLS.banner, true), ...of('sign-1').map(b => onFace(b, CELLS.wet)), ...of('sign-2').map(b => onFace(b, CELLS.special)), fromCell(motto, CELLS.motto), fromCell(note, CELLS.juicer)];
+  const all = [onFace(banner, CELLS.banner), onFace(banner, CELLS.banner, true), ...of('sign-1').map(b => onFace(b, CELLS.wet)), ...of('sign-2').map(b => onFace(b, CELLS.special)), fromCell(motto, CELLS.motto), fromCell(note, CELLS.juicer)];
   const print = new THREE.Mesh(mergeGeometries(all), toonMaterial('#ffffff', { map: canvasTexture(...ATLAS, drawPrint), alphaTest: 0.5, alphaToCoverage: true }));
   print.raycast = () => {};
-  return print;
+  return [print, cardsMesh(cards.map((card, look) => ({ card, look })))];
 }
 
 // The walls in plaster with their skirting, the north wall's tiles over the counter, and the office's wall lined this side, its doorway cut out.
@@ -220,7 +158,7 @@ function buildRoom(group) {
   floor.position.set(-w / 2, 0, mid); floor.userData.floor = true; group.add(floor);
   const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(w, long).rotateX(Math.PI / 2), dims(new THREE.MeshBasicMaterial({ map: repeating(tile, w / 1.2, long / 1.2), color: '#dfe2e7' }), 0.3));
   ceiling.position.set(-w / 2, WALL_H, mid); group.add(ceiling);
-  group.add(piece('kitchenShell', shellParts, 0), piece('kitchenRoom', roomParts), printed());
+  group.add(piece('kitchenShell', shellParts, 0), piece('kitchenRoom', roomParts), ...printed());
   // Switched off, the lamps go grey and their glow goes out (black adds nothing). A ray goes through what only shines.
   const shine = new THREE.Mesh(once('kitchenGlow', () => paint(glowParts())), new THREE.MeshBasicMaterial({ vertexColors: true })); shine.raycast = () => {}; group.add(shine);
   const lamps = new THREE.Mesh(mergeGeometries(LAMPS.map(([x, z]) => B(x - 0.6, WALL_H - 0.05, z - 0.18, x + 0.6, WALL_H, z + 0.18))), dims(new THREE.MeshBasicMaterial({ color: '#fff8e2' }), 0.3)); lamps.raycast = () => {}; group.add(lamps);

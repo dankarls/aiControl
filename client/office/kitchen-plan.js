@@ -53,9 +53,9 @@ const leaning = (surface, x, z, yaw, lean, half, out = 0) => {
 };
 // A cardboard cutout: the card, and behind it a strut from a foot on the floor to two thirds of the way up the card's back.
 export const CARD = [0.42, 0.72, 0.006];
-const cutout = (n, x, z, yaw, lean) => {
+export const cutout = (surface, x, z, yaw, lean) => {
   const up = CARD[1] * 4 / 3, across = up * Math.sin(rad(lean)), height = up * Math.cos(rad(lean)), reach = 0.3;
-  return [leaning(`cutout-${n}`, x, z, yaw, lean, CARD), leaning(`cutout-${n}`, x, z, yaw + 180, Math.atan2(reach, height) * 180 / Math.PI, [0.035, Math.hypot(reach, height) / 2, 0.006], across + reach + 0.012)];
+  return [leaning(surface, x, z, yaw, lean, CARD), leaning(surface, x, z, yaw + 180, Math.atan2(reach, height) * 180 / Math.PI, [0.035, Math.hypot(reach, height) / 2, 0.006], across + reach + 0.012)];
 };
 // An A-frame sign: two faces leaning on each other, meeting at the top.
 const aFrame = (surface, x, z, yaw, half, lean) => [0, 180].map(side => leaning(surface, x, z, yaw + side, lean, half, 2 * half[1] * Math.sin(rad(lean))));
@@ -102,7 +102,7 @@ const PARTS = shut => [
   ...[[-7.6, -1.95, 15], [-6.9, -1.95, -30], [-5.8, -1.95, 40], [-4.9, -1.95, -20], [-8.3, -1.4, 140], [-3.05, -1.4, 255], [-4.24, 0.6, 100], [-8.8, 0.5, 200]].flatMap(([x, z, yaw], i) => chair(i + 1, x, z, yaw)),
   ...chair(9, -2.9, -0.2, 50, 90),
   box('vending', -10, 0, 0, -9.2, 1.9, 0.8),
-  ...CUTOUTS.flatMap(([x, z, yaw, lean], i) => cutout(i + 1, x, z, yaw, lean)),
+  ...CUTOUTS.flatMap(([x, z, yaw, lean], i) => cutout(`cutout-${i + 1}`, x, z, yaw, lean)),
   // ponytail: hung by its top edge on two cords, it tips forward all the same.
   tilt('banner', [-2, 2.45, -6.6], [1.3, 0.3, 0.012], angles(turned(8, -24))),
   ...aFrame('sign-1', -1.9, -5.9, 20, [0.19, 0.32, 0.008], 12), ...aFrame('sign-2', -3.4, 0.45, 60, [0.3, 0.45, 0.012], 11),

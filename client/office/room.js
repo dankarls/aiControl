@@ -11,6 +11,7 @@ import { createWindows } from './windows.js';
 import { createScreens, SCREEN_W, SCREEN_H } from './screens.js';
 import { createSecret, DOOR } from './secret.js';
 import { createKitchen } from './kitchen.js';
+import { cardsMesh, officeCutouts } from './cutouts.js';
 import { DESK_W, DESK_D, COFFEE_X, KITCHEN_DOOR_W, kitchenDoor } from './layout.js';
 import {
   WALL_H, WALL_T, shared, once, rounded, mesh, canvasTexture, paint, painted, piece, deskItem, coffeeCup, plant, picture, sofa, armchair, lowTable, floorLamp, rug,
@@ -237,12 +238,12 @@ export function createRoom(scene, renderer) {
     secret: createSecret({ onPress: () => room.onSecret?.(), onMove: () => room.refreshFlight() }),
     // The kitchen through the left wall's doors; when it's first built or its doors move, things fly differently (and new things need dimming).
     kitchen: createKitchen({ onMove: () => { room.refreshFlight(); lights.refresh(); } }),
-    colliders: [], flightColliders: [], lintels: [], furnitureColliders: [], fadeables: { ceiling: null, walls: [] }, boards: {},
+    colliders: [], flightColliders: [], lintels: [], cutouts: [], furnitureColliders: [], fadeables: { ceiling: null, walls: [] }, boards: {},
     // What thrown things meet: what blocks walking, less what's only for walking, plus what you can't walk into (the wall over a
     // doorway). A new list whenever room.colliders changes or a door moves: it's how props.js knows to wake things.
     // ponytail: so things can be thrown into the games room and lie there. Picked up in there they land back in the office, the
     // goose ignores them, and a ball in there floats over nothing in the overview, which doesn't draw the room.
-    refreshFlight() { room.flightColliders = [...room.colliders.filter(box => !box.walkOnly), ...room.lintels, ...room.kitchen.flight]; },
+    refreshFlight() { room.flightColliders = [...room.colliders.filter(box => !box.walkOnly), ...room.lintels, ...room.kitchen.flight, ...room.cutouts]; },
     deskAnchor(id) {
       const desk = desks.get(id); if (!desk) return null;
       desk.group.updateMatrixWorld();
@@ -514,6 +515,11 @@ export function createRoom(scene, renderer) {
     hang(front, picture(0, 1.2, 0.8), lx - width / 2, 1.85);
     // Front wall between the coffee corner and the boards: a picture and a plant when there's room.
     if (door.x - 2.2 > 3.4) { hang(front, picture(5, 0.8, 0.8), (2.6 + door.x - 2.2) / 2 - width / 2, 1.7); place(plant('bush'), door.x - 2.6, depth - 0.45); }
+
+    // Low-Hanging Fruit's cutouts along the walls (cutouts.js): one mesh, walked round by their boxes and thrown at by their cards and struts.
+    const cutouts = officeCutouts({ width, depth });
+    room.cutouts = cutouts.flatMap(c => [c.card, c.strut]); room.furnitureColliders.push(...cutouts.map(c => c.walk)); shell.add(cardsMesh(cutouts));
+    for (const { walk, yaw } of cutouts) shadowUnder((walk.min.x + walk.max.x) / 2, (walk.min.z + walk.max.z) / 2, 0.85, 0.5, THREE.MathUtils.degToRad(yaw));
 
     // Ceiling tiles and round lamps, each with a soft glow; hidden as one group in the overview.
     const tiles = canvasTexture(128, 128, g => { g.fillStyle = '#fbfbfa'; g.fillRect(0, 0, 128, 128); g.strokeStyle = '#d8dce2'; g.lineWidth = 4; g.strokeRect(0, 0, 128, 128); });
