@@ -104,3 +104,21 @@ test('corrupt or old saves start fresh', () => {
   assert.doesNotThrow(() => saveProgress(fresh));
 });
 
+
+test('a bad score, slot or day cannot wipe the save', () => {
+  const s = store(), p = loadProgress(s);
+  recordLevel(p, 'paper', { made: true, score: 2000, surfaces: ['ceiling'] });
+  recordLevel(p, 'rubber', {}); recordLevel(p, 'mug', { made: true, score: NaN, surfaces: [] }); recordLevel(p, 'roll', { score: -5 });
+  assert.deepEqual(p.best, { paper: 2000, rubber: 0, mug: 0, roll: 0 });
+  recordDaily(p, '2026-10-30', 3, { score: 5 }); recordDaily(p, '2026-10-30', -1, { score: 5 }); recordDaily(p, '2026-10-30', 1.5, { score: 5 });
+  assert.deepEqual(p.daily, {});
+  recordDaily(p, '2026-10-30', 0, {}); recordDaily(p, '2026-10-30', 1, { score: NaN });
+  assert.deepEqual(p.daily['2026-10-30'], [0, 0, null]);
+  for (const k of ['', 'x', '2026-13-01', '2026-02-30', '2026-10-30T00', undefined]) recordDaily(p, k, 0, { score: 5 });
+  assert.deepEqual(Object.keys(p.daily), ['2026-10-30']);
+  saveProgress(p, s);
+  assert.deepEqual(loadProgress(s), p);
+  assert.equal(loadProgress(store('{"lines":{},"best":{},"daily":{"nope":[null,null,null]}}')).daily.nope, undefined);
+});
+
+test('big scores group after rounding', () => assert.equal(copyLine('2026-10-30', [12400.5, 999.6, 0]), 'Trickshot 30 Oct: 12,401 / 1,000 / miss'));

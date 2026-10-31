@@ -7,7 +7,8 @@ const obj = v => v && typeof v === 'object' && !Array.isArray(v), score = v => t
 const valid = p => obj(p) && obj(p.lines) && obj(p.best) && obj(p.daily)
   && Object.values(p.lines).every(l => obj(l) && LINES.every(k => typeof l[k] === 'boolean'))
   && Object.values(p.best).every(score)
-  && Object.values(p.daily).every(d => Array.isArray(d) && d.length === 3 && d.every(v => v === null || score(v)));
+  && Object.keys(p.daily).every(goodKey) && Object.values(p.daily).every(d => Array.isArray(d) && d.length === 3 && d.every(v => v === null || score(v)));
+const goodScore = v => score(v) ? v : 0, goodKey = k => typeof k === 'string' && /^\d{4}-\d\d-\d\d$/.test(k) && Number.isFinite(dayAt(k)) && new Date(dayAt(k)).toISOString().slice(0, 10) === k;
 const defaultStore = () => { try { return localStorage; } catch { return null; } };
 
 export function loadProgress(store = defaultStore()) {
@@ -23,8 +24,8 @@ export function saveProgress(progress, store = defaultStore()) { try { store.set
 export function recordLevel(progress, id, result) {
   const entry = MONDAY.find(e => e.id === id); if (!entry) return progress;
   const line = progress.lines[id] ||= { away: false, trick: false, score: false };
-  for (const k of LINES) line[k] = line[k] || lineDone(k, result, entry);
-  progress.best[id] = Math.max(progress.best[id] || 0, result.score);
+  for (const k of LINES) line[k] = line[k] || !!lineDone(k, result, entry);
+  progress.best[id] = Math.max(progress.best[id] || 0, goodScore(result.score));
   return progress;
 }
 
@@ -32,8 +33,9 @@ const dayAt = key => Date.parse(`${key}T00:00:00Z`);
 
 // Takes the key it was given; never reads the clock. A slot keeps the best so far.
 export function recordDaily(progress, key, index, result) {
+  if (!goodKey(key) || !Number.isInteger(index) || index < 0 || index > 2) return progress;
   const day = progress.daily[key] ||= [null, null, null];
-  day[index] = Math.max(day[index] || 0, result.score);
+  day[index] = Math.max(day[index] || 0, goodScore(result.score));
   const now = dayAt(key);
   for (const k of Object.keys(progress.daily)) if (now - dayAt(k) > KEEP_DAYS * DAY_MS) delete progress.daily[k];
   return progress;

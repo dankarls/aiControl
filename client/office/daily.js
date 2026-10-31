@@ -25,5 +25,5 @@ export function challenges(key) {
   return out;
 }
 
-const num = n => String(n).replace(/\B(?=(\d{3})+$)/g, ',');
+const num = n => String(Math.round(n)).replace(/\B(?=(\d{3})+$)/g, ',');
 export const copyLine = (key, bests) => { const [, m, d] = key.split('-'); return `Trickshot ${+d} ${MONTHS[m - 1]}: ${[0, 1, 2].map(i => bests[i] == null ? '-' : bests[i] > 0 ? num(bests[i]) : 'miss').join(' / ')}`; };
