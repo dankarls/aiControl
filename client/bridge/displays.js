@@ -5,7 +5,7 @@ import { usageWindowView } from '../usage-presentation.js';
 import { SIGNALS } from './palettes.js';
 import { signalOf, stationSignals } from './ship.js';
 
-const INK = '#f2f4ff', DIM = '#aeb4c6', Y = '#eef0f6', O = '#c4cad8', BACK = '#050406', OFF = '#262c33', { need: RED, working: TEAL, idle: BLUE, near: ORANGE } = SIGNALS;
+const INK = '#f2f4ff', DIM = '#aeb4c6', Y = '#eef0f6', O = '#c4cad8', BACK = '#0c1630', OFF = '#262c33', { need: RED, working: TEAL, idle: BLUE, near: ORANGE } = SIGNALS;
 const SIGNAL_COLOUR = { need: RED, working: TEAL, idle: BLUE };
 const LABELS = { question: 'HAILING', permission: 'AUTHORIZE', working: 'ON DUTY', idle: 'STANDBY', error: 'FAULT', offline: 'OFFLINE' };
 const GLYPHS = { claude: '✳', codex: '⌘' };
@@ -55,7 +55,7 @@ function cells(g, x, y, w, h, level, color) {
 const requestText = session => { const request = session.requests?.[0]; return request?.questions?.[0]?.question || request?.title || session.asks; };
 
 // The plain facts a station's display shows, so it's redrawn only when one of them changes.
-export function agentFacts(session, unread, offline, helpers = 0) {
+export function agentFacts(session, unread, offline, helpers = 0, shot = null) {
   const signal = offline ? 'idle' : signalOf(session), used = session.context?.used || 0, lines = monitorLines(session, MAX_FEED).lines.filter(({ text }) => text);
   const steps = session.plan?.length ? session.plan : null, current = steps && (steps.find(step => step.status === 'active') || steps.find(step => step.status === 'pending'));
   return {
@@ -63,30 +63,46 @@ export function agentFacts(session, unread, offline, helpers = 0) {
     request: signal === 'need' ? requestText(session) || 'Waiting for you' : null,
     feed: lines.length ? lines : session.detail ? [{ kind: 'assistant', text: session.detail }] : [],
     progress: steps && { done: steps.filter(step => step.status === 'done').length, total: steps.length, statuses: steps.map(step => step.status), current: current?.step || 'All steps done' },
-    used, usd: session.cost?.usd ?? null, model: [session.model?.replace(/^claude-/, ''), session.effort].filter(Boolean).join(' · '), helpers,
+    used, usd: session.cost?.usd ?? null, model: [session.model?.replace(/^claude-/, ''), session.effort].filter(Boolean).join(' · '), helpers, shot,
   };
 }
 // Sizes on the 1024 × 1054 canvas, big enough that the title and feed read from the chair; the strip is for when you've flown in.
-const PAD = 32, BAND = 110, TITLE = [600, 116, 128], REQUEST = [600, 76, 88], FEED = [400, 76, 88], PROGRESS = 130, STRIP = 70;
+const PAD = 32, BAND = 110, TITLE = [600, 116, 128], REQUEST = [600, 76, 88], FEED = [400, 76, 88], PROGRESS = 130, STRIP = 70, SHOT_FEED = 2, SHOT_GAP = 12;
+// The picture's own canvas size: the most a display ever shows of one.
+export const SHOT_SIZE = { width: 960, height: 540 };
+// The newest screenshot, fitted into the room left between the text and the progress.
+function shotLayout(shot, W, top, bottom) {
+  const box = { x: PAD, y: top + SHOT_GAP, w: W - 2 * PAD, h: Math.max(0, bottom - top - 2 * SHOT_GAP) }, k = shot.width > 0 && shot.height > 0 ? Math.min(box.w / shot.width, box.h / shot.height) : 0;
+  const w = shot.width * k, h = shot.height * k;
+  return { box, rect: { x: box.x + (box.w - w) / 2, y: box.y + (box.h - h) / 2, w, h }, key: shot.key, count: shot.count };
+}
+// Whether a point on a display (its texture's u and v, v upwards) is on the picture.
+export function shotUnder(rect, u, v, W, H) {
+  if (!rect) return false;
+  const x = u * W, y = (1 - v) * H;
+  return x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
+}
 // `measure(text, weight, size)` gives a line's width in that font.
 export function agentLayout(facts, W, H, measure) {
   const width = W - 2 * PAD, sized = ([weight, size]) => text => measure(text, weight, size);
-  const dot = !!facts.unread, title = wrapLines(facts.title, width - (dot ? 44 : 0), 2, sized(TITLE));
+  const dot = !!facts.unread, shot = facts.shot, title = wrapLines(facts.title, width - (dot ? 44 : 0), shot ? 1 : 2, sized(TITLE));
   const request = facts.request ? fitText(facts.request, width, sized(REQUEST)) : null, strip = [facts.used ? `${Math.round(facts.used / 1000)}K` : '—'];
   if (facts.usd != null) strip.push(dollars(facts.usd));
   if (facts.model) strip.push(facts.model);
   if (facts.helpers) strip.push(`${facts.helpers} HELPER${facts.helpers > 1 ? 'S' : ''}`);
   const room = H - BAND - PAD / 2 - title.length * TITLE[2] - (request ? REQUEST[2] : 0) - (facts.progress ? PROGRESS : 0) - STRIP;
-  const fits = Math.max(0, Math.floor(room / FEED[2])), feed = (fits ? facts.feed.slice(-fits) : []).map(({ kind, text }) => ({ kind, text: fitText(text, width, sized(FEED)) }));
-  return { band: { height: BAND, colour: SIGNAL_COLOUR[facts.signal] }, label: `${facts.glyph} ${facts.label}`, project: facts.project, title, request, feed, progress: facts.progress, strip, dot };
+  const fits = Math.max(0, Math.min(shot ? SHOT_FEED : Infinity, Math.floor(room / FEED[2]))), feed = (fits ? facts.feed.slice(-fits) : []).map(({ kind, text }) => ({ kind, text: fitText(text, width, sized(FEED)) }));
+  const textEnd = BAND + PAD / 2 + title.length * TITLE[2] + (request ? REQUEST[2] : 0) + feed.length * FEED[2];
+  return { band: { height: BAND, colour: SIGNAL_COLOUR[facts.signal] }, label: `${facts.glyph} ${facts.label}`, project: facts.project, title, request, feed, progress: facts.progress, strip, dot, shot: shot ? shotLayout(shot, W, textEnd, H - STRIP - (facts.progress ? PROGRESS : 0)) : null };
 }
 const FEED_TONE = { tool: DIM, assistant: INK, user: O };
+const measureOn = g => (text, weight, size) => { g.font = font(weight, size); return g.measureText(text).width; };
 // What the session itself is doing, as an Office monitor shows it. An empty bay is dark but for its number.
-function drawAgent(g, W, H, facts, index) {
-  g.fillStyle = facts === 'dark' ? '#000' : facts ? BACK : '#10162c'; g.fillRect(0, 0, W, H);
+function drawAgent(g, W, H, facts, index, bitmap) {
+  g.fillStyle = facts === 'dark' ? '#000' : facts ? BACK : '#1a2750'; g.fillRect(0, 0, W, H);
   if (facts === 'dark') return;
-  if (!facts) { g.fillStyle = '#4c5676'; g.font = font(600, 120); g.textAlign = 'center'; g.fillText(`BAY ${index + 1}`, W / 2, H / 2 + 40); g.textAlign = 'left'; return; }
-  const measure = (text, weight, size) => { g.font = font(weight, size); return g.measureText(text).width; }, out = agentLayout(facts, W, H, measure), right = W - PAD;
+  if (!facts) { g.fillStyle = '#8391c0'; g.font = font(600, 120); g.textAlign = 'center'; g.fillText(`BAY ${index + 1}`, W / 2, H / 2 + 40); g.textAlign = 'left'; return; }
+  const out = agentLayout(facts, W, H, measureOn(g)), right = W - PAD;
   g.fillStyle = out.band.colour; g.fillRect(0, 0, W, BAND);
   g.fillStyle = '#0b0506'; g.font = font(700, 82); g.fillText(out.label, PAD, 82); const taken = g.measureText(out.label).width;
   g.font = font(600, 64); g.textAlign = 'right'; g.fillText(fit(g, out.project.toUpperCase(), right - PAD - taken - 40), right, 80); g.textAlign = 'left';
@@ -97,6 +113,12 @@ function drawAgent(g, W, H, facts, index) {
   if (out.request) { y += REQUEST[2]; g.fillStyle = '#ffc4b6'; g.font = font(REQUEST[0], REQUEST[1]); g.fillText(out.request, PAD, y - 16); }
   g.font = font(FEED[0], FEED[1]);
   for (const { kind, text } of out.feed) { y += FEED[2]; g.fillStyle = FEED_TONE[kind]; g.fillText(text, PAD, y - 16); }
+  if (out.shot && bitmap) {
+    const { rect, count } = out.shot;
+    // Held below full white, so a bright page glows with the rest of the room rather than flooding it.
+    g.globalAlpha = .88; g.drawImage(bitmap, rect.x, rect.y, rect.w, rect.h); g.globalAlpha = 1;
+    if (count > 1) { g.font = font(700, 52); const label = String(count), pill = g.measureText(label).width + 36, x = rect.x + rect.w - pill - 12, y = rect.y + rect.h - 76; g.fillStyle = '#0a1226e0'; g.beginPath(); g.roundRect(x, y, pill, 64, 32); g.fill(); g.fillStyle = INK; g.textAlign = 'center'; g.fillText(label, x + pill / 2, y + 50); g.textAlign = 'left'; }
+  }
   if (out.progress) {
     const { done, total, statuses, current } = out.progress, top = H - STRIP - PROGRESS, count = `${done}/${total}`, gap = 6, each = (W - 2 * PAD - gap * (total - 1)) / total;
     g.fillStyle = Y; g.font = font(700, 62); g.fillText(count, PAD, top + 58); const used = g.measureText(count).width + 24;
@@ -193,7 +215,8 @@ function drawComm(g, w, h, d) {
 // A display redraws only when what it shows has changed.
 export function createDisplays(room) {
   const { panels } = room, drawn = new Map();
-  let palette = null, facts = null;
+  let palette = null, facts = null, fresh = 0, again = null;
+  const shots = new Map(); // session id → { bitmap, count, key }: key changes with the picture, as a bitmap can't go in a signature
   const paint = (name, data, draw) => {
     const signature = JSON.stringify(data), panel = panels[name];
     if (drawn.get(name) === signature) return;
@@ -203,7 +226,7 @@ export function createDisplays(room) {
   function draw() {
     if (!facts) return;
     const d = facts, pal = palette, helmColor = d.warp ? TEAL : O;
-    room.stations.forEach((_, i) => paint(`row${i}`, d.rows[i], (g, w, h) => drawAgent(g, w, h, d.rows[i], i)));
+    room.stations.forEach((_, i) => paint(`row${i}`, d.rows[i], (g, w, h) => drawAgent(g, w, h, d.rows[i], i, shots.get(d.rows[i]?.id)?.bitmap)));
     paint('shipLeft', [d.mode, d.warp, d.left, d.engineLine, d.offline, d.limitRows], (g, w, h) => drawShipLeft(g, w, h, d));
     paint('shipRight', [d.waiting, d.rightName, d.offline, d.overflow, d.total, d.credits], (g, w, h) => drawShipRight(g, w, h, d));
     paint('arm', [d.waiting, d.warp, d.offline, d.rightName], (g, w, h) => drawArm(g, w, h, d));
@@ -220,7 +243,21 @@ export function createDisplays(room) {
     });
   }
   return {
-    update({ state, stations, overflow = 0, sessions, usage, machine, unread = () => false, now = Date.now() }) {
+    // A session's newest screenshot ({ bitmap, count }), or null for none.
+    setShot(id, shot) {
+      if (shot) { const had = shots.get(id); shots.set(id, { ...shot, key: had?.bitmap === shot.bitmap ? had.key : ++fresh }); } else shots.delete(id);
+      again?.();
+    },
+    // The picture on a station's display, if a point on it (u, v) is on the picture.
+    shotAt(index, u, v) {
+      const row = facts?.rows[index], { g, el } = room.panels[`row${index}`];
+      if (!row?.shot) return false;
+      return shotUnder(agentLayout(row, el.width, el.height, measureOn(g)).shot.rect, u, v, el.width, el.height);
+    },
+    update(args) {
+      again = () => this.update(args);
+      const { state, stations, overflow = 0, sessions, usage, machine, unread = () => false, now = Date.now() } = args;
+      const shotFacts = id => { const shot = shots.get(id); return shot ? { key: shot.key, width: shot.bitmap.width, height: shot.bitmap.height, count: shot.count } : null; };
       const byId = new Map(sessions.map(session => [session.id, session])), main = sessions.filter(session => !session.parentId), helpers = new Map();
       for (const { parentId } of sessions) if (parentId) helpers.set(parentId, (helpers.get(parentId) || 0) + 1);
       const limitRows = state.limits.map(limit => {
@@ -239,7 +276,7 @@ export function createDisplays(room) {
         total: spent.reduce((sum, session) => sum + session.cost.usd, 0), credits: spent.slice(0, MAX_SPENDERS).map(session => [stationName(session), session.cost.usd]),
         comm, crystals: worst.slice(0, room.crystals.length),
         signals: stationSignals(stations, sessions, state.offline),
-        rows: stations.map(seat => { if (!seat) return null; const session = seat.goneAt == null && byId.get(seat.id); return session ? agentFacts(session, unread(session), state.offline, helpers.get(session.id) || 0) : 'dark'; }),
+        rows: stations.map(seat => { if (!seat) return null; const session = seat.goneAt == null && byId.get(seat.id); return session ? agentFacts(session, unread(session), state.offline, helpers.get(session.id) || 0, shotFacts(session.id)) : 'dark'; }),
       };
       draw();
     },

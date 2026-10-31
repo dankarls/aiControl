@@ -102,3 +102,8 @@ test('a helper is listed only when it is the one asking', () => {
 test('the roster panel has room for all ten stations', () => {
   assert.equal(hologramLayout(10, 512, Math.round(512 * ROSTER.height / ROSTER.width)).rows.length, 10);
 });
+test('a screenshot on a display opens, from the chair or close up, but not from the overview', () => {
+  const picture = { kind: 'shot' };
+  assert.equal(clickAction(picture, seated), 'shots'); assert.equal(clickAction(picture, { ...seated, zoomed: true }), 'shots'); assert.equal(keyAction(picture, { ...seated, zoomed: true }), 'shots');
+  assert.equal(clickAction(picture, { ...seated, overview: true }), null);
+});

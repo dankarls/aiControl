@@ -3,11 +3,12 @@ import './bridge.css';
 import { Player, menuOpen, officeHasKeys, sceneFocused } from '../office/player.js';
 import { walkGrid, findPath } from '../office/path.js';
 import { VACANT_MS } from '../office/layout.js';
+import { createScreenshots } from '../office/screenshots.js';
 import { createBrackets } from './brackets.js';
 import { BridgeCamera } from './camera.js';
 import { CENTER, CHAIR_Z, ROOM, SEAT, deckColliders, stationAt } from './deck.js';
 import { createCrew, crewArrival, crewLook } from './crew.js';
-import { createDisplays, stationName } from './displays.js';
+import { SHOT_SIZE, createDisplays, stationName } from './displays.js';
 import { ROSTER, createHologram } from './hologram.js';
 import { createLights } from './lights.js';
 import { PALETTES, SIGNALS, paletteFor, saveColour, savedColour } from './palettes.js';
@@ -81,6 +82,7 @@ export function mountBridge(container, hooks = {}, options = {}) {
     else if (action === 'sit') sit();
     else if (action === 'capture') player.lock();
     else if (action === 'walk') player.walkTo(hit.point);
+    else if (action === 'shots') { player.unlock(); hooks.showShots?.(hit.id, shots.images(hit.id), () => bridge.panelClosed()); }
   }
   // Close up on a screen: you stay where you are, and only the view flies over.
   function zoom(mesh) { closeHolograms(); zoomed = { mesh, yaw: player.yaw, pitch: player.pitch }; player.setOverview(true); look.closing = true; }
@@ -89,7 +91,7 @@ export function mountBridge(container, hooks = {}, options = {}) {
   const leaveChair = () => { seated = false; player.walkTo(new THREE.Vector3(CENTER, 0, SEAT.z - .95)); };
 
   const reticle = createReticle(camera, still), brackets = createBrackets(camera); world.add(camera);
-  const displays = createDisplays(room), figures = room.stations.map(station => { const figure = createCrew(station, { still }); station.crew = figure; return figure; }), seatedAt = [], looks = new Map();
+  const displays = createDisplays(room), shots = createScreenshots({ room: displays, ...SHOT_SIZE }), figures = room.stations.map(station => { const figure = createCrew(station, { still }); station.crew = figure; return figure; }), seatedAt = [], looks = new Map();
   let crewStarted = false, wasOffline = false;
   function repaint(palette) { room.repaint(palette); figures.forEach(figure => figure.paint(palette)); lights.repaint(palette); space.repaint(palette); displays.repaint(palette); container.style.setProperty('--bridge-accent', palette.trim); for (const painted of [...Object.values(holograms), reticle, brackets]) painted.paint(palette.tones[2], palette.tones[0]); }
   repaint(paletteFor(savedColour()));
@@ -112,12 +114,13 @@ export function mountBridge(container, hooks = {}, options = {}) {
     const box = el.getBoundingClientRect(); ndc.set((event.clientX - box.left) / box.width * 2 - 1, -(event.clientY - box.top) / box.height * 2 + 1);
     ray.setFromCamera(ndc, camera);
   };
-  // What's under a screen point: a screen, the session at a station, the chair, the floor, or nothing. Hidden things (the ceiling in
+  // What's under a screen point: a screenshot on a display, a screen, the session at a station, the chair, the floor, or nothing. Hidden things (the ceiling in
   // the overview, an empty station's chair) and glass and glow are looked past. Office's `pick` stops at anything inside something hidden.
   function under(event) {
     aim(event);
-    for (const { object, point } of ray.intersectObject(room.group, true)) {
+    for (const { object, point, uv } of ray.intersectObject(room.group, true)) {
       if (!shown(object)) continue;
+      if (object.userData.station != null && object.userData.screen && displays.shotAt(object.userData.station, uv.x, uv.y)) return { kind: 'shot', id: seats[object.userData.station].id, object };
       if (object.userData.screen) return { kind: 'screen', mesh: object, label: object.userData.screen, object };
       if (object.material.transparent || !object.material.visible) continue;
       for (let node = object; node; node = node.parent) {
@@ -137,9 +140,10 @@ export function mountBridge(container, hooks = {}, options = {}) {
     }
     const button = zoomed || look.overview ? null : room.hologramAt(ray);
     if (button) return { kind: 'button', button, name: PROJECTORS[button], object: room.hologramButton(button) };
-    const hit = zoomed ? null : under(at), session = hit?.kind === 'character' && last?.sessions?.find(({ id }) => id === hit.id);
-    const name = session ? hooks.describe?.(session)?.title || stationName(session) : look.overview ? null : hit?.kind === 'screen' ? hit.label : hit?.kind === 'chair' && !seated ? 'Sit' : null;
-    return name ? { kind: 'hit', hit, name, object: hit.object } : null;
+    // Close up, only a screenshot can be used, and only by pointing at it: the sight is the screen's middle, and E there comes back.
+    const found = zoomed && player.aiming ? null : under(at), hit = zoomed && found?.kind !== 'shot' ? null : found, session = hit?.kind === 'character' && last?.sessions?.find(({ id }) => id === hit.id);
+    const name = session ? hooks.describe?.(session)?.title || stationName(session) : look.overview ? null : hit?.kind === 'shot' ? `${shots.count(hit.id)} screenshot${shots.count(hit.id) === 1 ? '' : 's'}` : hit?.kind === 'screen' ? hit.label : hit?.kind === 'chair' && !seated ? 'Sit' : null;
+    return name ? { kind: 'hit', hit, name, object: zoomed ? null : hit.object } : null;
   }
   // Under the pointer or, aiming, the sight, a few times a second. After a touch, or with the mouse gone, nothing is aimed at.
   let hoverIn = 0, mouseAt = null;
@@ -156,8 +160,8 @@ export function mountBridge(container, hooks = {}, options = {}) {
   }
   // E does what a click does on what's named, and nothing anywhere else: an open hologram stays open.
   function pressE() {
-    if (zoomed) return back();
     const target = aimedAt();
+    if (zoomed && !target) return back();
     if (target?.kind === 'row') chosen[target.hologram](target.row);
     else if (target?.kind === 'button') toggleHologram(target.button);
     else if (target) act(keyAction(target.hit, { seated, zoomed: false, overview: look.overview, locked: player.locked }), target.hit);
@@ -258,13 +262,14 @@ export function mountBridge(container, hooks = {}, options = {}) {
         seatedAt[i] = id;
       });
       crewStarted = true; wasOffline = state.offline;
+      shots.sync(sessions.filter(({ id }) => stations.some(seat => seat?.id === id && seat.goneAt == null)));
       displays.update({ state, stations, overflow, sessions, usage: snapshot.usage, machine: snapshot.machine, unread: hooks.isUnread, now });
       next.hidden = !state.waiting; next.textContent = `⚠ ${state.waiting}`;
       crew = state.roster; if (holograms.crew.open) showCrew();
       mark();
     },
     unmount() {
-      stop(); observer.disconnect(); el.removeEventListener('webglcontextlost', onLost);
+      stop(); shots.dispose(); observer.disconnect(); el.removeEventListener('webglcontextlost', onLost);
       document.removeEventListener('keydown', onKey); document.removeEventListener('keyup', onKeyUp); el.removeEventListener('pointermove', onMove); el.removeEventListener('pointerleave', onLeave); el.removeEventListener('pointerdown', onDown);
       player.dispose(); look.dispose(); bar.remove();
       for (const scene of [world, space.scene]) scene.traverse(object => {

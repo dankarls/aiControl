@@ -23,9 +23,9 @@ export function createLights(world, glow, still = false) {
     repaint(next) { palette = next; neon = C(next.neon); },
     tick(dt, t, space) {
       const pulse = still ? 1 : .5 + .5 * Math.sin(t * 3.4), { warpLevel: w, flash } = space;
-      ambient.color.copy(limit ? AMBIENT.limit : hail ? AMBIENT.hail : AMBIENT.calm); ambient.groundColor.copy(ambient.color).multiplyScalar(.35); ambient.intensity = (limit ? .26 : palette.ambient) * 1.3 * LIGHT_SCALE;
+      ambient.color.copy(limit ? AMBIENT.limit : hail ? AMBIENT.hail : AMBIENT.calm); ambient.groundColor.copy(ambient.color).multiplyScalar(.55); ambient.intensity = (limit ? .26 : palette.ambient) * 1.3 * LIGHT_SCALE;
       // A hail is told by the strips and the lamps; washing the whole room red turns the pale palette salmon and the crew tan.
-      ring.color.copy(limit ? RED : hail ? tmp.copy(WARM).lerp(RED, .08 + pulse * .12) : WARM); ring.intensity = (limit ? .4 : hail ? .9 : 1) * LIGHT_SCALE;
+      ring.color.copy(limit ? RED : hail ? tmp.copy(WARM).lerp(RED, .08 + pulse * .12) : WARM); ring.intensity = (limit ? .4 : hail ? 1.1 : 1.25) * LIGHT_SCALE;
       view.color.copy(hail ? tmp.copy(VIEW).lerp(RED, .35) : VIEW); view.intensity = (limit ? .08 : .6 + w * .4) * LIGHT_SCALE;
       glow.neon.color.copy(limit || hail ? RED : neon).multiplyScalar(limit ? .2 : hail ? .5 + pulse * 1.6 : 1.9);
       glow.chase.color.copy(glow.neon.color); glow.rib.color.copy(glow.neon.color).multiplyScalar(.16); glow.ring.color.copy(glow.neon.color).multiplyScalar(.14);

@@ -3,9 +3,10 @@ import * as THREE from 'three';
 
 const MARGIN = 1.15, NEAREST = .3;
 
-// `hit` is what's under the click ({ kind: 'character' | 'screen' | 'chair' | 'floor' }, or null). A mouse not yet captured is
+// `hit` is what's under the click ({ kind: 'character' | 'screen' | 'shot' | 'chair' | 'floor' }, or null). A mouse not yet captured is
 // captured by a click on nothing in particular, as in the office; the floor only walks you once you've left the chair.
 export function clickAction(hit, { seated, zoomed, overview, locked, mouse }) {
+  if (hit?.kind === 'shot' && !overview) return 'shots';
   if (zoomed) return 'back';
   if (hit?.kind === 'character') return 'talk';
   if (overview) return null;

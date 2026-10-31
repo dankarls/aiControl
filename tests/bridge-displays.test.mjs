@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { agentFacts, agentLayout, fitText, stationName, visibleLimits, wrapLines } from '../client/bridge/displays.js';
+import { agentFacts, agentLayout, fitText, shotUnder, stationName, visibleLimits, wrapLines } from '../client/bridge/displays.js';
 import { SIGNALS } from '../client/bridge/palettes.js';
 
 const measure = text => [...text].length * 10;
@@ -72,4 +72,35 @@ test('the strip holds context, cost, model and helpers, and the dot is unread', 
 test('a session with nothing to say still lays out', () => {
   const out = layout({ id: 'b', status: 'idle' });
   assert.deepEqual(out.feed, []); assert.equal(out.progress, null); assert.deepEqual(out.title, ['Session']);
+});
+const shot = { key: 1, width: 1600, height: 900, count: 3 }, shown = (s = session, picture = shot, measure = size) => agentLayout(agentFacts(s, false, false, 0, picture), 1024, 1054, measure);
+test('a display without a screenshot keeps its text as it was', () => {
+  const out = agentLayout(agentFacts({ ...session, title: 'word '.repeat(60) }, false, false, 0, null), 1024, 1054, size);
+  assert.equal(out.shot, null); assert.equal(out.title.length, 2); assert.ok(out.feed.length > 2);
+});
+test('a screenshot takes the room of the older lines, leaving the title, the latest lines and the progress', () => {
+  const out = shown({ ...session, title: 'word '.repeat(60) });
+  assert.equal(out.title.length, 1); assert.equal(out.feed.length, 2); assert.equal(out.feed.at(-1).text, layout().feed.at(-1).text); assert.ok(out.progress); assert.equal(out.shot.count, 3);
+});
+test('a screenshot sits below the text and above the progress, its shape kept and as large as fits', () => {
+  const { shot: { box, rect } } = shown(), textEnd = 110 + 16 + 128 + 2 * 88, progressTop = 1054 - 70 - 130;
+  assert.ok(box.y >= textEnd); assert.ok(box.y + box.h <= progressTop); assert.ok(box.h > 300);
+  assert.ok(rect.x >= box.x && rect.y >= box.y && rect.x + rect.w <= box.x + box.w + 1e-6 && rect.y + rect.h <= box.y + box.h + 1e-6);
+  assert.ok(Math.abs(rect.w / rect.h - 16 / 9) < 1e-6); assert.ok(Math.abs(rect.h - box.h) < 1e-6 || Math.abs(rect.w - box.w) < 1e-6);
+});
+test('a tall screenshot stays in the middle, and one with no size can\'t break the layout', () => {
+  const { shot: { box, rect } } = shown(session, { ...shot, width: 400, height: 1600 });
+  assert.ok(Math.abs(rect.x + rect.w / 2 - (box.x + box.w / 2)) < 1e-6); assert.ok(Math.abs(rect.w / rect.h - .25) < 1e-6);
+  const empty = shown(session, { ...shot, width: 0, height: 0 });
+  assert.ok(Number.isFinite(empty.shot.rect.w) && Number.isFinite(empty.shot.rect.h));
+});
+test('someone waiting keeps what they ask above a screenshot', () => {
+  const out = shown({ ...session, status: 'question', requests: [{ title: 'Keep the schema?' }] });
+  assert.equal(out.request, 'Keep the schema?'); assert.ok(out.shot.box.y >= 110 + 16 + 128 + 88); assert.ok(out.shot.box.h > 200);
+});
+test('a point on a display is on its screenshot only inside the picture', () => {
+  const { shot: { rect } } = shown(), at = (x, y) => shotUnder(rect, x / 1024, 1 - y / 1054, 1024, 1054);
+  assert.equal(at(rect.x + rect.w / 2, rect.y + rect.h / 2), true);
+  assert.equal(at(rect.x + rect.w / 2, rect.y - 5), false); assert.equal(at(rect.x + rect.w / 2, rect.y + rect.h + 5), false);
+  assert.equal(shotUnder(null, .5, .5, 1024, 1054), false);
 });

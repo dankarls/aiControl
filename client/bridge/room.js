@@ -41,6 +41,7 @@ function seamTexture() {
 const shadowMap = paint => canvasTexture(canvas(128, 128, (g, w, h) => { g.fillStyle = paint(g, w, h); g.fillRect(0, 0, w, h); }));
 const dark = (g, stops) => { for (const [at, alpha] of stops) g.addColorStop(at, `rgba(0,0,0,${alpha})`); return g; };
 const shadow = map => new THREE.MeshBasicMaterial({ map, transparent: true, depthWrite: false });
+const HALO_FILL = .625;
 const additive = extra => new THREE.MeshBasicMaterial({ blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, ...extra });
 
 // The hull, deck, ceiling, door, chairs and stations, in a group centred on the room.
@@ -61,6 +62,8 @@ export function buildRoom(world, still = false) {
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geometry.computeVertexNormals();
     return add(geometry, material);
   }
+  // Light leaving a screen: strongest at its edge. The screen covers the middle `HALO_FILL` of it.
+  const haloTexture = canvasTexture(canvas(256, 256, g => { const inset = 128 * (1 - HALO_FILL); g.fillStyle = '#000'; g.fillRect(0, 0, 256, 256); g.shadowColor = '#fff'; g.shadowBlur = 48; g.fillStyle = '#fff'; g.fillRect(inset, inset, 256 - 2 * inset, 256 - 2 * inset); }));
   const glowTexture = canvasTexture(canvas(128, 128, g => { const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64); grad.addColorStop(0, '#fff'); grad.addColorStop(.4, '#7a7a7a'); grad.addColorStop(1, '#000'); g.fillStyle = grad; g.fillRect(0, 0, 128, 128); }), false);
   const MAT = {
     wall: STD('#fff', .5, .05, { map: seamTexture() }), trim: STD('#fff', .38, .3), body: STD('#fff', .42, .1), black: STD('#fff', .45, .1),
@@ -159,7 +162,7 @@ export function buildRoom(world, still = false) {
     for (let row = 0; row < 2; row++) for (let i = 0; i < 9; i++) jewel(desk, cx + (i - 4) * .058, .035, .02 + row * .056, 2, .7, rnd, 1, owner);
   }
   // The bays around the wall. Each has a console, the agent's display on a dark mount, a cove light and a row of tiles in the step.
-  const footShadow = shadow(shadowMap((g, w, h) => dark(g.createLinearGradient(0, 0, 0, h), [[0, .6], [.45, .2], [1, 0]]))), seatShadow = shadow(shadowMap((g, w, h) => dark(g.createRadialGradient(w / 2, h / 2, w * .2, w / 2, h / 2, w / 2), [[0, .6], [1, 0]])));
+  const footShadow = shadow(shadowMap((g, w, h) => dark(g.createLinearGradient(0, 0, 0, h), [[0, .4], [.45, .14], [1, 0]]))), seatShadow = shadow(shadowMap((g, w, h) => dark(g.createRadialGradient(w / 2, h / 2, w * .2, w / 2, h / 2, w / 2), [[0, .6], [1, 0]])));
   const stations = STATION_ANGLES.map((theta, index) => {
     const g = around(theta, WALL), width = 2 * HW, seed = `bay${theta}`;
     const station = { index, angle: theta, group: g, status: null, lamps: [], crew: null };
@@ -173,8 +176,12 @@ export function buildRoom(world, still = false) {
     keys(desk, -.82 * K, `${seed}a`, station); keys(desk, .82 * K, `${seed}b`, station);
     add(box(width, .42, .09), MAT.black, g, 0, 1.22, .08);
     add(box(width, DISPLAY.height, .1), MAT.black, g, 0, DISPLAY.bottom + DISPLAY.height / 2, .05);
-    station.row = panel(`row${index}`, 1024, 1054, .75);
-    station.mesh = screen(station.row, DISPLAY.width, DISPLAY.height, g, 0, DISPLAY.bottom + DISPLAY.height / 2, DISPLAY.z);
+    station.row = panel(`row${index}`, 1024, 1054, .95);
+    station.mesh = screen(station.row, DISPLAY.width, DISPLAY.height, g, 0, DISPLAY.bottom + DISPLAY.height / 2, DISPLAY.z); station.mesh.userData.station = index;
+    // The display's light, in the session's colour: on the air around it, on its console and on the deck in front. Steady, unless they're waiting.
+    const halo = additive({ map: haloTexture }), spill = additive({ map: glowTexture });
+    add(new THREE.PlaneGeometry(DISPLAY.width / HALO_FILL, DISPLAY.height / HALO_FILL), halo, g, 0, DISPLAY.bottom + DISPLAY.height / 2, DISPLAY.z - .006);
+    add(new THREE.PlaneGeometry(width, .62), spill, desk, 0, .036, 0, -UP); add(new THREE.PlaneGeometry(width, 1), spill, g, 0, DECK + .018, 1, -UP);
     // A thin rim in the session's colour, so you can tell a display's signal from anywhere in the room.
     const bezelMat = lit('#000'); add(frameGeometry(DISPLAY.width + .05, DISPLAY.height + .05, DISPLAY.width, DISPLAY.height, .01, .012), bezelMat, g, 0, DISPLAY.bottom + DISPLAY.height / 2, .092);
     // What the console and the seat's foot shade on the deck, and the plate a seat bolts to.
@@ -195,7 +202,7 @@ export function buildRoom(world, still = false) {
     add(new THREE.PlaneGeometry(2.4 * K, 1.3 * K), pool, block, 0, .03, .75 * K, -UP);
     // The status bar on the window's ledge.
     const ledge = lit('#000'), x = (index - 4.5) * .44 * K; add(box(.34 * K, .07, .05), ledge, null, x, SILL + .06, -7.7 * K); add(box(.4 * K, .1, .08), MAT.black, null, x, SILL + .04, -7.67 * K);
-    station.lamps.push({ material: bezelMat, gain: 1, vacant: C('#cfd8ff', .1) }, { material: coveMat, gain: 1.5, vacant: C('#cfd8ff', .5) }, { material: blockMat, gain: 1.5, vacant: C('#120d10') }, { material: pool, gain: .3, vacant: BLACK }, { material: ledge, gain: 1.5, vacant: BLACK });
+    station.lamps.push({ material: bezelMat, gain: 1, vacant: C('#cfd8ff', .1) }, { material: halo, gain: 1.1, vacant: C('#cfd8ff', .2) }, { material: spill, gain: .6, vacant: C('#cfd8ff', .08) }, { material: coveMat, gain: 1.5, vacant: C('#cfd8ff', .5) }, { material: blockMat, gain: 1.5, vacant: C('#120d10') }, { material: pool, gain: .3, vacant: BLACK }, { material: ledge, gain: 1.5, vacant: BLACK });
     return station;
   });
   for (const theta of [-156, -36, 36]) rib(theta);
@@ -284,7 +291,7 @@ export function buildRoom(world, still = false) {
   group.position.set(8, 0, 8);
 
   let palette = null, hail = false, limit = false, offline = false, warp = 0, started = false, dim = 1, commY = 4.3;
-  const paintRow = station => { station.row.gain = (station.status ? 1.05 : .75) * (station.marked ? 1.7 : station.marked === false ? .45 : 1); };
+  const paintRow = station => { station.row.gain = (station.status ? 1.25 : .95) * (station.marked ? 1.7 : station.marked === false ? .45 : 1); };
   const tmp = new THREE.Color(), seat = new THREE.Vector3(), mark = new THREE.Vector3(), SIGNAL = { need: C(SIGNALS.need), working: C(SIGNALS.working), idle: C(SIGNALS.idle) };
   const paintJewel = j => { j.base.copy(C(palette.tones[j.color])).multiplyScalar(j.bright * .7); j.mesh.setColorAt(j.index, j.on ? j.base : tmp.copy(j.base).multiplyScalar(.07)); j.mesh.instanceColor.needsUpdate = true; };
   return {

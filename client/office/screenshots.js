@@ -5,14 +5,14 @@ import { SCREEN_W, SCREEN_H } from './screens.js';
 const AGAIN_MS = 15_000;
 const api = path => fetch(`/api/sessions/${path}`, { credentials: 'same-origin', cache: 'no-store' }).then(response => response.ok ? response : Promise.reject(new Error(response.status)));
 
-export function createScreenshots({ room }) {
+export function createScreenshots({ room, width = SCREEN_W, height = SCREEN_H }) {
   const sessions = new Map(); // id → { changed: updatedAt, seen: updatedAt fetched for, fetched: ms, images, newest, title }
   const queue = new Set();
   let busy = false;
 
   // Fitted to the monitor's canvas, so a big screenshot isn't kept at full size for a little screen.
   const thumbnail = async blob => {
-    const full = await createImageBitmap(blob), k = Math.min(1, SCREEN_W / full.width, SCREEN_H / full.height);
+    const full = await createImageBitmap(blob), k = Math.min(1, width / full.width, height / full.height);
     if (k === 1) return full;
     const small = await createImageBitmap(full, { resizeWidth: Math.max(1, Math.round(full.width * k)), resizeHeight: Math.max(1, Math.round(full.height * k)), resizeQuality: 'high' });
     full.close();
