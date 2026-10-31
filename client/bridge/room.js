@@ -1,8 +1,9 @@
 import * as THREE from 'three';
-import { CHAIR_Z, DECK, DISPLAY, EDGE as WALK, HELM_Z, PIT, R, STATION_ANGLES, WALL } from './deck.js';
+import { CHAIR_Z, CREW_Z, DECK, DISPLAY, EDGE as WALK, HELM_Z, PIT, R, STATION_ANGLES, WALL } from './deck.js';
 import { LIGHT_SCALE } from './lights.js';
 import { SIGNALS } from './palettes.js';
-import { C, STD, add as place, box, canvas, canvasTexture, lit, seeded } from './parts.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { C, STD, add as place, box, canvas, canvasTexture, lit, plate, seeded } from './parts.js';
 
 // Widths and depths follow the room's radius; the room keeps its height.
 const DEG = Math.PI / 180, HW = R * Math.sin(12 * DEG), UP = Math.PI / 2, K = R / 7.2;
@@ -26,6 +27,20 @@ function noiseTexture(size, base, spread, repeat) {
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping; texture.repeat.set(repeat, repeat);
   return texture;
 }
+// Hull plating, one panel per unit of wall: a dark seam with a lighter edge beside it.
+function seamTexture() {
+  const texture = canvasTexture(canvas(256, 256, (g, w, h) => {
+    g.fillStyle = '#efefef'; g.fillRect(0, 0, w, h);
+    g.fillStyle = '#ffffff'; g.fillRect(3, 3, w, 2); g.fillRect(3, 3, 2, h);
+    g.fillStyle = '#8a8a8a'; g.fillRect(0, 0, w, 3); g.fillRect(0, 0, 3, h);
+  }));
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping; texture.anisotropy = 8;
+  return texture;
+}
+// Soft contact shadows, as there are no cast ones.
+const shadowMap = paint => canvasTexture(canvas(128, 128, (g, w, h) => { g.fillStyle = paint(g, w, h); g.fillRect(0, 0, w, h); }));
+const dark = (g, stops) => { for (const [at, alpha] of stops) g.addColorStop(at, `rgba(0,0,0,${alpha})`); return g; };
+const shadow = map => new THREE.MeshBasicMaterial({ map, transparent: true, depthWrite: false });
 const additive = extra => new THREE.MeshBasicMaterial({ blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, ...extra });
 
 // The hull, deck, ceiling, door, chairs and stations, in a group centred on the room.
@@ -48,11 +63,11 @@ export function buildRoom(world, still = false) {
   }
   const glowTexture = canvasTexture(canvas(128, 128, g => { const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64); grad.addColorStop(0, '#fff'); grad.addColorStop(.4, '#7a7a7a'); grad.addColorStop(1, '#000'); g.fillStyle = grad; g.fillRect(0, 0, 128, 128); }), false);
   const MAT = {
-    wall: STD('#fff', .5, .05), trim: STD('#fff', .38, .3), body: STD('#fff', .42, .1), black: STD('#fff', .45, .1),
+    wall: STD('#fff', .5, .05, { map: seamTexture() }), trim: STD('#fff', .38, .3), body: STD('#fff', .42, .1), black: STD('#fff', .45, .1),
     rail: STD('#fff', .32, .1), bandIn: STD('#fff', .45, .08, { side: THREE.BackSide }), step: STD('#fff', .6, 0, { side: THREE.BackSide }), far: new THREE.MeshBasicMaterial({ side: THREE.BackSide }),
     carpet: STD('#ffffff', 1, 0, { map: noiseTexture(256, [200, 200, 200], .16, 22) }), deck: STD('#ffffff', 1, 0, { map: noiseTexture(256, [200, 200, 200], .16, 24) }), outline: STD('#fff', .6, 0),
     ceiling: STD('#fff', .7, .04, { flatShading: true, side: THREE.BackSide }), metal: STD('#9aa4b8', .38, .55), shell: STD('#fff', .34, .12), bay: STD('#fff', .5, .06, { side: THREE.DoubleSide }), seatTop: STD('#fff', .55, .05),
-    cream: STD('#fff', .5, .05), door: STD('#fff', .35, .1),
+    cream: STD('#fff', .5, .05), door: STD('#fff', .65, .1),
   };
   // The neon: strips and pools that all follow one colour, and turn red with the room. A chasing strip runs round the deck.
   const chaseMap = canvasTexture(canvas(64, 4, g => { const grad = g.createLinearGradient(0, 0, 64, 0); grad.addColorStop(0, '#333'); grad.addColorStop(.7, '#fff'); grad.addColorStop(.72, '#333'); grad.addColorStop(1, '#333'); g.fillStyle = grad; g.fillRect(0, 0, 64, 4); }), false);
@@ -81,6 +96,9 @@ export function buildRoom(world, still = false) {
   for (const floor of [add(new THREE.CircleGeometry(PIT, 72), MAT.carpet, null, 0, 0, 0, -UP), add(new THREE.RingGeometry(PIT - .22, PIT + .01, 72), MAT.outline, null, 0, .02, 0, -UP),
     add(new THREE.RingGeometry(PIT, R + .4, 72), MAT.deck, null, 0, DECK, 0, -UP), add(new THREE.CylinderGeometry(PIT, PIT, DECK, 72, 1, true), MAT.step, null, 0, DECK / 2)]) floor.userData.floor = true;
   for (const r of [WALK + .12, PIT + .12]) { add(new THREE.TorusGeometry(r, .022, 6, 160), glow.chase, null, 0, DECK + .02, 0, UP); glowRing(r, .9 * K, DECK + .025); }
+  // The deck's plating: seams running out from the pit, and one round the middle.
+  const seam = mergeGeometries(Array.from({ length: 40 }, (_, i) => { const a = (i + .5) * 9 * DEG, length = R + .4 - PIT, r = PIT + length / 2; return box(.012, .006, length).rotateY(a).translate(Math.sin(a) * r, DECK + .002, Math.cos(a) * r); }));
+  add(seam, MAT.outline).userData.floor = true;
   // Whatever the walls don't close off, apart from the bay.
   add(new THREE.CylinderGeometry(R + .35, R + .35, 3.9, 64, 1, true, Math.PI + 36 * DEG, 288 * DEG), MAT.far, null, 0, 1.95);
 
@@ -121,15 +139,13 @@ export function buildRoom(world, still = false) {
   screen(panel('clock', 640, 64), 1.9, .19, null, 0, 3.5, BAY_Z_BACK + .3);
   add(box(2, .25, .06), MAT.black, null, 0, 3.5, BAY_Z_BACK + .27);
 
-  // Either side of the opening: a tall column about the whole ship, turned a little towards the chair, over a few bars in the palette's tones.
-  const jewels = [], flankBars = [];
+  // Either side of the opening: a tall column about the whole ship, turned a little towards the chair.
+  const jewels = [];
   const jewel = (parent, x, y, z, color, bright, rnd, shape = 0, owner = null) => jewels.push({ parent, x, y, z, color, bright, shape, owner, on: rnd() > .5, base: new THREE.Color() });
   for (const s of [-1, 1]) {
     const g = new THREE.Group(); g.position.set(s * 2.12, 0, BAY_Z_BACK + .45); g.rotation.y = -s * .2; group.add(g);
     add(box(.88, 1.78, .05), MAT.black, g, 0, 2.35, 0);
     screen(panel(s < 0 ? 'shipLeft' : 'shipRight', 512, 1088), .8, 1.7, g, 0, 2.35, .03);
-    add(box(.5 * K, .34, .04), MAT.black, g, 0, 1.1, 0);
-    for (let i = 0; i < 5; i++) { const m = lit('#fff'); flankBars.push(m); add(box(.07 * K, .22, .02), m, g, (-.17 + i * .085) * K, 1.1, .03); }
   }
 
   function rib(theta) {
@@ -137,25 +153,34 @@ export function buildRoom(world, still = false) {
     add(box(.18, 3.2, .3), MAT.trim, g, 0, DECK + 1.5, 0); add(box(.04, 3, .02), glow.neon, g, 0, DECK + 1.5, .16);
     add(new THREE.PlaneGeometry(.62 * K, 3.1), glow.rib, g, 0, DECK + 1.5, .13);
   }
-  function fan(desk, cx, seed, owner) {
+  // Two tidy banks of keys on each desk, one colour, dim: nothing on a console should compete with a signal.
+  function keys(desk, cx, seed, owner) {
     const rnd = seeded(seed);
-    for (let r = 0; r < 4; r++) { const n = 5 + r * 2; for (let i = 0; i < n; i++) { const a = (15 + 150 * i / (n - 1)) * DEG, rad = (.12 + r * .065) * K; if (rnd() < .12) continue; jewel(desk, cx + Math.cos(a) * rad * 1.5, .035, .23 * K - Math.sin(a) * rad * 1.2, Math.floor(rnd() * 3), .7, rnd, rnd() > .6 ? 1 : 0, owner); } }
+    for (let row = 0; row < 2; row++) for (let i = 0; i < 9; i++) jewel(desk, cx + (i - 4) * .058, .035, .02 + row * .056, 2, .7, rnd, 1, owner);
   }
   // The bays around the wall. Each has a console, the agent's display on a dark mount, a cove light and a row of tiles in the step.
+  const footShadow = shadow(shadowMap((g, w, h) => dark(g.createLinearGradient(0, 0, 0, h), [[0, .6], [.45, .2], [1, 0]]))), seatShadow = shadow(shadowMap((g, w, h) => dark(g.createRadialGradient(w / 2, h / 2, w * .2, w / 2, h / 2, w / 2), [[0, .6], [1, 0]])));
   const stations = STATION_ANGLES.map((theta, index) => {
     const g = around(theta, WALL), width = 2 * HW, seed = `bay${theta}`;
     const station = { index, angle: theta, group: g, status: null, lamps: [], crew: null };
     add(box(width, 2.965, .12), MAT.wall, g, 0, DECK + 1.4825, -.06);
-    // The console: kick plate, sloped desk with jewels, a pale lip, the agent's display above a dark band.
+    // The console: kick plate, sloped desk with its keys, a pale lip, the agent's display above a dark band.
     add(box(width, .3, .42), MAT.body, g, 0, .51, .21);
     const desk = new THREE.Group(); desk.position.set(0, .72, .3); desk.rotation.x = .28; g.add(desk);
     add(box(width, .05, .46), MAT.black, desk, 0, 0, 0);
     add(box(width, .05, .04), MAT.rail, g, 0, .66, .52);
-    fan(desk, -.82 * K, `${seed}a`, station); fan(desk, .82 * K, `${seed}b`, station);
+    add(box(width * .86, .012, .17), MAT.body, desk, 0, .026, .048);
+    keys(desk, -.82 * K, `${seed}a`, station); keys(desk, .82 * K, `${seed}b`, station);
     add(box(width, .42, .09), MAT.black, g, 0, 1.22, .08);
     add(box(width, DISPLAY.height, .1), MAT.black, g, 0, DISPLAY.bottom + DISPLAY.height / 2, .05);
     station.row = panel(`row${index}`, 1024, 1054, .75);
     station.mesh = screen(station.row, DISPLAY.width, DISPLAY.height, g, 0, DISPLAY.bottom + DISPLAY.height / 2, DISPLAY.z);
+    // A thin rim in the session's colour, so you can tell a display's signal from anywhere in the room.
+    const bezelMat = lit('#000'); add(frameGeometry(DISPLAY.width + .05, DISPLAY.height + .05, DISPLAY.width, DISPLAY.height, .01, .012), bezelMat, g, 0, DISPLAY.bottom + DISPLAY.height / 2, .092);
+    // What the console and the seat's foot shade on the deck, and the plate a seat bolts to.
+    add(new THREE.PlaneGeometry(width, .6), footShadow, g, 0, DECK + .012, .72, -UP);
+    add(new THREE.PlaneGeometry(.8, .8), seatShadow, g, 0, DECK + .014, CREW_Z, -UP);
+    add(new THREE.CylinderGeometry(.27, .29, .016, 8), MAT.black, g, 0, DECK + .008, CREW_Z).userData.floor = true;
     // Darkens the display's band in time, for someone waiting. The canvas's band is 110 of its 1054.
     const bandHeight = DISPLAY.height * 110 / 1054;
     station.pulse = add(new THREE.PlaneGeometry(DISPLAY.width, bandHeight), new THREE.MeshBasicMaterial({ color: 0, transparent: true, opacity: 0, depthWrite: false }), g, 0, DISPLAY.bottom + DISPLAY.height - bandHeight / 2, DISPLAY.z + .004); station.pulse.renderOrder = 2;
@@ -170,7 +195,7 @@ export function buildRoom(world, still = false) {
     add(new THREE.PlaneGeometry(2.4 * K, 1.3 * K), pool, block, 0, .03, .75 * K, -UP);
     // The status bar on the window's ledge.
     const ledge = lit('#000'), x = (index - 4.5) * .44 * K; add(box(.34 * K, .07, .05), ledge, null, x, SILL + .06, -7.7 * K); add(box(.4 * K, .1, .08), MAT.black, null, x, SILL + .04, -7.67 * K);
-    station.lamps.push({ material: coveMat, gain: 1.5, vacant: C('#cfd8ff', .5) }, { material: blockMat, gain: 1.5, vacant: C('#120d10') }, { material: pool, gain: .3, vacant: BLACK }, { material: ledge, gain: 1.5, vacant: BLACK });
+    station.lamps.push({ material: bezelMat, gain: 1, vacant: C('#cfd8ff', .1) }, { material: coveMat, gain: 1.5, vacant: C('#cfd8ff', .5) }, { material: blockMat, gain: 1.5, vacant: C('#120d10') }, { material: pool, gain: .3, vacant: BLACK }, { material: ledge, gain: 1.5, vacant: BLACK });
     return station;
   });
   for (const theta of [-156, -36, 36]) rib(theta);
@@ -182,11 +207,12 @@ export function buildRoom(world, still = false) {
     for (const s of [-1, 1]) add(box(.06, 2.9, .9 * K), MAT.cream, g, s * 1.26 * K, DECK + 1.3, .34 * K);
     add(box(2.6 * K, .06, .9 * K), MAT.cream, g, 0, DECK + 2.72, .34 * K);
     add(box(2.6 * K, 2.9, .04), MAT.cream, g, 0, DECK + 1.3, .78 * K);
-    add(box(.76 * K, 2.2, .05), MAT.door, g, -.39 * K, DECK + 1.1, .74 * K); add(box(.76 * K, 2.2, .05), MAT.door, g, .39 * K, DECK + 1.1, .74 * K);
+    for (const s of [-1, 1]) { add(plate(.76 * K, 2.2, .05), MAT.door, g, s * .39 * K, DECK + 1.1, .74 * K); add(box(.03, 2.2, .01), MAT.black, g, s * .8 * K, DECK + 1.1, .71 * K); }
+    add(box(.018, 2.2, .01), MAT.black, g, 0, DECK + 1.1, .71 * K);
     screen(panel('door', 640, 64), 1.9 * K, .19 * K, g, 0, 3.2, -.25).rotation.set(0, Math.PI, 0);
     add(box(2 * K, .25 * K, .05), MAT.black, g, 0, 3.2, -.22);
-    const light = new THREE.PointLight(C('#e8eeff'), 1.1 * LIGHT_SCALE, 3, 1.6); light.position.set(0, 2.3, 0); g.add(light);
-    add(box(.06, .06, .06), lit('#f4f6ff', 1.4), g, 0, 3.06, .34 * K).scale.set(30 * K, .6, 12 * K);
+    const light = new THREE.PointLight(C('#e8eeff'), .4 * LIGHT_SCALE, 3, 1.6); light.position.set(0, 2.3, 0); g.add(light);
+    add(box(1.8 * K, .036, .3 * K), lit('#f4f6ff', .9), g, 0, 3.06, .34 * K);
   }
 
   // The helm: a stepped plinth, a blue block and a round dial with a lamp per session.
@@ -202,7 +228,7 @@ export function buildRoom(world, still = false) {
     screen(panel('helmLeft', 320, 110, 1.4), .56 * K, .19 * K, top, -.9 * K, .03, -.06 * K, -UP);
     screen(panel('helmRight', 420, 110, 1.4), .62 * K, .16 * K, top, .88 * K, .03, -.06 * K, -UP);
     const rnd = seeded('helm');
-    for (let i = 0; i < 26; i++) { const s = i % 2 ? 1 : -1, k = Math.floor(i / 2); jewel(top, s * (.44 + k * .07) * K, .035, .24 * K, Math.floor(rnd() * 3), 1.6, rnd, 1); jewel(top, s * (.44 + k * .07) * K, .035, .31 * K, Math.floor(rnd() * 3), 1.6, rnd, 0); }
+    for (let i = 0; i < 14; i++) { const s = i % 2 ? 1 : -1, k = Math.floor(i / 2), x = s * (.46 + k * .13) * K; jewel(top, x, .035, .24 * K, 2, 1, rnd, 1); jewel(top, x, .035, .31 * K, 0, .8, rnd, 1); }
   }
 
   // The captain's chair: a stepped plinth, a tall shell, and two arm pods.
@@ -210,22 +236,29 @@ export function buildRoom(world, still = false) {
   add(new THREE.CylinderGeometry(.75, .8, .15, 8), MAT.trim, null, 0, .225, CHAIR_Z, 0, Math.PI / 8).userData.floor = true;
   add(new THREE.CylinderGeometry(.22, .3, .34, 16), MAT.metal, null, 0, .47, CHAIR_Z);
   const shell = new THREE.Group(); shell.position.set(0, .3, CHAIR_Z); shell.userData.chair = true; group.add(shell);
-  add(box(.66, .14, .62), MAT.seatTop, shell, 0, .46); add(box(.78, 1.12, .1), MAT.shell, shell, 0, 1.02, .33, .08); add(box(.82, .06, .14), MAT.trim, shell, 0, 1.6, .37, .08);
+  const back = new THREE.Shape(); back.moveTo(-.36, -.56); back.lineTo(.36, -.56); back.lineTo(.4, .24); back.lineTo(.3, .56); back.lineTo(-.3, .56); back.lineTo(-.4, .24); back.closePath();
+  add(plate(.66, .14, .62, 0, 0, 0, .02), MAT.seatTop, shell, 0, .46);
+  add(new THREE.ExtrudeGeometry(back, { depth: .07, bevelThickness: .015, bevelSize: .015, bevelSegments: 1 }).translate(0, 0, -.035), MAT.shell, shell, 0, 1.02, .33, .08);
+  add(plate(.46, .62, .012, 0, 0, 0, .003), MAT.black, shell, 0, 1.06, .39, .08); add(plate(.54, .78, .03, 0, 0, 0, .012), MAT.seatTop, shell, 0, 1, .268, .08);
+  add(plate(.62, .05, .13, 0, 0, 0, .012), MAT.trim, shell, 0, 1.6, .37, .08);
   const pods = new THREE.Group(); group.add(pods); const targets = {};
-  const podBase = box(.38, .06, .36), bigLamps = [], crystals = [], hidden = new THREE.MeshBasicMaterial({ visible: false });
+  const podBase = plate(.38, .06, .36), bigLamps = [], crystals = [], hidden = new THREE.MeshBasicMaterial({ visible: false });
   let projector = null;
+  // A lamp's dome and a gauge's bar, brightest in the middle like lit glass, as flat colour reads as a sticker.
+  const lens = canvasTexture(canvas(4, 64, (g, w, h) => { const grad = g.createLinearGradient(0, 0, 0, h); grad.addColorStop(0, '#fff'); grad.addColorStop(.35, '#fff'); grad.addColorStop(.85, '#8c8c8c'); grad.addColorStop(1, '#5a5a5a'); g.fillStyle = grad; g.fillRect(0, 0, w, h); }));
+  const glassBar = canvasTexture(canvas(32, 4, (g, w, h) => { const grad = g.createLinearGradient(0, 0, w, 0); grad.addColorStop(0, '#666'); grad.addColorStop(.3, '#fff'); grad.addColorStop(.7, '#fff'); grad.addColorStop(1, '#666'); g.fillStyle = grad; g.fillRect(0, 0, w, h); }));
   for (const s of [-1, 1]) {
     // The arm runs forward from the seat and ends in a pod angled at the eye.
-    add(box(.1, .1, .86), MAT.trim, pods, s * .48, .96, CHAIR_Z - .3);
+    add(plate(.1, .1, .86, 0, 0, 0, .018), MAT.trim, pods, s * .48, .96, CHAIR_Z - .3);
     const pod = new THREE.Group(); pod.position.set(s * .5, 1.13, CHAIR_Z - .94); pod.rotation.x = .62; pods.add(pod);
-    add(box(.38, .22, .4), MAT.metal, pod, 0, -.13, 0);
+    add(plate(.38, .22, .4, 0, 0, 0, .02), MAT.metal, pod, 0, -.13, 0);
     add(podBase, MAT.black, pod);
     if (s < 0) {
       screen(panel('arm', 420, 170, 1.45), .32, .13, pod, 0, .035, .1, -UP);
       (targets.crew = add(box(.34, .06, .17), hidden, pod, 0, .05, .1)).userData.hologram = 'crew';
-      for (let i = 0; i < 3; i++) { const m = lit('#e4eaff', .9), mesh = add(box(.075, .035, .15), m, pod, -.1 + i * .1, .05, -.08); crystals.push({ mesh, material: m, color: C('#e4eaff', .9), near: C(SIGNALS.near), full: C(SIGNALS.need), off: C('#e4eaff', .12) }); }
+      for (let i = 0; i < 3; i++) { const m = new THREE.MeshBasicMaterial({ color: C('#e4eaff', .9), map: glassBar }), mesh = add(box(.075, .022, .15), m, pod, -.1 + i * .1, .052, -.08); add(plate(.09, .012, .165, 0, 0, 0, .004), MAT.metal, pod, -.1 + i * .1, .036, -.08); crystals.push({ mesh, material: m, color: C('#e4eaff', .9), near: C(SIGNALS.near), full: C(SIGNALS.need), off: C('#e4eaff', .12) }); }
     } else {
-      [[SIGNALS.need, 'need'], [SIGNALS.working, 'work'], [SIGNALS.idle, 'calm']].forEach(([color, role], i) => { const m = lit(color); add(new THREE.CylinderGeometry(.052, .06, .05, 18), m, pod, -.115 + i * .115, .05, -.07); add(new THREE.CylinderGeometry(.068, .07, .025, 18), MAT.metal, pod, -.115 + i * .115, .03, -.07); bigLamps.push({ material: m, color: C(color), role }); });
+      [[SIGNALS.need, 'need'], [SIGNALS.working, 'work'], [SIGNALS.idle, 'calm']].forEach(([color, role], i) => { const m = new THREE.MeshBasicMaterial({ color: C(color), map: lens }), x = -.115 + i * .115; add(new THREE.SphereGeometry(.05, 18, 6, 0, 7, 0, UP).scale(1, .42, 1), m, pod, x, .036, -.07); add(new THREE.CylinderGeometry(.058, .066, .022, 18), MAT.black, pod, x, .03, -.07); add(new THREE.TorusGeometry(.058, .005, 6, 24), MAT.metal, pod, x, .041, -.07, UP); bigLamps.push({ material: m, color: C(color), role }); });
       // One button opens the room's colours as a hologram; it lights in the colour chosen. A generous invisible target lies over it.
       projector = lit('#000');
       add(new THREE.CylinderGeometry(.045, .05, .025, 24), projector, pod, 0, .045, .1); add(new THREE.CylinderGeometry(.06, .062, .02, 24), MAT.metal, pod, 0, .035, .1);
@@ -251,7 +284,7 @@ export function buildRoom(world, still = false) {
   group.position.set(8, 0, 8);
 
   let palette = null, hail = false, limit = false, offline = false, warp = 0, started = false, dim = 1, commY = 4.3;
-  const paintRow = station => { station.row.gain = (station.status ? 1.3 : .75) * (station.marked ? 1.7 : station.marked === false ? .45 : 1); };
+  const paintRow = station => { station.row.gain = (station.status ? 1.05 : .75) * (station.marked ? 1.7 : station.marked === false ? .45 : 1); };
   const tmp = new THREE.Color(), seat = new THREE.Vector3(), mark = new THREE.Vector3(), SIGNAL = { need: C(SIGNALS.need), working: C(SIGNALS.working), idle: C(SIGNALS.idle) };
   const paintJewel = j => { j.base.copy(C(palette.tones[j.color])).multiplyScalar(j.bright * .7); j.mesh.setColorAt(j.index, j.on ? j.base : tmp.copy(j.base).multiplyScalar(.07)); j.mesh.instanceColor.needsUpdate = true; };
   return {
@@ -263,7 +296,6 @@ export function buildRoom(world, still = false) {
       for (const [key, color] of Object.entries({ wall: next.wall, trim: next.trim, body: next.console, black: next.mount, rail: next.rail, bandIn: next.console, step: next.mount, far: next.mount, outline: next.mount, ceiling: next.ceiling, shell: next.chair, bay: next.bay, seatTop: next.seat, cream: next.wall, door: next.door })) paint(key, color);
       // The floors' noise is grey, so their tint is lifted to come out at the palette's colour.
       MAT.carpet.color.copy(C(next.pit, 1.7)); MAT.deck.color.copy(C(next.deck, 1.7));
-      flankBars.forEach((material, i) => material.color.copy(C(next.tones[i % 3], .55)));
       for (const j of jewels) paintJewel(j);
       projector.color.copy(C(next.lamp, .6));
     },
@@ -272,7 +304,7 @@ export function buildRoom(world, still = false) {
     setStation(index, status) {
       const station = stations[index]; if (station.status === status) return;
       station.status = status; paintRow(station);
-      for (const j of jewels) if (j.owner === station) { j.bright = status ? 1.5 : .7; if (palette) paintJewel(j); }
+      for (const j of jewels) if (j.owner === station) { j.bright = status ? 1 : .55; if (palette) paintJewel(j); }
     },
     // A sidebar filter: true for a station it takes in, false for one it leaves out, null with no filter.
     setMarked(index, marked) { const station = stations[index]; station.marked = marked; paintRow(station); },

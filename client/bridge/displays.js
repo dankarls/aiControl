@@ -83,9 +83,9 @@ export function agentLayout(facts, W, H, measure) {
 const FEED_TONE = { tool: DIM, assistant: INK, user: O };
 // What the session itself is doing, as an Office monitor shows it. An empty bay is dark but for its number.
 function drawAgent(g, W, H, facts, index) {
-  g.fillStyle = facts === 'dark' ? '#000' : BACK; g.fillRect(0, 0, W, H);
+  g.fillStyle = facts === 'dark' ? '#000' : facts ? BACK : '#10162c'; g.fillRect(0, 0, W, H);
   if (facts === 'dark') return;
-  if (!facts) { g.fillStyle = '#3a404e'; g.font = font(600, 120); g.textAlign = 'center'; g.fillText(`BAY ${index + 1}`, W / 2, H / 2 + 40); g.textAlign = 'left'; return; }
+  if (!facts) { g.fillStyle = '#4c5676'; g.font = font(600, 120); g.textAlign = 'center'; g.fillText(`BAY ${index + 1}`, W / 2, H / 2 + 40); g.textAlign = 'left'; return; }
   const measure = (text, weight, size) => { g.font = font(weight, size); return g.measureText(text).width; }, out = agentLayout(facts, W, H, measure), right = W - PAD;
   g.fillStyle = out.band.colour; g.fillRect(0, 0, W, BAND);
   g.fillStyle = '#0b0506'; g.font = font(700, 82); g.fillText(out.label, PAD, 82); const taken = g.measureText(out.label).width;
@@ -101,7 +101,7 @@ function drawAgent(g, W, H, facts, index) {
     const { done, total, statuses, current } = out.progress, top = H - STRIP - PROGRESS, count = `${done}/${total}`, gap = 6, each = (W - 2 * PAD - gap * (total - 1)) / total;
     g.fillStyle = Y; g.font = font(700, 62); g.fillText(count, PAD, top + 58); const used = g.measureText(count).width + 24;
     g.fillStyle = O; g.font = font(400, 58); g.fillText(fit(g, current, W - 2 * PAD - used), PAD + used, top + 58);
-    statuses.forEach((status, i) => { g.fillStyle = status === 'done' ? Y : status === 'active' ? O : OFF; g.fillRect(PAD + i * (each + gap), top + 78, each, 28); });
+    statuses.forEach((status, i) => { g.fillStyle = status === 'done' ? Y : status === 'active' ? out.band.colour : OFF; g.fillRect(PAD + i * (each + gap), top + 78, each, 28); });
   }
   g.fillStyle = DIM; g.font = font(400, 46); g.fillText(fit(g, out.strip.join('   '), W - 2 * PAD), PAD, H - 18);
 }

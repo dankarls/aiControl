@@ -1,7 +1,7 @@
 // Targeting brackets: four lit corners round whatever you're aimed at, on the sight's plane, so they take the room's glow.
 import * as THREE from 'three';
 
-const AWAY = .5, ARM = 12, THICK = 2, OUT = 6, NEAR_SLICE = 1e-4;
+const AWAY = .5, ARM = 14, THICK = 3, OUT = 6, NEAR_SLICE = 1e-4;
 const clamp = value => THREE.MathUtils.clamp(value, -1, 1);
 
 export const boxCorners = object => {
