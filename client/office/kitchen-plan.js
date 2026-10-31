@@ -33,17 +33,19 @@ const vessel = (surface, cx, y0, cz, r, h, t) => [
   box(surface, cx - r, y0, cz - r, cx - r + t, y0 + h, cz + r), box(surface, cx + r - t, y0, cz - r, cx + r, y0 + h, cz + r),
 ];
 // A chair: seat and back (one name), turned `yaw` degrees (0 faces +z); `tip` lays it on its side. Both boxes turn with the chair, so
-// the pair is rotated about the chair's own origin and handed to TiltedBox as Euler angles.
+// the pair is rotated together and handed to TiltedBox as Euler angles. A tipped chair is centred on (x, z) as a whole and rests on the floor.
 const chair = (n, x, z, yaw, tip = 0) => {
   const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, rad(yaw), 0)).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, rad(tip))));
-  const euler = new THREE.Euler().setFromQuaternion(q), lift = tip ? 0.22 : 0;
-  return [[[0, 0.45, 0], [0.22, 0.02, 0.22]], [[0, 0.75, -0.2], [0.22, 0.22, 0.02]]].map(([at, half]) => {
-    const c = new THREE.Vector3(...at).applyQuaternion(q);
-    return tilt(`chair-${n}`, [x + c.x, lift + c.y, z + c.z], half, euler.toArray().slice(0, 3));
-  });
+  const euler = new THREE.Euler().setFromQuaternion(q).toArray().slice(0, 3);
+  const parts = [[[0, 0.45, 0], [0.22, 0.02, 0.22]], [[0, 0.75, -0.2], [0.22, 0.22, 0.02]]].map(([at, half]) => ({ c: new THREE.Vector3(...at).applyQuaternion(q), half }));
+  const mid = parts.reduce((m, p) => m.add(p.c), new THREE.Vector3()).multiplyScalar(1 / parts.length), low = Math.min(...parts.map(({ c, half }) => new TiltedBox({ centre: c.toArray(), half, rotation: euler }).min.y));
+  const at = tip ? new THREE.Vector3(x - mid.x, -low, z - mid.z) : new THREE.Vector3(x, 0, z);
+  return parts.map(({ c, half }) => tilt(`chair-${n}`, c.clone().add(at).toArray(), half, euler));
 };
 
-const T = WALL_T, TABLES = [[-7.7, -1.75], [-4.6, -1.75], [-7.7, 0], [-4.6, 0]], COUPLE = 1.18, COUNTER_X = -8.6;
+// Each container's cx, floor y, cz, half width, height, wall: drawn by vessel() and the "in" zone is its whole inside.
+const VESSELS = { bin: [-0.5, 0, -2.5, 0.25, 0.6, 0.03], bucket: [-9.5, 0, -4.2, 0.2, 0.4, 0.03], basket: [-3.9, 0.92, -3.6, 0.2, 0.3, 0.03], tableMug: [-5.2, 0.74, 0.5, 0.095, 0.12, 0.02] };
+const T = WALL_T, TABLES = [[-7.2, -1.4], [-5.2, -1.4], [-7.2, 0.5], [-5.2, 0.5]], COUPLE = 1.18, COUNTER_X = -8.6;
 // Door-wall pieces beside the doorway. Shut, the doorway is filled with more of the same wall.
 const edges = shut => [
   box('wall-n', -10 - T, 0, -6 - T, T, WALL_H, -6), box('wall-s', -10 - T, 0, 1, T, WALL_H, 1 + T), box('wall-w', -10 - T, 0, -6, -10, WALL_H, 1),
@@ -51,42 +53,43 @@ const edges = shut => [
   ...(shut ? [box('wall-e', 0, 0, -DOOR_W / 2, T, DOOR_H, DOOR_W / 2)] : []),
 ];
 
-// ponytail: cupboard carcasses and the table legs have no colliders (the doors, tops and seats are what a thrown thing meets), and the sink
-// hole is cut so a drop passes just in front of the closed door above it.
+// ponytail: table legs and the cupboards' insides have no colliders (a table is just its top, a cupboard its door and a solid body behind
+// it from the wall to the shut door), and the sink hole lies behind the door line, under the bodies: a throw reaches it under the
+// doors' bottom edge (y 1.5), over the counter's front.
 const PARTS = shut => [
   ...edges(shut),
   box('fridge', -9.8, 0, -5.95, -9, 1.9, -5.25), hinged('fridge', -9.8, 0, -5.25, 0.8, 1.9, 0.05, 25),
   box('counter', COUNTER_X, 0, -6, -7.1, 0.91, -5.4), box('counter', -6.5, 0, -6, -1.5, 0.91, -5.4),
   box('sink', -7.1, 0, -6, -6.5, 0.91, -5.92), box('sink', -7.1, 0, -5.62, -6.5, 0.91, -5.4), box('sink', -7.1, 0, -5.92, -6.5, 0.6, -5.62),
-  ...[0, 0, 35, 70, 110, 20].map((deg, i) => hinged(`cupboard-${i + 1}`, COUNTER_X + i * COUPLE, 1.5, -5.55, COUPLE, 0.7, 0.03, deg)),
+  ...[0, 0, 35, 70, 110, 20].flatMap((deg, i) => [box(`cupboard-${i + 1}`, COUNTER_X + i * COUPLE, 1.5, -6, COUNTER_X + (i + 1) * COUPLE, 2.2, -5.57), hinged(`cupboard-${i + 1}`, COUNTER_X + i * COUPLE, 1.5, -5.55, COUPLE, 0.7, 0.03, deg)]),
   box('island', -6.5, 0, -4.15, -3.5, 0.92, -3.05),
   ...[6, 10, 14].map((deg, i) => tilt(`pan-${i + 1}`, [-6 + i * 0.6, 1.7, -3.6], [0.16, 0.012, 0.12], [0, 0, rad(deg)])),
-  ...vessel('basket', -3.9, 0.92, -3.6, 0.2, 0.3, 0.03),
-  box('shelf', -10, 1.46, -3.3, -9.7, 1.5, -1.9), box('shelf', -9.73, 1.5, -3.3, -9.7, 1.58, -1.9), box('shelf', -10, 1.5, -3.3, -9.7, 1.58, -3.27), box('shelf', -10, 1.5, -1.93, -9.7, 1.58, -1.9),
-  tilt('tray', [-9.56, 0.28, -0.5], [0.5, 0.012, 0.25], [0, 0, rad(-35)]),
-  ...TABLES.map(([x, z], i) => box(`table-${i + 1}`, x - 0.7, 0, z - 0.4, x + 0.7, 0.74, z + 0.4)),
-  ...vessel('tableMug', -4.6, 0.74, 0, 0.095, 0.12, 0.02),
-  ...[[-7.9, -2.6, 15], [-4.9, -2.6, -35], [-6.65, -1.75, 300], [-5.65, -1.75, 120], [-3.5, -1.75, 295], [-8.85, -1.75, 140], [-6.65, 0, 310], [-5.65, 0, 130]].flatMap(([x, z, yaw], i) => chair(i + 1, x, z, yaw)),
-  ...chair(9, -2.9, -0.2, 50, 90),
+  ...vessel('basket', ...VESSELS.basket),
+  box('shelf', -10, 1.46, -3.3, -9.7, 1.5, -1.9), box('shelf', -9.73, 1.5, -3.3, -9.7, 1.6, -1.9), box('shelf', -10, 1.5, -3.3, -9.7, 1.6, -3.27), box('shelf', -10, 1.5, -1.93, -9.7, 1.6, -1.9),
+  tilt('tray', [-9.642, 0.2376, -0.5], [0.4, 0.01, 0.25], [0, 0, rad(-35)]),
+  ...TABLES.map(([x, z], i) => box(`table-${i + 1}`, x - 0.7, 0.7, z - 0.4, x + 0.7, 0.74, z + 0.4)),
+  ...vessel('tableMug', ...VESSELS.tableMug),
+  ...[[-7.6, -1.95, 15], [-6.9, -1.95, -30], [-5.8, -1.95, 40], [-4.9, -1.95, -20], [-8.3, -1.4, 140]].flatMap(([x, z, yaw], i) => chair(i + 1, x, z, yaw)),
+  ...chair(6, -2.9, -0.2, 50, 90),
   box('vending', -10, 0, 0, -9.2, 1.9, 0.8),
-  ...vessel('bin', -0.5, 0, -2.5, 0.25, 0.6, 0.03), ...vessel('bucket', -9.5, 0, -4.2, 0.2, 0.4, 0.03),
+  ...vessel('bin', ...VESSELS.bin), ...vessel('bucket', ...VESSELS.bucket),
 ];
 
-// Where a drop is meant to end: the centre and half-extents of "came to rest inside", within each container's rim (the shelf: above its top, within its lip).
+// Where a drop is meant to end: "came to rest inside" means anywhere in the container's whole inside, its floor to its rim, give or take
+// a centimetre so a rest touching the rim counts. Derived from the containers, so the two cannot drift apart.
+const EPS = 0.01;
+const inside = (x0, y0, z0, x1, y1, z1) => ({ centre: new THREE.Vector3((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2), half: new THREE.Vector3((x1 - x0) / 2 + EPS, (y1 - y0) / 2 + EPS, (z1 - z0) / 2 + EPS) });
+const within = ([cx, y0, cz, r, h, t]) => inside(cx - r + t, y0 + t, cz - r + t, cx + r - t, y0 + h, cz + r - t);
 export const ZONES = {
-  bin: { centre: [-0.5, 0.3, -2.5], half: [0.2, 0.25, 0.2] },
-  bucket: { centre: [-9.5, 0.2, -4.2], half: [0.15, 0.15, 0.15] },
-  basket: { centre: [-3.9, 1.05, -3.6], half: [0.12, 0.1, 0.12] },
-  shelf: { centre: [-9.86, 1.57, -2.6], half: [0.1, 0.07, 0.5] },
-  sink: { centre: [-6.8, 0.75, -5.77], half: [0.2, 0.12, 0.1] },
-  tableMug: { centre: [-4.6, 0.81, 0], half: [0.06, 0.05, 0.06] },
+  ...Object.fromEntries(Object.entries(VESSELS).map(([name, v]) => [name, within(v)])),
+  shelf: inside(-10, 1.5, -3.27, -9.73, 1.6, -1.93),
+  sink: inside(-7.1, 0.6, -5.92, -6.5, 0.91, -5.62),
 };
-for (const z of Object.values(ZONES)) { z.centre = new THREE.Vector3(...z.centre); z.half = new THREE.Vector3(...z.half); }
 
 // Things drawn without a collider, or needing more than a box. Sizes are w (along the wall) by h.
 export const SPOTS = {
   clipboard: { x: -0.02, y: 1.35, z: -1.6, facing: 'west', w: 0.3, h: 0.4 },
-  scores: { x: -0.02, y: 1.9, z: -4.2, facing: 'west', w: 1.6, h: 0.9 },
+  scores: { x: -1.6, y: 1.9, z: 0.98, facing: 'north', w: 1.4, h: 0.8 }, // south wall, by the doors
   lunchTables: TABLES.map(([x, z]) => ({ x, z, w: 1.4, d: 0.8, h: 0.74 })),
   panRack: { x: -5.4, y: 2, z: -3.6, w: 2.2 },
   tap: { x: -6.8, y: 0.91, z: -5.9 },
