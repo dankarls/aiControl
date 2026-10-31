@@ -6,7 +6,7 @@ import { KITCHEN, flightBoxes } from '../client/office/kitchen-plan.js';
 import { kitchenDoor, kitchenShift } from '../client/office/layout.js';
 import { WALL_H, WALL_T } from '../client/office/furniture.js';
 import { walkGrid, findPath, nearestOpen } from '../client/office/path.js';
-import { free, resolveStep } from '../client/office/player.js';
+import { free, pick, resolveStep } from '../client/office/player.js';
 import { moveBody, reachableIn } from '../client/office/props.js';
 import { createRoom } from '../client/office/room.js';
 import { escaped, makeBody } from '../client/office/flight.js';
@@ -211,4 +211,20 @@ test('nothing of the kitchen stands in the office, so its windows wall hides it'
   assert.ok(flightBoxes(kitchen.origin).every(b => b.max.x <= 1e-9), 'all of it this side of x = 0');
   assert.ok(back && on(back.min.y, 0) && on(back.max.y, WALL_H), 'the windows wall reaches its corner, floor to ceiling');
   assert.ok(walls.some(b => b.surface === 'wall-e' && b.max.z === -WALL_T && b.min.x === -WALL_T), 'and the kitchen has its own east wall past it');
+});
+
+test("a tap through the open doorway walks there, either way: the casing's box doesn't fill it", t => {
+  const was = globalThis.document; globalThis.document = { createElement: () => ({ getContext: blank }), fonts: undefined };
+  t.after(() => { if (was) globalThis.document = was; else delete globalThis.document; });
+  const scene = new THREE.Scene(), room = createRoom(scene, {}), depth = 14, door = kitchenDoor(depth), { kitchen } = room;
+  room.sync({ room: { width: WIDTH, depth }, door: { x: WIDTH / 2, z: depth }, desks: new Map(), pods: [] }, new Map());
+  kitchen.update(1 / 60, new THREE.Vector3(1, 0, door), true, 0);
+  scene.updateMatrixWorld(true);
+  const canvas = { getBoundingClientRect: () => ({ left: 0, top: 0, width: 400, height: 400 }) }, camera = new THREE.PerspectiveCamera(70, 1, 0.05, 80);
+  const tap = (from, to) => { camera.position.set(from, 1.5, door); camera.lookAt(to, 0, door); camera.updateMatrixWorld(); return pick({ clientX: 200, clientY: 200 }, canvas, camera, scene); };
+  for (const [from, to] of [[1.2, -1.2], [-2, 1.2]]) {
+    const hit = tap(from, to);
+    assert.equal(hit?.kind, 'floor', `from x ${from}`);
+    assert.ok(Math.abs(hit.point.x - to) < 0.01);
+  }
 });

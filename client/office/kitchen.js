@@ -260,6 +260,7 @@ export function createKitchen({ onMove } = {}) {
       doors.position.set(local, -WALL_H / 2, -WALL_T / 2); doors.rotation.y = -Math.PI / 2; wall.add(doors);
       const casing = piece('kitchenCasing', () => [[B(-0.03, 0, -DOOR_W / 2 - 0.06, WALL_T + 0.03, DOOR_H + 0.06, -DOOR_W / 2 + 0.005), '#2f6b66'], [B(-0.03, 0, DOOR_W / 2 - 0.005, WALL_T + 0.03, DOOR_H + 0.06, DOOR_W / 2 + 0.06), '#2f6b66'], [B(-0.03, DOOR_H - 0.005, -DOOR_W / 2, WALL_T + 0.03, DOOR_H + 0.06, DOOR_W / 2), '#2f6b66']]);
       casing.position.copy(doors.position); casing.rotation.copy(doors.rotation); wall.add(casing);
+      casing.raycast = () => {}; // baked, its one box would fill the doorway and no tap would get through to the floor beyond
       // A sill across the doorway's floor, where the wall stands (neither room's floor reaches into it).
       const sill = piece('kitchenSill', () => [[B(-WALL_T, 0, -DOOR_W / 2, 0, 0.012, DOOR_W / 2), '#6d4a2b']], 0); sill.position.set(0, 0, origin.z); shell.add(sill);
       refresh();
