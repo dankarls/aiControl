@@ -116,11 +116,13 @@ test('every part is inside the room, and no two things share space', () => {
   for (let i = 0; i < solid.length; i++) for (let j = i + 1; j < solid.length; j++) if (!related(solid[i], solid[j])) assert.ok(!overlap(solid[i], solid[j]), `${solid[i].surface} overlaps ${solid[j].surface}`);
   const chairs = solid.filter(b => b.surface.startsWith('chair-')), tables = solid.filter(b => b.surface.startsWith('table-'));
   for (const c of chairs) for (const t of tables) assert.ok(!overlap(c, t), `${c.surface} in ${t.surface}`);
-  assert.ok(new Set(chairs.map(c => c.surface)).size >= 6);
+  assert.ok(new Set(chairs.map(c => c.surface)).size >= 8);
+  const gap = (a, b) => Math.hypot(Math.max(a.min.x - b.max.x, b.min.x - a.max.x, 0), Math.max(a.min.z - b.max.z, b.min.z - a.max.z, 0));
+  for (const t of tables) assert.ok(chairs.some(c => gap(c, t) < 0.35), `a chair stands by ${t.surface}`);
 });
 
 test('the tipped chair lies on the floor where it was put', () => {
-  const parts = flightBoxes().filter(b => b.surface === 'chair-6'), mid = parts.reduce((m, b) => m.add(b.centre), V(0, 0, 0)).multiplyScalar(0.5);
+  const parts = flightBoxes().filter(b => b.surface === 'chair-9'), mid = parts.reduce((m, b) => m.add(b.centre), V(0, 0, 0)).multiplyScalar(0.5);
   assert.ok(Math.abs(mid.x + 2.9) < 1e-9 && Math.abs(mid.z + 0.2) < 1e-9);
   assert.ok(Math.abs(Math.min(...parts.map(b => b.min.y))) < 1e-9);
 });
@@ -139,7 +141,7 @@ test('a moved plan is the same plan shifted', () => {
 test('walk boxes are marked, cover every chair and leave the doorway clear', () => {
   const walk = walkBoxes();
   for (const w of walk) assert.ok(w.walkOnly && w.isBox3);
-  for (let n = 1; n <= 6; n++) assert.ok(walk.some(w => w.surface === `chair-${n}`), `chair-${n}`);
+  for (let n = 1; n <= 9; n++) assert.ok(walk.some(w => w.surface === `chair-${n}`), `chair-${n}`);
   assert.ok(!walk.some(w => w.max.x > -2.3 && w.min.z < 0.75 && w.max.z > -0.75), 'the doorway lane is clear');
   assert.ok(SPOTS.clipboard && SPOTS.lunchTables.length === 4 && SPOTS.scores.facing === 'north' && SPOTS.scores.z > 0.9);
 });
