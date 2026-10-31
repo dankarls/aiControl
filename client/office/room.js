@@ -11,7 +11,7 @@ import { createWindows } from './windows.js';
 import { createScreens, SCREEN_W, SCREEN_H } from './screens.js';
 import { createSecret, DOOR } from './secret.js';
 import { createKitchen } from './kitchen.js';
-import { cardsMesh, officeCutouts } from './cutouts.js';
+import { bays, cardsMesh, officeCutouts } from './cutouts.js';
 import { DESK_W, DESK_D, COFFEE_X, KITCHEN_DOOR_W, kitchenDoor } from './layout.js';
 import {
   WALL_H, WALL_T, shared, once, rounded, mesh, canvasTexture, paint, painted, piece, deskItem, coffeeCup, plant, picture, sofa, armchair, lowTable, floorLamp, rug,
@@ -257,7 +257,8 @@ export function createRoom(scene, renderer) {
       };
     },
     sync(layout, statuses) {
-      if (room.size !== `${layout.room.width}x${layout.room.depth}`) buildShell(layout);
+      // Cells can widen without the room growing, if it's already wide from before the floor closed up (layout.js): the pear goes by them.
+      if (room.size !== `${layout.room.width}x${layout.room.depth}` || room.cellW !== layout.grid.cellW) buildShell(layout);
       const solid = [];
       for (const pod of layout.pods) if (!podColors.has(pod.key)) podColors.set(pod.key, podColors.size % teams.length);
       for (const [id, place] of layout.desks) {
@@ -390,9 +391,9 @@ export function createRoom(scene, renderer) {
     for (const d of [desk, ...desk.helpers || []]) { screens.remove(d.glass); screens.remove(d.side?.glass); d.screenTexture.dispose(); d.side?.texture.dispose(); d.led?.material.dispose(); }
   }
 
-  function buildShell({ room: { width, depth }, door }) {
+  function buildShell({ room: { width, depth }, door, grid: { cellW } }) {
     disposeTree(shell, false);
-    room.size = `${width}x${depth}`;
+    room.size = `${width}x${depth}`; room.cellW = cellW;
     // Floor: carpet tiles, a shade apart, drawn once into a repeating texture.
     const carpet = canvasTexture(128, 128, g => {
       for (const [x, y] of [[0, 0], [64, 0], [0, 64], [64, 64]]) { g.fillStyle = (x + y) % 128 ? '#8899af' : '#8192a9'; g.fillRect(x, y, 64, 64); }
@@ -444,7 +445,7 @@ export function createRoom(scene, renderer) {
     const notes = (key, list) => piece(`notes-${key}`, () => noteParts(list));
 
     // Windows on the back wall (windows.js), with posters and plants between them.
-    const count = Math.max(1, Math.floor(width / 4)), xs = Array.from({ length: count }, (_, i) => -width / 2 + (i + 0.5) * width / count);
+    const count = bays(width), xs = Array.from({ length: count }, (_, i) => -width / 2 + (i + 0.5) * width / count);
     const windows = createWindows(xs); back.add(windows);
     for (const [i, x] of xs.entries()) {
       if (i) { hang(back, picture(i - 1, 0.7, 0.95), x - width / count / 2, 1.75); if (i % 2) place(plant('bush'), x - width / count / 2 + width / 2, 0.45); }
@@ -517,7 +518,7 @@ export function createRoom(scene, renderer) {
     if (door.x - 2.2 > 3.4) { hang(front, picture(5, 0.8, 0.8), (2.6 + door.x - 2.2) / 2 - width / 2, 1.7); place(plant('bush'), door.x - 2.6, depth - 0.45); }
 
     // Low-Hanging Fruit's cutouts along the walls (cutouts.js): one mesh, walked round by their boxes and thrown at by their cards and struts.
-    const cutouts = officeCutouts({ width, depth });
+    const cutouts = officeCutouts({ width, depth, cellW });
     room.cutouts = cutouts.flatMap(c => [c.card, c.strut]); room.furnitureColliders.push(...cutouts.map(c => c.walk)); shell.add(cardsMesh(cutouts));
     for (const { walk, yaw } of cutouts) shadowUnder((walk.min.x + walk.max.x) / 2, (walk.min.z + walk.max.z) / 2, 0.85, 0.5, THREE.MathUtils.degToRad(yaw));
 

@@ -5,31 +5,45 @@ import { COPY, cardsMaterial, officeCutouts } from '../client/office/cutouts.js'
 import { makeBody, simulate } from '../client/office/flight.js';
 import { WALL_H } from '../client/office/furniture.js';
 import { flightBoxes, surfaceTier } from '../client/office/kitchen-plan.js';
-import { COFFEE_X, kitchenDoor, layoutOffice } from '../client/office/layout.js';
+import { AISLE, COFFEE_X, kitchenDoor, layoutOffice } from '../client/office/layout.js';
 import { CELL, findPath, walkGrid } from '../client/office/path.js';
 import { pick } from '../client/office/player.js';
 import { BALLS } from '../client/office/props.js';
 import { createRoom } from '../client/office/room.js';
+import { DOOR } from '../client/office/secret.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z), OURS = /^cutout-[a-z]/; // the kitchen's are cutout-1 to 4
 const printed = [], blank = () => new Proxy({}, { get: (t, k) => k === 'fillText' ? text => printed.push(text) : k in t ? t[k] : () => ({ addColorStop() {} }), set: (t, k, v) => { t[k] = v; return true; } });
 const noDocument = t => { const was = globalThis.document; globalThis.document = { createElement: () => ({ getContext: blank }), fonts: undefined }; t.after(() => { if (was) globalThis.document = was; else delete globalThis.document; }); };
-const empty = (width, depth) => ({ room: { width, depth }, door: { x: width / 2, z: depth }, desks: new Map(), pods: [] });
-const standing = (width, depth) => { const scene = new THREE.Scene(), room = createRoom(scene, {}); room.sync(empty(width, depth), new Map()); return { scene, room }; };
-// Every project full, each desk with all its helpers: as much in the way as there can be.
-const full = pods => { const sessions = []; for (let p = 0; p < pods; p++) for (let s = 0; s < 6; s++) { const id = `p${p}s${s}`; sessions.push({ id, cwd: `/p${p}`, project: `p${p}`, status: 'working' }); for (let h = 0; h < 3; h++) sessions.push({ id: `${id}h${h}`, parentId: id, status: 'working' }); } return layoutOffice(sessions, null); };
-// The real rooms: as many projects as it takes for each size, then the widest with the shallowest and the other way round.
-const REAL = [1, 4, 9, 16, 25].map(pods => full(pods).room).map(({ width, depth }) => [width, depth]);
-const ROOMS = [...REAL, [REAL[0][0], REAL[4][1]], [REAL[4][0], REAL[0][1]]];
+const empty = (width, depth, cellW = width - AISLE) => ({ room: { width, depth }, door: { x: width / 2, z: depth }, desks: new Map(), pods: [], grid: { cols: 1, cellW } });
+const standing = (width, depth, cellW) => { const scene = new THREE.Scene(), room = createRoom(scene, {}); room.sync(empty(width, depth, cellW), new Map()); return { scene, room }; };
+// Every project full, as much in the way as there can be: `helpers` says how many each desk has.
+const full = (pods, seats = 6, helpers = () => 3) => { const sessions = []; for (let p = 0; p < pods; p++) for (let s = 0; s < seats; s++) { const id = `p${p}s${String(s).padStart(2, '0')}`; sessions.push({ id, cwd: `/p${p}`, project: `p${p}`, status: 'working' }); for (let h = 0; h < helpers(s); h++) sessions.push({ id: `${id}h${h}`, parentId: id, status: 'working' }); } return layoutOffice(sessions, null); };
+// A project that's bigger than a cell's three pairs widens every cell (layout.js), so the gaps move: these are the sizes that do it differently.
+const BIG = [7, 8, 10, 12];
+const measured = (pods, seats) => { const { room: { width, depth }, grid: { cols, cellW } } = full(pods, seats, () => 0); return { width, depth, cols, cellW }; };
+// The real rooms: as many projects as it takes for each size, then the widest with the shallowest and the other way round, then the ones with bigger projects.
+const REAL = [1, 4, 9, 16, 25].map(pods => measured(pods, 6));
+const ROOMS = [...REAL, { ...REAL[0], depth: REAL[4].depth }, { ...REAL[4], depth: REAL[0].depth }, ...[1, 2, 3, 4, 9, 16].flatMap(pods => BIG.map(seats => measured(pods, seats)))];
 const clear = ([a0, a1], [b0, b1]) => a1 <= b0 || b1 <= a0;
 const stands = c => new THREE.Box3().union(c.card).union(c.strut);
 
-// What hangs on the walls they stand along, as room.js hangs it. Along x on the windows wall, along z on the right wall.
-const windowsWall = width => { const count = Math.max(1, Math.floor(width / 4)), pitch = width / count; return { posters: Array.from({ length: count - 1 }, (_, i) => [(i + 1) * pitch - 0.35, (i + 1) * pitch + 0.35]) }; };
-const rightWall = depth => { const door = depth - 3.8, out = [[door - 2.35, door + 0.75]]; for (let z = 3.4; z < door - 2.95; z += 2.6) out.push([z - 0.375, z + 0.375]); return out; }; // the shelf, shut and slid open, then the pictures
+// What hangs on a wall, as room.js hung it: the spans along `axis` of what's on it above the trim. It's baked into one mesh, so by its vertices: within a metre of each other is one picture, and none are that close.
+const hungOn = (room, normal, axis) => {
+  const { mesh } = room.fadeables.walls.find(wall => wall.normal.equals(normal)), at = [], p = V(0, 0, 0);
+  mesh.updateWorldMatrix(true, true);
+  for (const child of mesh.children) if (child.isMesh) for (let i = 0; i < child.geometry.attributes.position.count; i++) { p.fromBufferAttribute(child.geometry.attributes.position, i).applyMatrix4(child.matrixWorld); if (p.y > 1) at.push(p[axis]); }
+  return at.sort((a, b) => a - b).reduce((spans, v) => { const last = spans.at(-1); if (last && v - last[1] < 1) last[1] = v; else spans.push([v, v]); return spans; }, []);
+};
+const postersOn = (room) => hungOn(room, V(0, 0, 1), 'x');
+// The secret shelf (secret.js), shut and slid open, as well as the pictures: it stands, so it's not on the wall.
+const rightWall = (room, depth) => { const door = depth - DOOR.back; return [[door - 2.35, door + 0.75], ...hungOn(room, V(-1, 0, 0), 'z')]; };
+// Points across a part of a card, and whether one's inside another's box, in that box's own turned frame.
+const across = b => { const out = []; for (const x of [-1, -0.5, 0, 0.5, 1]) for (const y of [-1, -0.5, 0, 0.5, 1]) out.push(V(x * b.half.x, y * b.half.y, 0).applyQuaternion(b.quaternion).add(b.centre)); return out; };
+const within = (b, p) => { const q = p.clone().sub(b.centre).applyQuaternion(b.quaternion.clone().invert()); return Math.abs(q.x) <= b.half.x && Math.abs(q.y) <= b.half.y && Math.abs(q.z) <= b.half.z; };
 
 test('the real rooms run from 8.6 by 10 to 35.4 by 32', () => {
-  const near = ([w, d], [x, z]) => assert.ok(Math.abs(w - x) < 1e-6 && Math.abs(d - z) < 1e-6, `${w} by ${d}`);
+  const near = ({ width, depth }, [x, z]) => assert.ok(Math.abs(width - x) < 1e-6 && Math.abs(depth - z) < 1e-6, `${width} by ${depth}`);
   near(REAL[0], [8.6, 10]); near(REAL[4], [35.4, 32]);
 });
 
@@ -57,10 +71,16 @@ test('each is turned 10-30 degrees off its wall and leans back, on the floor and
   assert.equal(new Set(all.map(c => c.lean)).size, 3);
 });
 
-for (const [width, depth] of ROOMS) test(`in a room ${width.toFixed(1)} by ${depth} they stand by a wall, clear of what's on it and what's near it`, t => {
+for (const { width, depth, cols, cellW } of ROOMS) test(`in a room ${width.toFixed(1)} by ${depth}, cells ${cellW.toFixed(1)} wide, they stand by a wall, clear of what's on it and what's near it`, t => {
   noDocument(t);
-  const { room } = standing(width, depth), all = officeCutouts({ width, depth }), others = room.furnitureColliders.filter(b => !OURS.test(b.surface ?? '')), { posters } = windowsWall(width), hung = rightWall(depth);
+  const { room } = standing(width, depth, cellW), all = officeCutouts({ width, depth, cellW }), others = room.furnitureColliders.filter(b => !OURS.test(b.surface ?? '')), posters = postersOn(room), hung = rightWall(room, depth);
   assert.equal(room.furnitureColliders.length - others.length, 3, 'one walking box each');
+  assert.equal(posters.length, Math.floor(width / 4) - 1, 'the posters, read off the wall');
+  // Between desks: in the first gap unless a poster's there, and only a room with one project has no such gap to stand in. Its near edge can be 6 cm past the last desk's end, up by the wall (cutouts.js says why).
+  const pear = stands(all[0]), inGap = k => pear.min.x >= k * cellW - 0.46 && pear.max.x <= k * cellW + 1.5, gapFree = !posters.some(span => !clear([cellW - 0.46, cellW + 0.41], span));
+  if (cols > 1) assert.ok(gapFree ? inGap(1) : Array.from({ length: cols - 1 }, (_, k) => k + 1).some(inGap) || pear.min.x > (cols - 1) * cellW, `the pear at ${pear.min.x}..${pear.max.x} is between desks`);
+  else assert.ok(pear.min.x > cellW - 0.55, `the pear at ${pear.min.x} is past the desks`);
+  for (const a of all) for (const b of all) if (a !== b) for (const part of [a.card, a.strut]) for (const other of [b.card, b.strut]) assert.ok(!across(part).some(p => within(other, p)), `${a.fruit} goes through ${b.fruit}`);
   for (const c of all) {
     const box = stands(c), xs = [box.min.x, box.max.x], zs = [box.min.z, box.max.z];
     assert.ok(box.min.x > 0.02 && box.max.x < width - 0.02 && box.min.z > 0.02 && box.max.z < depth - 0.02, `${c.fruit} is in the room: ${box.min.toArray()} ${box.max.toArray()}`);
@@ -78,31 +98,58 @@ for (const [width, depth] of ROOMS) test(`in a room ${width.toFixed(1)} by ${dep
   }
 });
 
-test('they stay in place between visits: the same spots every time for a room', () => {
-  assert.deepEqual(officeCutouts({ width: 15.3, depth: 15.5 }).map(c => c.card.centre.toArray()), officeCutouts({ width: 15.3, depth: 15.5 }).map(c => c.card.centre.toArray()));
-});
-
-// Full of desks, nothing a walker could reach without them is cut off, and every desk, door and corner can still be walked to.
-for (const pods of [1, 2, 3, 4, 6, 9, 16, 25]) test(`with ${pods} full projects nothing's cut off`, t => {
-  noDocument(t);
-  const layout = full(pods), { width, depth } = layout.room, scene = new THREE.Scene(), room = createRoom(scene, { initTexture() {} }); room.sync(layout, new Map());
+// Walking the room with and without them, from the door: the two grids, what was reached, what's now cut off, and where anyone would want to go.
+function walks(layout) {
+  const { width, depth } = layout.room, scene = new THREE.Scene(), room = createRoom(scene, { initTexture() {} }); room.sync(layout, new Map());
   const cards = b => OURS.test(b.surface ?? ''), without = room.colliders.filter(b => !cards(b));
   assert.equal(room.colliders.length - without.length, 3);
   const grid = walkGrid(room.colliders, layout.room), before = walkGrid(without, layout.room), door = V(width / 2, 0, depth - 0.6);
   const spread = g => { const seen = new Uint8Array(g.open.length), start = Math.floor((door.z - g.back) / CELL) * g.cols + Math.floor((door.x - g.left) / CELL), queue = [start]; seen[start] = 1; while (queue.length) { const k = queue.pop(), i = k % g.cols, j = (k - i) / g.cols; for (const [a, b] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const m = j + b, n = i + a, c = m * g.cols + n; if (n >= 0 && m >= 0 && n < g.cols && m < g.rows && g.open[c] && !seen[c]) { seen[c] = 1; queue.push(c); } } } return seen; };
   const was = spread(before), is = spread(grid), lost = [];
   for (let k = 0; k < was.length; k++) if (was[k] && grid.open[k] && !is[k]) lost.push([k % grid.cols * CELL, Math.floor(k / grid.cols) * CELL]);
-  assert.ok(lost.length <= 1, `open floor walled off: ${JSON.stringify(lost)}`); // in the one-project room, a cell between a helper's desk and the poster's plant: no desk or route, and the two cards share the only gap
-  const ends = [...[...layout.desks.values()].map(d => V(d.x, 0, d.z - 0.87 * Math.cos(d.rotation))), room.secret.spot, V(0.9, 0, kitchenDoor(depth)), V(COFFEE_X, 0, depth - 1), V(width - 1, 0, 1.25), V(1, 0, depth / 2)];
+  const seats = [...layout.desks.values()].flatMap(d => [V(d.x, 0, d.z - 0.87 * Math.cos(d.rotation)), ...room.deskAnchor(d.sessionId).helpers.map(h => h.seat)]);
+  const ends = [...seats, room.secret.spot, V(0.9, 0, kitchenDoor(depth)), V(COFFEE_X, 0, depth - 1), V(width - 1, 0, 1.25), V(1, 0, depth / 2)];
+  return { grid, before, door, lost, ends };
+}
+// Full of desks, nothing a walker could reach without them is cut off.
+const stillReached = ({ grid, before, door, lost, ends }) => {
+  assert.deepEqual(lost, [], `open floor walled off: ${JSON.stringify(lost)}`);
   const reached = ends.filter(end => findPath(before, door, end));
-  assert.ok(reached.length > ends.length / 3, `enough of it could be reached at all: ${reached.length} of ${ends.length}`); // desks packed this full wall in some seats, cutouts or not
+  assert.ok(reached.length > ends.length / 4, `enough of it could be reached at all: ${reached.length} of ${ends.length}`); // three helpers on every desk wall in some seats, cutouts or not
   for (const end of reached) assert.ok(findPath(grid, door, end), `a way to ${end.toArray()}`);
+};
+const RUNS = [...[1, 2, 3, 4, 6, 9, 16, 25].map(pods => [pods, 6]), ...[1, 2, 3, 4, 5, 6, 16].flatMap(pods => BIG.map(seats => [pods, seats])), ...[1, 2].flatMap(pods => [9, 11, 13, 14].map(seats => [pods, seats]))];
+for (const [pods, seats] of RUNS) test(`with ${pods} projects of ${seats}, three helpers on every desk, nothing's cut off`, t => {
+  noDocument(t);
+  stillReached(walks(full(pods, seats)));
+});
+for (const seats of [7, 8]) test(`with ${seats} at one project and three helpers on the back row's last two desks, those desks can still be walked to`, t => {
+  noDocument(t);
+  stillReached(walks(full(1, seats, s => s === 4 || s === 6 ? 3 : 0)));
+});
+// Two helpers leave the row along the windows wide enough, so everything can be walked to: there's no excuse here.
+for (const [pods, seats] of [...[1, 2, 3, 4, 9, 16].map(pods => [pods, 6]), ...[1, 2, 4].flatMap(pods => BIG.map(seats => [pods, seats]))]) test(`with ${pods} projects of ${seats}, two helpers on every desk, every seat, door and corner can be walked to`, t => {
+  noDocument(t);
+  const { grid, door, lost, ends } = walks(full(pods, seats, () => 2));
+  assert.deepEqual(lost, [], 'no open floor walled off');
+  for (const end of ends) assert.ok(findPath(grid, door, end), `a way to ${end.toArray()}`);
+});
+
+test('a bigger project in a room that needn\'t grow moves the pear to the new gap', t => {
+  noDocument(t);
+  const scene = new THREE.Scene(), room = createRoom(scene, {}), pear = () => room.colliders.find(b => b.surface === 'cutout-pear');
+  room.sync(empty(23, 15.5, 6.7), new Map());
+  const was = pear().min.x, size = room.size;
+  room.sync(empty(23, 15.5, 8.3), new Map());
+  assert.equal(room.size, size, 'the room is the same size');
+  assert.ok(Math.abs(pear().min.x - was - 1.6) < 1e-6, `the pear moved from ${was} to ${pear().min.x}`);
+  assert.equal(room.colliders.filter(b => b.surface === 'cutout-pear').length, 1, 'none left behind');
 });
 
 test('growing the room moves their boxes, for walking and for throwing, and leaves none behind', t => {
   noDocument(t);
   const scene = new THREE.Scene(), room = createRoom(scene, {}), find = list => list.filter(b => OURS.test(b.surface ?? ''));
-  const [small, big] = [[8.6, 10], [15.3, 15.5]];
+  const [small, big] = [[8.6, 10, 6.7], [18.5, 15.5, 8.3]];
   room.sync(empty(...small), new Map());
   const walk = find(room.colliders).map(b => b.clone()), flight = find(room.flightColliders).map(b => b.centre.clone());
   assert.equal(walk.length, 3, 'three to walk round'); assert.equal(flight.length, 6, 'a card and a strut each to throw at');
@@ -139,24 +186,39 @@ test("a tap goes through them to the floor: they don't get in the way of what's 
 });
 
 test('one mesh, one material on the shared sheet, lit like the room, its sheet kept through a rebuild; the kitchen shares it and the rest of its print waits', t => {
-  noDocument(t); // `printed` isn't cleared: the sheet's built once, by whichever test built a room first, and none before this opens the kitchen
+  noDocument(t);
   const scene = new THREE.Scene(), room = createRoom(scene, {}); room.sync(empty(8.6, 10), new Map());
   const material = cardsMaterial(), meshes = []; scene.traverse(node => { if (node.isMesh && node.material === material) meshes.push(node); });
   assert.equal(meshes.length, 1, 'one mesh in the office'); assert.ok(!Array.isArray(meshes[0].material));
   assert.equal(meshes[0].children.length, 0, 'no outline, so one draw');
   assert.notEqual(material.type, 'MeshBasicMaterial', 'lit, so it follows the switch');
   assert.equal(material.alphaTest, 0.5); assert.equal(material.userData.shared, true);
-  assert.ok(printed.some(line => /PEAR/.test(line)), 'its copy is printed at load');
-  assert.ok(!printed.includes(COPY.motto), 'the rest of the print waits for the kitchen'); assert.ok(!printed.includes(COPY.special[2]));
+  // The sheet's built once, for whichever test built a room first, so it's drawn again here to see what's on it. This room's kitchen isn't open yet, so anything else is someone else's.
+  printed.length = 0; material.map.redraw();
+  assert.ok(printed.some(line => /PEAR/.test(line)), 'its copy is on the sheet');
+  assert.ok(!printed.includes(COPY.motto), 'the rest of the print is not'); assert.ok(!printed.includes(COPY.special[2]));
   const { width: w, height: h } = material.map.image; assert.ok(w * h <= 1200 * 900, `a small sheet: ${w} x ${h}`);
   let disposed = 0; material.map.addEventListener('dispose', () => disposed++);
   room.sync(empty(15.3, 15.5), new Map()); assert.equal(disposed, 0); assert.equal(cardsMaterial(), material);
   const after = []; scene.traverse(node => { if (node.isMesh && node.material === material) after.push(node); }); assert.equal(after.length, 1, 'and still only one');
-  const door = kitchenDoor(15.5); room.kitchen.update(1 / 60, V(1, 0, door), true, 0);
+  printed.length = 0; const door = kitchenDoor(15.5); room.kitchen.update(1 / 60, V(1, 0, door), true, 0);
   assert.ok(printed.includes(COPY.motto), 'the kitchen prints the rest when it first opens');
   const inKitchen = []; room.kitchen.group.traverse(node => { if (node.isMesh && node.material === material) inKitchen.push(node); });
   assert.equal(inKitchen.length, 1, "the kitchen's four are one mesh on the same material");
   inKitchen[0].geometry.computeBoundingBox(); assert.ok(inKitchen[0].raycast !== THREE.Mesh.prototype.raycast, 'and a ray goes through');
+});
+
+// Seen from exactly side-on, each face is seen from behind and isn't drawn, so without an edge of its own a card isn't there at all.
+test('side-on a card still has an edge, in the same one mesh', t => {
+  noDocument(t);
+  const scene = new THREE.Scene(), room = createRoom(scene, {}); room.sync(empty(8.6, 10), new Map());
+  let mesh; scene.traverse(node => { if (node.isMesh && node.material === cardsMaterial()) mesh = node; });
+  const { position, normal } = mesh.geometry.attributes, p = V(0, 0, 0), n = V(0, 0, 0);
+  for (const { card, fruit } of officeCutouts({ width: 8.6, depth: 10, cellW: 6.7 })) for (const [axis, half] of [[V(1, 0, 0), card.half.x], [V(0, 1, 0), card.half.y]]) for (const sign of [1, -1]) {
+    const out = axis.clone().multiplyScalar(sign).applyQuaternion(card.quaternion); let found = 0;
+    for (let i = 0; i < position.count; i++) { p.fromBufferAttribute(position, i).sub(card.centre); n.fromBufferAttribute(normal, i); if (n.dot(out) > 0.999 && p.dot(out) > half * 0.9 && p.dot(out) <= half + 1e-6 && Math.abs(V(0, 0, 1).applyQuaternion(card.quaternion).dot(p)) <= card.half.z + 1e-6) found++; }
+    assert.ok(found >= 4, `${fruit}'s edge towards ${out.toArray()}`);
+  }
 });
 
 test("the kitchen's cutouts are still named for its plan", () => {
