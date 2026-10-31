@@ -82,6 +82,7 @@ export function createSecret({ onPress, onMove }) {
     // How far you may walk: the office with the kitchen and the games room either side of it (walls and the shelf do the rest).
     bounds(room) { return { left: -(WALL_T + KITCHEN.width), width: room.width + WALL_T + SECRET.w, depth: room.depth }; },
     // Where to stand to press the right book.
+    get shown() { return !!built?.room?.visible; },
     get spot() { return built && new THREE.Vector3(built.door.x - 0.9, 0, built.door.z); },
     toggle() { open = !open; idle = 0; press = PRESS; },
     add(game) { games.push(game); if (built?.room) game.build(built.room); },

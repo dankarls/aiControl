@@ -244,7 +244,7 @@ const box3 = (x0, y0, z0, x1, y1, z1, extra) => Object.assign(box(x0, y0, z0, x1
 const WEST = -(WALL_T + KITCHEN.width); // how far the building goes that way
 function office({ colliders = [], still = false, people = [] } = {}) {
   const heard = [], scene = new THREE.Scene(), player = { position: V(1, 1.6, 1), forward: V(0, 0, -1), yaw: 0, flight: null }, size = { width: 10, depth: 10 };
-  const room = { flightColliders: colliders, kitchen: { inside: p => { const z = p.z - kitchenDoor(size.depth); return p.x < -WALL_T / 2 && p.x > WEST && z > KITCHEN.back && z < KITCHEN.front; } }, secret: { bounds: r => ({ left: WEST, width: r.width + 3 - WEST, depth: r.depth }), inside: p => p.x > 10.1 && p.z > size.depth - 7.9 && p.z < size.depth - 0.7, get spot() { return V(9.1, 0, size.depth - 3.8); } } };
+  const room = { flightColliders: colliders, kitchen: { shown: true, inside: p => { const z = p.z - kitchenDoor(size.depth); return p.x < -WALL_T / 2 && p.x > WEST && z > KITCHEN.back && z < KITCHEN.front; } }, secret: { shown: true, bounds: r => ({ left: WEST, width: r.width + 3 - WEST, depth: r.depth }), inside: p => p.x > 10.1 && p.z > size.depth - 7.9 && p.z < size.depth - 0.7, get spot() { return V(9.1, 0, size.depth - 3.8); } } };
   const characters = new Map(people.map(p => [p.id, { scale: 1, root: { visible: true } }]));
   const cast = { characters, positionOf: id => { const p = people.find(p => p.id === id); return p && V(p.x, p.top + 0.08, p.z); } };
   const camera = new THREE.PerspectiveCamera(); camera.position.set(1, 1.6, 1);
@@ -496,6 +496,48 @@ test('the room grows: a puddle in the kitchen goes along with it, and one in the
   a.props.shift(a.room.kitchen.inside, 2); b.props.shift(b.room.kitchen.inside, 2); a.run(0.1); b.run(0.1);
   assert.ok(Math.abs(puddleAt(there).z - was - 2) < 1e-6);
   assert.ok(Math.abs(puddleAt(here).z - stays) < 1e-6);
+});
+
+// Drawn: a ball's instance has a size, a desk thing its visibility; puddles and drops are as many as are drawn.
+const drawn = b => { if (b.obj) return b.obj.visible; const m = new THREE.Matrix4(); b.mesh.getMatrixAt(b.i, m); return m.determinant() !== 0; };
+for (const [name, side, x] of [['kitchen', 'kitchen', -3], ['secret room', 'secret', 11]]) {
+  test(`what's in the ${name} isn't drawn while the room is hidden, and an office one is`, () => {
+    const a = office(), { pool } = pourAt(a, x, 5);
+    a.props.pour(false); a.run(1);
+    a.send([x, 0.5, 5], [0, 0, 0]); a.run(2);
+    const other = a.scene.children[0].children[1].userData.prop(0);
+    assert.ok(a.room[side].inside(a.ball.pos) && !a.room[side].inside(other.pos));
+    const mug = new THREE.Object3D(); mug.userData.loose = 'mug'; a.scene.add(mug); a.room.flightColliders = []; a.run(0.05);
+    const b = mug.userData.prop(); a.props.carry(b, () => V(x + 1, 0.5, 5)); a.run(0.05); a.props.drop(b); a.run(2);
+    assert.ok(a.room[side].inside(b.pos), `${b.pos.toArray()}`);
+    const puddles = pool.count;
+    assert.ok(puddles > 0 && drawn(a.ball) && drawn(b) && drawn(other));
+    a.room[side].shown = false; a.run(0.05);
+    assert.equal(pool.count, 0, 'its puddles'); assert.ok(!drawn(a.ball), 'a ball'); assert.ok(!drawn(b), 'a desk thing'); assert.equal(mug.userData.prop(), null, 'and it can\'t be picked');
+    assert.ok(drawn(other), 'one in the office');
+    a.room[side].shown = true; a.run(0.05);
+    assert.equal(pool.count, puddles); assert.ok(drawn(a.ball)); assert.ok(drawn(b)); assert.equal(mug.userData.prop(), b); assert.ok(drawn(other));
+  });
+}
+
+test('a hidden room hides only what\'s in it: an office puddle stays, and drops in the air go', () => {
+  const a = office(), { pool, stream } = pourAt(a, 3, 5), puddles = pool.count;
+  a.room.kitchen.shown = a.room.secret.shown = false; a.run(0.05);
+  assert.equal(pool.count, puddles); assert.ok(stream.visible, 'poured in the office');
+  const b = office(), there = pourAt(b, -3, 5);
+  assert.ok(there.stream.visible);
+  b.room.kitchen.shown = false; b.run(0.02);
+  assert.equal(there.stream.visible, false, 'poured in the kitchen'); assert.equal(there.stream.geometry.drawRange.count, 0);
+});
+
+test('the room grows: what lies hidden in the kitchen stays hidden, in its new place', () => {
+  const a = office();
+  a.send([-3, 0.5, 5], [0, 0, 0]); a.run(2); a.room.kitchen.shown = false; a.run(0.05);
+  a.props.shift(a.room.kitchen.inside, 2); a.run(0.05);
+  assert.ok(!drawn(a.ball));
+  a.room.kitchen.shown = true; a.run(0.05);
+  const m = new THREE.Matrix4(); a.ball.mesh.getMatrixAt(a.ball.i, m);
+  assert.ok(Math.abs(new THREE.Vector3().setFromMatrixPosition(m).z - a.ball.pos.z) < 1e-9 && drawn(a.ball));
 });
 
 test('thrown past the kitchen, a thing goes back where it was', () => {

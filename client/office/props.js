@@ -81,10 +81,10 @@ export function moveBody(b, dt, world, building, reachable = () => true) {
 
 export function createProps(scene, { room, cast, camera, player, view, bounds, reducedMotion, onHit, others = () => [], hand }) {
   const root = new THREE.Group(); scene.add(root);
-  const bodies = [], matrix = new THREE.Matrix4(), one = new THREE.Vector3(1, 1, 1);
+  const bodies = [], matrix = new THREE.Matrix4(), one = new THREE.Vector3(1, 1, 1), none = new THREE.Vector3(0, 0, 0);
   const near = new THREE.Vector3(), normal = new THREE.Vector3();
   // `free`: ours to move (a desk thing isn't until it's first picked up); `grip`: how it's turned in hand, from where you face.
-  const body = (kind, extra) => ({ ...makeBody(kind), turn: new THREE.Quaternion(), grip: new THREE.Quaternion(), home: new THREE.Vector3(), held: false, grace: 0, hits: new Set(), ...extra });
+  const body = (kind, extra) => ({ ...makeBody(kind), turn: new THREE.Quaternion(), grip: new THREE.Quaternion(), home: new THREE.Vector3(), held: false, off: false, grace: 0, hits: new Set(), ...extra });
   for (const kind of BALLS) {
     const [geometry, material] = kind.make(), count = kind.spots(10, 10).length;
     const mesh = new THREE.InstancedMesh(geometry, material, count), hull = instancedOutline(mesh, kind.radius > 0.1 ? 0.008 : 0.005);
@@ -94,8 +94,8 @@ export function createProps(scene, { room, cast, camera, player, view, bounds, r
   }
   let placed = false, holding = null, aimed = null, boxes = null, building = null;
   const show = b => {
-    if (b.obj) { b.obj.quaternion.copy(b.turn); b.obj.position.copy(b.kind.centre).applyQuaternion(b.turn).negate().add(b.pos); return; }
-    b.mesh.setMatrixAt(b.i, matrix.compose(b.pos, b.turn, one)); b.mesh.instanceMatrix.needsUpdate = true;
+    if (b.obj) { b.obj.visible = !b.off; b.obj.quaternion.copy(b.turn); b.obj.position.copy(b.kind.centre).applyQuaternion(b.turn).negate().add(b.pos); return; }
+    b.mesh.setMatrixAt(b.i, matrix.compose(b.pos, b.turn, b.off ? none : one)); b.mesh.instanceMatrix.needsUpdate = true;
     b.mesh.boundingSphere = b.hull.boundingSphere = null; // worked out again for culling and picking
   };
   const light = (b, on) => b.obj ? highlight(b.obj, on) : b.hull.light(b.i, on);
@@ -105,6 +105,8 @@ export function createProps(scene, { room, cast, camera, player, view, bounds, r
   // Where a thing can lie and still be got at: the office (to the middle of its walls, so the doorway counts) or a room off it.
   // A new room joins the `||`s.
   const reachable = p => { const { width, depth } = bounds(); return (p.x >= -WALL_T / 2 && p.x <= width + WALL_T / 2 && p.z >= 0 && p.z <= depth) || room.secret.inside(p) || room.kitchen.inside(p); };
+  // In a room off the office that isn't drawn now (shut, or the overview), so neither is what's in it. What's in hand goes with you.
+  const hides = p => (!room.kitchen.shown && room.kitchen.inside(p)) || (!room.secret.shown && room.secret.inside(p));
 
   // The characters as columns: where, how wide, how tall. Someone hit, or whose things are, says so (once a moment).
   let people = [];
@@ -121,7 +123,7 @@ export function createProps(scene, { room, cast, camera, player, view, bounds, r
   const thing = item => {
     const b = item.userData.body ??= body(LOOSE[item.userData.loose], { obj: item });
     if (!b.free) { item.updateWorldMatrix(true, false); item.matrixWorld.decompose(b.pos, b.turn, scale); b.pos.add(near.copy(b.kind.centre).applyQuaternion(b.turn)); }
-    return b.held ? null : b;
+    return b.held || b.off ? null : b;
   };
   // Picked up the first time: a stand-in keeps its place (room.js counts the cups) and it joins the balls. Its owner minds.
   const free = b => {
@@ -291,6 +293,7 @@ export function createProps(scene, { room, cast, camera, player, view, bounds, r
         if (closing < 0) { const j = -(1 + Math.min(a.kind.bounce, b.kind.bounce)) * closing / (1 / ma + 1 / mb); a.vel.addScaledVector(normal, -j / ma); b.vel.addScaledVector(normal, j / mb); }
         a.rest = b.rest = false; show(a); show(b);
       }
+      for (const b of bodies) { const off = !b.held && !b.carried && hides(b.pos); if (off !== b.off) { b.off = off; show(b); } }
 
       // The mug tips while F is held, and pours once it's over far enough. The machine fills it while you stay by it, its
       // own little stream running into the drip tray.
@@ -325,15 +328,18 @@ export function createProps(scene, { room, cast, camera, player, view, bounds, r
         else if (top !== undefined) { if (top !== null) land(x, top, z, DROP, now); if (wet) hit(wet, now, 'desk'); }
         if (who || top !== undefined || !reachable(drop.pos)) drops.splice(i, 1);
       }
-      drops.forEach((drop, i) => drop.pos.toArray(dropPositions, i * 3));
-      dropGeometry.setDrawRange(0, drops.length); dropGeometry.attributes.position.needsUpdate = true; stream.visible = drops.length > 0;
+      let drawn = 0;
+      for (const drop of drops) if (!hides(drop.pos)) drop.pos.toArray(dropPositions, drawn++ * 3);
+      dropGeometry.setDrawRange(0, drawn); dropGeometry.attributes.position.needsUpdate = true; stream.visible = drawn > 0;
       // Puddles shrink over their last 20 seconds.
       for (let i = puddles.length - 1; i >= 0; i--) if (now - puddles[i].at > DRY) puddles.splice(i, 1);
-      puddles.forEach((p, i) => {
+      drawn = 0;
+      for (const p of puddles) {
+        if (hides(p)) continue;
         const size = Math.sqrt(p.area / Math.PI) * Math.min(1, (DRY - (now - p.at)) / 20);
-        pool.setMatrixAt(i, matrix.compose(near.set(p.x, p.y + 0.02, p.z), q.setFromAxisAngle(axis.set(0, 1, 0), p.angle), out.setScalar(size)));
-      });
-      pool.count = puddles.length; pool.instanceMatrix.needsUpdate = true; pool.visible = puddles.length > 0;
+        pool.setMatrixAt(drawn++, matrix.compose(near.set(p.x, p.y + 0.02, p.z), q.setFromAxisAngle(axis.set(0, 1, 0), p.angle), out.setScalar(size)));
+      }
+      pool.count = drawn; pool.instanceMatrix.needsUpdate = true; pool.visible = drawn > 0;
     },
     dispose() { root.removeFromParent(); },
   };

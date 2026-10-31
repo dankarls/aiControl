@@ -150,6 +150,7 @@ export function createKitchen({ onMove } = {}) {
   const kitchen = {
     group, doors, flight: [],
     get origin() { return origin; },
+    get shown() { return group.visible; },
     // Inside the kitchen (past the middle of the wall), at `p`.
     inside(p) { return !!origin && p.x < origin.x + WALL_T / 2 && p.x > origin.x - KITCHEN.width && p.z > origin.z + KITCHEN.back && p.z < origin.z + KITCHEN.front; },
     shut(on) { held = on; },

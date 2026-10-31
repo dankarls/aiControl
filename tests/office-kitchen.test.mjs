@@ -48,6 +48,7 @@ test('nothing is built until you first go near, and the doorway is solid to thro
   assert.ok(kitchen.group.children.length > 0);
   assert.equal(kitchen.group.visible, true);
   assert.equal(kitchen.group.matrixWorldAutoUpdate, true);
+  assert.equal(kitchen.shown, true);
   const built = kitchen.group.children[0];
   run(kitchen, far, 2); run(kitchen, near);
   assert.equal(kitchen.group.children[0], built, 'built once');
@@ -68,6 +69,7 @@ test('the doors open within 2.5 m, close past 3 m, and their box is there only w
   assert.ok(kitchen.flight.length > 50, 'what it has built stays');
   assert.notEqual(kitchen.flight, open, 'a new list');
   assert.equal(kitchen.group.visible, false, 'skipped once shut');
+  assert.equal(kitchen.shown, false, 'and says so');
   run(kitchen, V(2.8, 1.6, door), 1);
   assert.equal(fill(kitchen).length, 1, 'between the two distances shut stays shut');
 });
