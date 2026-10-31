@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { STEP, TiltedBox, makeBody, stepBody, advance, simulate, escaped } from '../client/office/flight.js';
+import { STEP, TiltedBox, makeBody, stepBody, advance, simulate, escaped, stopShort } from '../client/office/flight.js';
 import { createProps, moveBody } from '../client/office/props.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -149,6 +149,34 @@ test('a body outside the building counts as escaped', () => {
   for (const [x, z] of [[5, 5], [-3, 5], [-9, 5], [-9.9, 5], [20.9, 5], [5, -0.9], [5, 10.9]]) assert.ok(!escaped(V(x, 1, z), building), `${x} ${z}`);
 });
 
+test('put by hand, a thing stops short of what\'s between you and there', () => {
+  const k = { radius: 0.1, low: 0.05 }, wall = box(5, 0, 0, 5.2, 3, 10), to = (x, y, z) => V(x, y, z);
+  const put = (from, there, boxes) => stopShort(from, there, k, boxes).toArray();
+  assert.deepEqual(put(V(4, 1, 5), to(6, 1, 5), []), [6, 1, 5], 'nothing in the way');
+  assert.deepEqual(put(V(4, 1, 5), to(4.5, 1, 5), [wall]), [4.5, 1, 5], 'not as far as it');
+  assert.deepEqual(put(V(4, 1, 5), to(6, 1, 5), [wall]), [4.9, 1, 5], 'past it');
+  assert.deepEqual(put(V(4, 1, 5), to(5.05, 1, 5), [wall]), [4.9, 1, 5], 'into it');
+  assert.deepEqual(put(V(6, 1, 5), to(4, 1, 5), [wall]), [5.3, 1, 5], 'from the other side');
+  const near = stopShort(V(4, 1, 5), to(5, 2, 5), k, [wall]); // keeps the line it was on
+  assert.ok(Math.abs(near.x - 4.9) < 1e-9 && Math.abs(near.y - 1.9) < 1e-9, `${near.toArray()}`);
+  // the nearest of several; a gap between two lets it by
+  assert.deepEqual(put(V(4, 1, 5), to(8, 1, 5), [box(7, 0, 0, 7.2, 3, 10), wall]), [4.9, 1, 5]);
+  const gap = [box(5, 0, 0, 5.2, 3, 4), box(5, 0, 6, 5.2, 3, 10), box(5, 2.2, 4, 5.2, 3, 6)];
+  assert.deepEqual(put(V(4, 1, 5), to(6, 1, 5), gap), [6, 1, 5], 'through the gap');
+  assert.deepEqual(put(V(4, 2.5, 5), to(6, 2.5, 5), gap), [4.9, 2.5, 5], 'over the gap');
+  // along the top of a desk it stands on (by `low`, not its radius), but into it from above it stops on it
+  const desk = box(4, 0, 4, 6, 0.75, 6);
+  assert.deepEqual(put(V(3.7, 0.8, 5), to(4.5, 0.8, 5), [desk]), [4.5, 0.8, 5]);
+  assert.ok(Math.abs(stopShort(V(5, 1.8, 5), to(5, 0.2, 5), k, [desk]).y - 0.8) < 1e-5);
+  // already within a box it's left to flight, which pushes it out
+  assert.deepEqual(put(V(5, 0.3, 5), to(5, 0.5, 5), [desk]), [5, 0.5, 5]);
+  // a turned box is met turned: a thin plate at 45° across the line
+  const slant = plate([5, 1, 5], [0.05, 1, 1], [0, Math.PI / 4, 0]), met = stopShort(V(4, 1, 5), to(6, 1, 5), k, [slant]);
+  assert.ok(met.x < 5 && met.x > 4.7, `${met.toArray()}`); assert.equal(met.y, 1); assert.equal(met.z, 5);
+  assert.deepEqual(put(V(4, 1, 8), to(6, 1, 8), [slant]), [6, 1, 8], 'and missed where it isn\'t, inside its world box or not');
+  const there = to(6, 1, 5); assert.equal(stopShort(V(4, 1, 5), there, k, [wall]), there, 'it moves the one you gave it');
+});
+
 // What props.js adds to a flight body.
 const thing = (k, pos, vel) => Object.assign(makeBody(k, pos, vel), { turn: new THREE.Quaternion(), hits: new Set(), home: pos.clone() });
 const building = { left: 0, width: 10, depth: 10 };
@@ -196,6 +224,10 @@ test('a body rests where its home is, and an escaped one goes back there still',
   const c = thing(kind(), V(3, 1, 3), V(-50, 0, 0));
   moveBody(c, 0.1, { colliders: [] }, building);
   assert.deepEqual(c.pos.toArray(), [3, 1, 3]);
+  // nor does coming to rest somewhere nobody can reach, with the building round it
+  const e = thing(kind(), V(3, 0.1, 3), V(0, 0, 0)); e.pos.set(8, 0.1, 3); e.quiet = 1;
+  moveBody(e, 1 / 60, { colliders: [] }, building, p => p.x < 5);
+  assert.deepEqual(e.pos.toArray(), [3, 0.1, 3]); assert.deepEqual(e.home.toArray(), [3, 0.1, 3]); assert.equal(e.rest, false);
   // coming to rest out there doesn't make out there home
   const d = thing(kind(), V(3, 0.1, 3), V(0, 0, 0)); d.pos.set(-5, 0.1, 3); d.quiet = 1;
   moveBody(d, 1 / 60, { colliders: [] }, building);
@@ -206,19 +238,20 @@ test('a body rests where its home is, and an escaped one goes back there still',
 const blank = () => new Proxy({}, { get: (t, k) => k in t ? t[k] : () => ({ addColorStop() {} }), set: (t, k, v) => { t[k] = v; return true; } });
 const box3 = (x0, y0, z0, x1, y1, z1, extra) => Object.assign(box(x0, y0, z0, x1, y1, z1), extra);
 function office({ colliders = [], still = false, people = [] } = {}) {
-  const heard = [], scene = new THREE.Scene(), player = { position: V(1, 1.6, 1), forward: V(0, 0, -1), yaw: 0, flight: null };
-  const room = { flightColliders: colliders, secret: { bounds: r => ({ left: 0, width: r.width + 13.2, depth: r.depth }), inside: p => p.x > 10.1 } };
+  const heard = [], scene = new THREE.Scene(), player = { position: V(1, 1.6, 1), forward: V(0, 0, -1), yaw: 0, flight: null }, size = { width: 10, depth: 10 };
+  const room = { flightColliders: colliders, secret: { bounds: r => ({ left: 0, width: r.width + 13.2, depth: r.depth }), inside: p => p.x > 10.1 && p.z > size.depth - 7.9 && p.z < size.depth - 0.7, get spot() { return V(9.1, 0, size.depth - 3.8); } } };
   const characters = new Map(people.map(p => [p.id, { scale: 1, root: { visible: true } }]));
   const cast = { characters, positionOf: id => { const p = people.find(p => p.id === id); return p && V(p.x, p.top + 0.08, p.z); } };
   const camera = new THREE.PerspectiveCamera(); camera.position.set(1, 1.6, 1);
+  const view = { amount: 0, drunk: 0 };
   globalThis.document = { createElement: () => ({ getContext: blank }) };
-  const props = createProps(scene, { room, cast, camera, player, view: { amount: 0, drunk: 0 }, bounds: () => ({ width: 10, depth: 10 }), reducedMotion: () => still, onHit: (id, line) => heard.push([id, line]) });
+  const props = createProps(scene, { room, cast, camera, player, view, bounds: () => size, reducedMotion: () => still, onHit: (id, line) => heard.push([id, line]) });
   delete globalThis.document;
   const ball = scene.children[0].children[0].userData.prop(0); // the football
   const run = (seconds, rate = 60) => { for (let i = 0; i < seconds * rate; i++) props.update(1 / rate); };
   run(0.1);
   const send = (pos, vel) => { ball.pos.set(...pos); ball.vel.set(...vel); ball.rest = false; };
-  return { props, run, ball, send, room, player, heard };
+  return { props, run, ball, send, room, player, heard, camera, view, size, scene };
 }
 
 test('only real walls stop things now: the room has no invisible edge', () => {
@@ -228,7 +261,7 @@ test('only real walls stop things now: the room has no invisible edge', () => {
   assert.ok(b.ball.pos.x <= 10 - 0.11 + 1e-6, `${b.ball.pos.x}`);
 });
 
-test('someone hit, or whose desk is knocked, says so once a throw', () => {
+test('someone hit, or whose desk is knocked, says so', () => {
   const ann = { id: 'ann', x: 5, z: 5, top: 1.6 }, desk = box3(7, 0, 4, 8, 0.75, 6, { owner: 'bob' }), bob = { id: 'bob', x: 7.5, z: 8, top: 1.6 };
   const a = office({ people: [ann, bob], colliders: [desk] });
   a.send([4, 1, 5], [5, 0, 0]); a.run(0.2);
@@ -260,4 +293,114 @@ test('what you drop going through the secret door stays in the office', () => {
   a.ball.pos.set(10.8, 1, 5); a.props.grab(a.ball); a.props.update(1 / 60);
   a.props.throw(null, true);
   assert.ok(a.ball.pos.x <= 10 - 0.11 + 1e-9, `${a.ball.pos.x}`);
+});
+
+test('each person minds once a throw, however long it bounces about, and again once it has rested', () => {
+  const clock = performance.now, ann = { id: 'ann', x: 5, z: 5, top: 1.6 }; let t = 1000; performance.now = () => t;
+  try {
+    const a = office({ people: [ann] });
+    a.send([4, 1, 5], [5, 0, 0]); a.run(0.2);
+    assert.deepEqual([...a.ball.hits], ['ann']); assert.equal(a.heard.length, 1);
+    t += 10000; a.send([4, 1, 5], [5, 0, 0]); a.run(0.2); // well past "once a moment": only hits holds this one back
+    assert.equal(a.heard.length, 1);
+    a.run(4); assert.ok(a.ball.rest); assert.equal(a.ball.hits.size, 0);
+    t += 10000; a.send([4, 1, 5], [5, 0, 0]); a.run(0.2);
+    assert.equal(a.heard.length, 2);
+  } finally { performance.now = clock; }
+});
+
+// The office's real walls, 10 by 10, with the doorway in the right wall and the games room beyond it.
+const doorZ = 6.2, shelf = open => box3(9.61, 0, doorZ - 0.75 - (open ? 1.6 : 0), 10, 2.3, doorZ + 0.75 - (open ? 1.6 : 0));
+const walls = open => [box3(-0.2, 0, -0.2, 10.2, 3, 0), box3(-0.2, 0, 10, 10.2, 3, 10.2), box3(-0.2, 0, 0, 0, 3, 10),
+  box3(10, 0, 0, 10.2, 3, doorZ - 0.65), box3(10, 0, doorZ + 0.65, 10.2, 3, 10), box3(10, 2.2, doorZ - 0.65, 10.2, 3, doorZ + 0.65),
+  box3(10.2, 0, doorZ - 4.3, 23.4, 3, doorZ - 4.1), box3(10.2, 0, doorZ + 3.1, 23.4, 3, doorZ + 3.3), box3(23.2, 0, doorZ - 4.3, 23.4, 3, doorZ + 3.3), shelf(open)];
+const at = (a, x, z, dx, dz) => { a.player.position.set(x, 1.6, z); a.camera.position.set(x, 1.6, z); a.camera.lookAt(x + dx, 1.6, z + dz); a.camera.updateMatrixWorld(); a.player.yaw = Math.atan2(-dx, -dz); a.props.update(1 / 60); };
+const inHand = (a, x, z, dx, dz) => { at(a, x, z, dx, dz); a.ball.pos.copy(a.player.position); a.ball.rest = false; a.props.grab(a.ball); assert.equal(a.props.holding, a.ball); a.props.update(1 / 60); };
+// Watches every frame, so going out and being sent back counts too.
+const stays = (a, seconds) => { const r = a.ball.kind.radius; for (let i = 0; i < seconds * 60; i++) { a.props.update(1 / 60); const { x, z } = a.ball.pos; assert.ok(x >= r - 1e-6 && x <= 10 - r + 1e-6 && z >= r - 1e-6 && z <= 10 - r + 1e-6, `frame ${i} at ${x}, ${z}`); } assert.ok(a.ball.rest); };
+const sides = [['left', 0.35, 5, -1, 0], ['windows', 5, 0.35, 0, -1], ['door', 5, 9.65, 0, 1], ['right, nothing behind', 9.65, 1, 1, 0], ['right, games room behind', 9.65, 8.5, 1, 0]];
+
+test('a throw from right up against a wall stays this side of it', () => {
+  for (const [name, x, z, dx, dz] of sides) {
+    const a = office({ colliders: walls() }); inHand(a, x, z, dx, dz);
+    a.props.throw(V(dx, 0, dz));
+    assert.doesNotThrow(() => stays(a, 8), name);
+    assert.ok(a.ball.home.x > 0 && a.ball.home.x < 10 && a.ball.home.z > 0 && a.ball.home.z < 10, `${name} home ${a.ball.home.toArray()}`);
+  }
+});
+
+test('what you drop with your back to the room, facing a wall, stays this side of it', () => {
+  for (const [name, x, z, dx, dz] of [...sides.map(([n, x, z, dx, dz]) => [n, x, z, dx, dz]), ['left from further off', 0.5, 5, -1, 0]]) {
+    const a = office({ colliders: walls() }); inHand(a, x, z, dx, dz);
+    a.view.amount = 1; a.props.update(1 / 60); a.view.amount = 0;
+    assert.equal(a.props.holding, null);
+    const near = dx ? Math.abs(a.ball.pos.z - z) : Math.abs(a.ball.pos.x - x);
+    assert.ok(near < 0.5, `${name}: it lands where you are, not ${a.ball.pos.toArray()}`);
+    assert.doesNotThrow(() => stays(a, 4), name);
+  }
+});
+
+test('standing on a ball against a wall leaves it this side', () => {
+  for (const [name, x, z, dx, dz] of sides) {
+    const a = office({ colliders: walls() }), r = a.ball.kind.radius;
+    a.send([x + dx * (0.35 - r), r, z + dz * (0.35 - r)], [0, 0, 0]); at(a, x - dx * 0.2, z - dz * 0.2, dx, dz); a.run(0.5);
+    at(a, x, z, dx, dz);
+    assert.doesNotThrow(() => stays(a, 2), name);
+  }
+});
+
+test('a nudge moves a thing along the desk it stands on, and doesn\'t knock it off the near edge', () => {
+  const desk = box3(4, 0, 4, 6, 0.75, 6), a = office({ colliders: [desk] }), r = a.ball.kind.radius;
+  a.send([4.15, 0.75 + r, 5], [0, 0, 0]); at(a, 3.9, 8, 0, -1); a.run(0.5); assert.ok(a.ball.rest);
+  at(a, 3.7, 5, 1, 0); // 0.3 from the desk, as near as you can stand: pushes it 0.41 from you, along the top
+  assert.ok(a.ball.pos.x >= 4.11 - 1e-6, `${a.ball.pos.x}`); assert.ok(Math.abs(a.ball.pos.y - (0.75 + r)) < 0.01, `${a.ball.pos.y}`);
+});
+
+test('a throw through the open secret door gets through, point-blank too; shut, or too high, it doesn\'t', () => {
+  const a = office({ colliders: walls(true) }); inHand(a, 9.7, doorZ, 1, 0); a.props.throw(V(1, 0, 0)); a.run(8);
+  assert.ok(a.ball.rest); assert.ok(a.ball.pos.x > 10.2, `${a.ball.pos.x}`); assert.deepEqual(a.ball.home.toArray(), a.ball.pos.toArray(), 'and in there is home');
+  const shut = office({ colliders: walls() }); inHand(shut, 9.3, doorZ, 1, 0); shut.props.throw(V(1, 0, 0));
+  assert.doesNotThrow(() => stays(shut, 8));
+  const high = office({ colliders: walls(true) }); inHand(high, 9.3, doorZ, 1, 0); high.props.throw(V(1, 1.2, 0).normalize()); // into the wall over the door
+  assert.doesNotThrow(() => stays(high, 8));
+  // from under the lintel it's already through: it comes off the underside into the games room
+  const under = office({ colliders: walls(true) }); inHand(under, 9.7, doorZ, 1, 0); under.props.throw(V(0.45, 0.9, 0).normalize()); under.run(8);
+  assert.ok(under.ball.rest && under.ball.pos.x > 0 && under.ball.pos.x < 23.2 && under.ball.pos.z > doorZ - 4.1 && under.ball.pos.z < doorZ + 3.1, `${under.ball.pos.toArray()}`);
+});
+
+test('picked up in the games room, it lands in the office clear of the shelf, wherever along the room it was', () => {
+  for (const z of [3, doorZ - 1.6, 5, doorZ, 8.5]) {
+    const a = office({ colliders: walls(true) }); a.run(0.05); a.player.position.set(12, 1.6, z); a.camera.position.set(12, 1.6, z); a.camera.updateMatrixWorld();
+    a.ball.pos.set(12, 1, z); a.ball.rest = false; a.props.grab(a.ball); a.props.update(1 / 60); a.props.throw(null, true);
+    const box = shelf(true); assert.ok(!box.containsPoint(a.ball.pos), `${z}: in the shelf at ${a.ball.pos.toArray()}`);
+    a.player.position.set(1, 1.6, 1); a.camera.position.set(1, 1.6, 1); a.camera.updateMatrixWorld();
+    assert.doesNotThrow(() => stays(a, 4), `${z}`);
+  }
+});
+
+test('nothing stays lost: what comes to rest where nobody can reach goes home, and that\'s not saved as home', () => {
+  const lost = [['beside the games room', [15, 0.11, 1]], ['past the far end of it', [15, 0.11, 9.6]], ['in the band outside the left wall', [-0.5, 0.11, 5]], ['outside the window wall', [5, 0.11, -0.5]]];
+  for (const [name, pos] of lost) {
+    const a = office(), home = a.ball.home.clone();
+    a.run(2); const start = a.ball.home.clone(); assert.deepEqual(start.toArray(), a.ball.pos.toArray());
+    a.send(pos, [0, 0, 0]); a.run(1);
+    assert.deepEqual(a.ball.home.toArray(), start.toArray(), name); assert.deepEqual(a.ball.pos.toArray(), start.toArray(), name); assert.ok(a.ball.rest, name); assert.ok(home);
+  }
+  for (const [name, pos] of [['the games room', [15, 0.11, 5]], ['the doorway', [10.05, 0.11, doorZ]], ['the office', [5, 0.11, 5]]]) {
+    const a = office(); a.run(2); a.send(pos, [0, 0, 0]); a.run(1);
+    assert.deepEqual(a.ball.pos.toArray(), pos, name); assert.deepEqual(a.ball.home.toArray(), pos, name);
+  }
+});
+
+test('a room that grows leaves nothing in the void: the ball in the old games room, the mug too', () => {
+  const a = office(); a.run(2); a.send([15, 0.11, 3], [0, 0, 0]); a.run(1); assert.deepEqual(a.ball.home.toArray(), [15, 0.11, 3]);
+  const mug = new THREE.Object3D(); mug.userData.loose = 'mug'; a.scene.add(mug); a.room.flightColliders = []; a.run(0.05);
+  const b = mug.userData.prop(); a.player.position.set(14.5, 1.6, 3); a.camera.position.copy(a.player.position); a.camera.updateMatrixWorld(); b.pos.set(14.5, 1, 3); a.props.grab(b); a.run(0.05);
+  a.props.throw(V(0, 0, 0), false); b.pos.set(14.5, 0.5, 3); b.vel.set(0, 0, 0); a.run(1); assert.ok(b.rest); assert.deepEqual([b.home.x, b.home.z], [14.5, 3]);
+  a.player.position.set(1, 1.6, 1); a.camera.position.copy(a.player.position); a.camera.updateMatrixWorld(); a.run(0.05);
+  a.size.depth = 14; a.room.flightColliders = []; a.run(1); // the door's now at z 10.2: both lie where no room is
+  for (const thing of [a.ball, b]) {
+    assert.ok(thing.rest); assert.ok(thing.pos.x > 0 && thing.pos.x < 10 && thing.pos.z > 0 && thing.pos.z < 14, `${thing.pos.toArray()}`);
+    assert.deepEqual(thing.home.toArray(), thing.pos.toArray());
+  }
 });

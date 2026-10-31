@@ -113,6 +113,7 @@ export function createSecret({ onPress, onMove }) {
       const inside = secret.inside(at);
       if (open && !inside && Math.hypot(at.x - built.door.x, at.z - built.door.z) > AWAY) { if ((idle += dt) > SHUT_AFTER) open = false; } else idle = 0;
       const goal = open ? 1 : 0;
+      // ponytail: onMove wakes every loose thing each frame of the slide, on purpose: the shelf pushes what's in its way and drops what's on top. About a step per thing per frame, for 1.4 s.
       if (t !== goal) { t = still ? goal : THREE.MathUtils.clamp(t + (goal ? dt : -dt) / MOVE, 0, 1); place(); onMove?.(); }
       press = Math.max(0, press - dt);
       key.rotation.x = LEAN + (still ? 0 : 0.4 * Math.sin(Math.PI * press / PRESS));

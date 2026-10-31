@@ -7,10 +7,10 @@
 // can be hit (the goose). The goose can carry a thing off in its beak (carry, drop).
 // With reduced motion a kick or a throw lands at once, and pouring leaves its puddle without the stream.
 import * as THREE from 'three';
-import { WALL_H, canvasTexture } from './furniture.js';
+import { WALL_H, WALL_T, canvasTexture } from './furniture.js';
 import { toonMaterial, instancedOutline, highlight } from './toon.js';
 import { EYE } from './player.js';
-import { GRAVITY, advance, contact, escaped, makeBody } from './flight.js';
+import { GRAVITY, advance, contact, escaped, makeBody, stopShort } from './flight.js';
 
 export const REACH = 2.6; // from your eyes
 const BODY = 0.3, KICK = 10; // the boss is a column this wide; the hardest kick, m/s
@@ -65,18 +65,17 @@ function crumpled(radius) {
 }
 
 // A frame of a thing: flight.js moves it (world: colliders, columns, ceiling, onContact) but knows nothing of how it's turned.
-// Here it turns by its spin and one that stands stands back up, at rest only once it's straight. Where it rests is `home`,
-// which it goes back to if it ever gets out of the `building`.
-export function moveBody(b, dt, world, building) {
+// Here it turns by its spin and one that stands stands back up, at rest only once it's straight. Where it rests, if that's
+// somewhere `reachable`, is `home`, which it goes back to if it rests anywhere else or ever gets out of the `building`.
+export function moveBody(b, dt, world, building, reachable = () => true) {
   advance(b, dt, world);
   const turning = b.spin.length();
   if (turning > 1e-4) b.turn.premultiply(q.setFromAxisAngle(axis.copy(b.spin).normalize(), turning * dt));
   if (b.kind.upright && b.ground) b.turn.premultiply(tilt.identity().slerp(q.setFromUnitVectors(axis.copy(UP).applyQuaternion(b.turn), UP), 1 - Math.exp(-12 * dt)));
-  if (escaped(b.pos, building)) { b.pos.copy(b.home); b.vel.set(0, 0, 0); b.spin.set(0, 0, 0); b.rest = false; b.quiet = 0; }
-  else if (b.rest) {
-    if (b.kind.upright && axis.copy(UP).applyQuaternion(b.turn).y <= 0.999) b.rest = false; // still leaning: stays awake
-    else { b.hits.clear(); b.home.copy(b.pos); }
-  }
+  const lost = escaped(b.pos, building);
+  if (!lost && b.rest && b.kind.upright && axis.copy(UP).applyQuaternion(b.turn).y <= 0.999) b.rest = false; // still leaning: stays awake
+  else if (lost || (b.rest && !reachable(b.pos))) { b.pos.copy(b.home); b.vel.set(0, 0, 0); b.spin.set(0, 0, 0); b.rest = false; b.quiet = 0; }
+  else if (b.rest) { b.hits.clear(); b.home.copy(b.pos); }
 }
 
 export function createProps(scene, { room, cast, camera, player, view, bounds, reducedMotion, onHit, others = () => [] }) {
@@ -99,7 +98,12 @@ export function createProps(scene, { room, cast, camera, player, view, bounds, r
     b.mesh.boundingSphere = b.hull.boundingSphere = null; // worked out again for culling and picking
   };
   const light = (b, on) => b.obj ? highlight(b.obj, on) : b.hull.light(b.i, on);
-  const spawn = (b, w, d) => { const [x, z] = b.kind.spots(w, d)[b.i]; b.pos.set(x, b.kind.radius, z); b.vel.set(0, 0, 0); b.rest = false; b.turn.setFromAxisAngle(UP, b.i * 2.1); b.home.copy(b.pos); };
+  // Where it starts, and where it goes back to if its home is gone: a ball to its spot, a desk thing to the middle of the room.
+  const start = (b, w, d) => { if (b.obj) b.home.set(w / 2, 1, d / 2); else { const [x, z] = b.kind.spots(w, d)[b.i]; b.home.set(x, b.kind.radius, z); } };
+  const spawn = (b, w, d) => { start(b, w, d); b.pos.copy(b.home); b.vel.set(0, 0, 0); b.rest = false; b.turn.setFromAxisAngle(UP, b.i * 2.1); };
+  // Where a thing can lie and still be got at: the office (to the middle of its walls, so the doorway counts) or a room off it.
+  // A new room joins the `||`s.
+  const reachable = p => { const { width, depth } = bounds(); return (p.x >= 0 && p.x <= width + WALL_T / 2 && p.z >= 0 && p.z <= depth) || room.secret.inside(p); };
 
   // The characters as columns: where, how wide, how tall. Someone hit, or whose things are, says so (once a moment).
   let people = [];
@@ -141,7 +145,7 @@ export function createProps(scene, { room, cast, camera, player, view, bounds, r
   };
   const quiet = {}; // a bounce nobody hears about: you walking into it
   // Reduced motion: straight to where it ends up.
-  const settle = b => { for (let i = 0; i < 600 && !b.rest; i++) moveBody(b, 1 / 60, world, building); };
+  const settle = b => { for (let i = 0; i < 600 && !b.rest; i++) moveBody(b, 1 / 60, world, building, reachable); };
 
   // Coffee: drops in flight, and puddles that grow where they land and dry up in time.
   const dot = canvasTexture(32, 32, (g, w) => { g.fillStyle = '#fff'; g.beginPath(); g.arc(w / 2, w / 2, w / 2 - 1, 0, 7); g.fill(); });
@@ -205,12 +209,16 @@ export function createProps(scene, { room, cast, camera, player, view, bounds, r
     throw(direction, drop = false) {
       const b = holding; if (!b) return;
       holding = null; b.held = false; b.grace = 0.3; b.hits.clear();
-      if (drop) { b.vel.set(0, 0, 0); if (room.secret.inside(b.pos)) b.pos.x = bounds().width - b.kind.radius; } // going through the secret door: it stays in the office
+      if (drop) b.vel.set(0, 0, 0);
       else { // let go on the line you aim along, so it goes where you look
         const aim = direction || camera.getWorldDirection(forward);
         b.pos.copy(camera.position).addScaledVector(aim, 0.5); b.vel.copy(aim).multiplyScalar(b.kind.throw).add(walk); b.vel.y += 1.2;
         b.spin.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(b.kind.tumble);
       }
+      // Let go, it's this side of any wall in front of you. Dropped and still in the games room (you're going through the secret
+      // door with it) it stays in the office, by the door where the shelf isn't, open or shut.
+      stopShort(player.position, b.pos, b.kind, world.colliders);
+      if (drop && room.secret.inside(b.pos)) { const { x, z } = room.secret.spot; b.pos.x = x; b.pos.z = z; }
       if (reducedMotion() && building) settle(b);
     },
     // Outline the thing a click or E would pick up.
@@ -235,7 +243,7 @@ export function createProps(scene, { room, cast, camera, player, view, bounds, r
       const { width: w, depth: d } = size, still = reducedMotion(), now = performance.now() / 1000;
       if (!placed) { placed = true; for (const b of bodies) { spawn(b, w, d); show(b); } }
       // Desks come and go: whatever rested on one falls, and there may be new things on them.
-      if (boxes !== room.flightColliders) { boxes = world.colliders = room.flightColliders; building = room.secret.bounds(size); for (const b of bodies) b.rest = false; scan(); }
+      if (boxes !== room.flightColliders) { boxes = world.colliders = room.flightColliders; building = room.secret.bounds(size); for (const b of bodies) { b.rest = false; if (!reachable(b.home)) start(b, w, d); } scan(); }
       gather();
       // How you're moving; flying over to someone doesn't kick.
       walk.subVectors(player.position, was).setY(0).divideScalar(Math.max(dt, 1e-3)); was.copy(player.position);
@@ -255,6 +263,7 @@ export function createProps(scene, { room, cast, camera, player, view, bounds, r
         const gap = normal.length();
         if (!b.grace && gap < r && bottom < feet + 1.7 && b.pos.y + b.kind.radius > feet) {
           normal.divideScalar(gap || 1); b.pos.x = player.position.x + normal.x * r; b.pos.z = player.position.z + normal.z * r;
+          stopShort(axis.set(player.position.x, b.pos.y, player.position.z), b.pos, b.kind, world.colliders); // against a wall it stays there, under your feet
           const speed = walk.length();
           if (speed > 0.5 && bottom < feet + 0.4) {
             const push = Math.min(KICK, speed * 1.5 + 1);
@@ -263,7 +272,7 @@ export function createProps(scene, { room, cast, camera, player, view, bounds, r
           } else contact(b, quiet, normal);
           b.rest = false;
         }
-        if (!b.rest) { moveBody(b, dt, world, building); show(b); }
+        if (!b.rest) { moveBody(b, dt, world, building, reachable); show(b); }
       }
       // Things knock into each other, the heavier pushing the lighter more.
       for (let i = 0; i < bodies.length; i++) for (let j = i + 1; j < bodies.length; j++) {

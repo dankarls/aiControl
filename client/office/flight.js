@@ -31,6 +31,28 @@ export const makeBody = (kind, pos, vel) => ({ kind, pos: vec(pos), vel: vec(vel
 // More than a metre outside the building: it got past the walls somehow.
 export const escaped = (p, { left, width, depth }) => p.x < left - 1 || p.x > width + 1 || p.z < -1 || p.z > depth + 1;
 
+// Put somewhere by hand (let go of, nudged), not flown: a thing of this kind goes from `from` to `to` in one jump, too far to bounce.
+// `to` is moved back to the first box on the way, on `from`'s side, so it can't be put through a wall or left past its middle; a
+// gap gets through, whatever it's in. Tops count by `low`, as they do to stand on, so it slides along a desk it's on. A box `from`
+// is already in doesn't count: flight pushes it out of that. Returns `to`.
+export function stopShort(from, to, { radius: r, low }, colliders) {
+  let first = 1;
+  for (const box of colliders) {
+    const turned = box.inverse;
+    local.copy(from); speed.copy(to);
+    if (turned) { local.sub(box.centre).applyQuaternion(turned); speed.sub(box.centre).applyQuaternion(turned); mid.copy(box.half).negate(); half.copy(box.half); } else { mid.copy(box.min); half.copy(box.max); }
+    let enter = -Infinity, exit = Infinity;
+    for (let i = 0; i < 3; i++) {
+      const a = local.getComponent(i), d = speed.getComponent(i) - a, lo = mid.getComponent(i) - r, hi = half.getComponent(i) + (i === 1 ? low - 1e-6 : r);
+      if (Math.abs(d) < 1e-9) { if (a <= lo || a >= hi) enter = Infinity; continue; }
+      const t0 = (lo - a) / d, t1 = (hi - a) / d;
+      enter = Math.max(enter, Math.min(t0, t1)); exit = Math.min(exit, Math.max(t0, t1));
+    }
+    if (enter >= 0 && enter <= exit && enter < first) first = enter;
+  }
+  return first < 1 ? to.lerpVectors(from, to, first) : to;
+}
+
 // Reports a hit before resolving it (the speed into the surface), then bounces: a hard knock keeps `bounce`, a soft one just stops.
 export const contact = (b, world, n, surface, box) => {
   const vn = b.vel.dot(n);

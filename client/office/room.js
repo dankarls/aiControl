@@ -237,6 +237,8 @@ export function createRoom(scene, renderer) {
     colliders: [], flightColliders: [], lintels: [], furnitureColliders: [], fadeables: { ceiling: null, walls: [] }, boards: {},
     // What thrown things meet: what blocks walking, less what's only for walking, plus what you can't walk into (the wall over a
     // doorway). A new list whenever room.colliders changes or a door moves: it's how props.js knows to wake things.
+    // ponytail: so things can be thrown into the games room and lie there. Picked up in there they land back in the office, the
+    // goose ignores them, and a ball in there floats over nothing in the overview, which doesn't draw the room.
     refreshFlight() { room.flightColliders = [...room.colliders.filter(box => !box.walkOnly), ...room.lintels]; },
     deskAnchor(id) {
       const desk = desks.get(id); if (!desk) return null;
