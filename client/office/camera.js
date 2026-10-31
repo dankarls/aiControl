@@ -1,11 +1,11 @@
 // The camera: first person at the boss's eyes, or the overview (Tab, see overview.js).
 // Walls between the camera and the room, and the ceiling, fade out as the overview rises.
 import * as THREE from 'three';
-import { toonMaterial } from './toon.js';
+import { toonMaterial, withOutline } from './toon.js';
 import { canvasTexture } from './furniture.js';
 import { Overview } from './overview.js';
 
-const EASE = 5, FADED = 0.12, RUN_FOV = 6, STRIDE = 1.6; // radians of walk cycle per metre
+const EASE = 5, FADED = 0.12, RUN_FOV = 6, STRIDE = 1.6, LINE = 0.003; // radians of walk cycle per metre; the mug's outline
 // A sip now and then: seconds between (at random in that range), its raise, hold and lower, and how much of a mug it is.
 // The hand comes in to the bottom of the screen and tips the mug till the coffee is at the rim: further the emptier (radians).
 const SIPS = [40, 110], RAISE = 0.35, HOLD = 0.5, LOWER = 0.45, SIP = 0.2, MOUTH = new THREE.Vector3(-0.2, 0.1, 0.3), TILT = [0.45, 1.05];
@@ -22,12 +22,13 @@ export class OfficeCamera {
       g.fillStyle = '#e8574a'; g.fillRect(0, 0, w, h); g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle';
       g.font = '900 140px system-ui, sans-serif'; g.fillText('#1', w / 2, h * 0.33); g.font = '900 104px system-ui, sans-serif'; g.fillText('BOSS', w / 2, h * 0.7);
     });
-    mug.add(new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.05, 0.12, 24, 1, true, Math.PI), toonMaterial('#fff', { map: label })));
+    // Outlined thinner than the room's, being this close.
+    mug.add(withOutline(new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.05, 0.12, 24, 1, true, Math.PI), toonMaterial('#fff', { map: label })), LINE));
     mug.add(new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.046, 0.12, 24, 1, true), toonMaterial('#c94538', { side: THREE.BackSide })));
     mug.add(new THREE.Mesh(new THREE.RingGeometry(0.05, 0.055, 24).rotateX(-Math.PI / 2).translate(0, 0.06, 0), red));
     mug.add(new THREE.Mesh(new THREE.CircleGeometry(0.05, 24).rotateX(Math.PI / 2).translate(0, -0.06, 0), red));
     mug.add(new THREE.Mesh(new THREE.CircleGeometry(0.046, 24).rotateX(-Math.PI / 2).translate(0, -0.059, 0), toonMaterial('#c94538'))); // inside, for when it's empty
-    mug.add(new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.01, 8, 16, Math.PI * 1.2).rotateZ(-Math.PI * 0.6).translate(0.06, 0.005, 0), red));
+    mug.add(withOutline(new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.01, 8, 16, Math.PI * 1.2).rotateZ(-Math.PI * 0.6).translate(0.06, 0.005, 0), red), LINE));
     this.coffee = new THREE.Mesh(new THREE.CircleGeometry(0.048, 24).rotateX(-Math.PI / 2), toonMaterial('#5b3a24')); this.coffee.position.y = 0.04; mug.add(this.coffee);
     // A right fist round the handle: fingers curled over the front and through it, thumb along the top; the arm runs from the wrist off the bottom right.
     mug.add(new THREE.Mesh(new THREE.SphereGeometry(0.038, 14, 10).scale(0.8, 1.15, 1).translate(0.13, -0.002, 0), ink));

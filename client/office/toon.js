@@ -17,28 +17,33 @@ export function toonMaterial(color, options = {}) {
 // so it's pushed along the average of the distinct normals at each point instead.
 function outlineNormals(geometry) {
   if (geometry.attributes.outlineNormal) return;
-  const { position, normal } = geometry.attributes, at = new Map(), keys = [], n = new THREE.Vector3();
+  // Points are matched to 0.1 mm, hashed to a number (strings were most of the load-time cost), checked against the bucket.
+  const { position, normal } = geometry.attributes, buckets = new Map(), of = [], n = new THREE.Vector3();
   for (let i = 0; i < position.count; i++) {
-    const key = [position.getX(i), position.getY(i), position.getZ(i)].map(v => Math.round(v * 1e4)).join();
-    const seen = at.get(key) || at.set(key, []).get(key);
+    const x = Math.round(position.getX(i) * 1e4), y = Math.round(position.getY(i) * 1e4), z = Math.round(position.getZ(i) * 1e4);
+    const hash = Math.imul(x, 73856093) ^ Math.imul(y, 19349663) ^ Math.imul(z, 83492791), bucket = buckets.get(hash);
+    let point = bucket?.find(p => p.x === x && p.y === y && p.z === z);
+    if (!point) { point = { x, y, z, normals: [], sum: new THREE.Vector3() }; if (bucket) bucket.push(point); else buckets.set(hash, [point]); }
     n.fromBufferAttribute(normal, i);
-    if (!seen.some(m => m.dot(n) > 0.999)) seen.push(n.clone());
-    keys.push(key);
+    if (!point.normals.some(m => m.dot(n) > 0.999)) { point.normals.push(n.clone()); point.sum.add(n); }
+    of.push(point);
   }
+  for (const bucket of buckets.values()) for (const point of bucket) point.sum = point.sum.lengthSq() > 1e-8 ? point.sum.normalize() : null;
   const out = new Float32Array(position.count * 3);
-  keys.forEach((key, i) => {
-    const sum = at.get(key).reduce((total, m) => total.add(m), new THREE.Vector3());
-    (sum.lengthSq() > 1e-8 ? sum.normalize() : n.fromBufferAttribute(normal, i)).toArray(out, i * 3);
-  });
+  of.forEach((point, i) => (point.sum ?? n.fromBufferAttribute(normal, i)).toArray(out, i * 3));
   geometry.setAttribute('outlineNormal', new THREE.BufferAttribute(out, 3));
 }
 const outlines = new Map();
 function outlineMaterial(thickness, color = '#1b1a1f') {
   const key = `${thickness}:${color}`;
   if (outlines.has(key)) return outlines.get(key);
-  const material = new THREE.MeshBasicMaterial({ color, side: THREE.BackSide });
-  material.onBeforeCompile = shader => { shader.vertexShader = `attribute vec3 outlineNormal;\n${shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>\ntransformed += normalize(outlineNormal) * ${thickness.toFixed(4)};`)}`; };
-  material.customProgramCacheKey = () => `outline-${thickness}`;
+  // The thickness is a uniform, so every outline (and hover's thicker ones) shares one shader: no compile on a first hover.
+  const material = new THREE.MeshBasicMaterial({ color, side: THREE.BackSide }), uniform = { value: thickness };
+  material.onBeforeCompile = shader => {
+    shader.uniforms.outlineThickness = uniform;
+    shader.vertexShader = `attribute vec3 outlineNormal;\nuniform float outlineThickness;\n${shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed += normalize(outlineNormal) * outlineThickness;')}`;
+  };
+  material.customProgramCacheKey = () => 'outline';
   material.userData.thickness = thickness;
   outlines.set(key, material);
   return material;
