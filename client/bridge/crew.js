@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { CREW_Z, DECK } from './deck.js';
 import { SIGNALS } from './palettes.js';
-import { C, STD, add, lit, seeded } from './parts.js';
+import { C, STD, add, lit, plate, seeded } from './parts.js';
 
 // The armour plates' tones: muted, clear of the signal hues and too dull to bloom. A head and a suit together tell an agent from its neighbours.
 export const SUITS = ['#7a4f73', '#50508c', '#3d5a4c', '#5e6472', '#2f6461'];
@@ -30,11 +30,6 @@ export function crewArrival({ was, id, offline, wasOffline, started, still }) {
 
 // All the shapes, shared by the whole crew. Heights are above the deck, and a figure faces the console, along -z, with its back to the room.
 const SHOULDER = .68, NECK = .72, FADE = .5;
-// A box with chamfered edges, flat-shaded by being unindexed.
-function plate(w, h, d, x = 0, y = 0, z = 0, b = .012) {
-  const shape = new THREE.Shape(), hw = w / 2 - b, hh = h / 2 - b; shape.moveTo(-hw, -hh); shape.lineTo(hw, -hh); shape.lineTo(hw, hh); shape.lineTo(-hw, hh); shape.closePath();
-  return new THREE.ExtrudeGeometry(shape, { depth: d - 2 * b, bevelThickness: b, bevelSize: b, bevelSegments: 1, curveSegments: 1 }).translate(x, y, z - d / 2 + b);
-}
 // A plate from one point to another, for limbs.
 const up = new THREE.Vector3(0, 1, 0), spin = new THREE.Quaternion(), turned = new THREE.Matrix4();
 function limb(a, b, width, depth = width) {

@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { HEADS, SUITS, createCrew, crewArrival, crewLook, crewPose } from '../client/bridge/crew.js';
 import { CENTER, DISPLAY, SEAT, STATION_ANGLES, WALL } from '../client/bridge/deck.js';
 import { SIGNALS } from '../client/bridge/palettes.js';
+import { plate } from '../client/bridge/parts.js';
 
 const ids = Array.from({ length: 10 }, (_, i) => `session-${i}`);
 test('same id, same look', () => assert.deepEqual(crewLook('abc', new Set()), crewLook('abc', new Set())));
@@ -83,4 +84,13 @@ test('a figure has gone once it has faded, and a cut is instant', () => {
   figure.present(false, 'shimmer'); assert.equal(figure.root.visible, true); for (let i = 0; i < 8; i++) step(); assert.equal(figure.root.visible, false);
   figure.present(true, 'shimmer'); step(); assert.equal(figure.root.visible, true); assert.ok(figure.shimmer.visible); for (let i = 0; i < 8; i++) step(); assert.equal(figure.shimmer.visible, false);
   figure.present(false, 'cut'); assert.equal(figure.root.visible, false);
+});
+
+test('a plate thinner than its bevel still faces outward', () => {
+  const position = plate(.17, .035, .012).attributes.position, [a, b, c, side, normal, middle] = Array.from({ length: 6 }, () => new THREE.Vector3());
+  for (let i = 0; i < position.count; i += 3) {
+    a.fromBufferAttribute(position, i); b.fromBufferAttribute(position, i + 1); c.fromBufferAttribute(position, i + 2);
+    normal.subVectors(b, a).cross(side.subVectors(c, a)); middle.copy(a).add(b).add(c);
+    assert.ok(normal.dot(middle) >= -1e-9, `triangle ${i / 3} faces in`);
+  }
 });

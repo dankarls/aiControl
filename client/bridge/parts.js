@@ -3,6 +3,11 @@ import * as THREE from 'three';
 // Building blocks shared by the room and the view outside.
 export const C = (hex, k = 1) => new THREE.Color(hex).multiplyScalar(k);
 export const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
+// A box with chamfered edges, flat-shaded by being unindexed. The chamfer can't take more than the plate is thick, or it would turn inside out.
+export function plate(w, h, d, x = 0, y = 0, z = 0, bevel = .012) {
+  const b = Math.min(bevel, d * .4), shape = new THREE.Shape(), hw = w / 2 - b, hh = h / 2 - b; shape.moveTo(-hw, -hh); shape.lineTo(hw, -hh); shape.lineTo(hw, hh); shape.lineTo(-hw, hh); shape.closePath();
+  return new THREE.ExtrudeGeometry(shape, { depth: d - 2 * b, bevelThickness: b, bevelSize: b, bevelSegments: 1, curveSegments: 1 }).translate(x, y, z - d / 2 + b);
+}
 export function add(geometry, material, parent, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0) {
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.set(x, y, z); mesh.rotation.set(rx, ry, rz); parent.add(mesh);
