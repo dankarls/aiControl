@@ -6,11 +6,9 @@ import { C, STD, add as place, box, canvas, canvasTexture, lit, seeded } from '.
 
 // Widths and depths follow the room's radius; the room keeps its height.
 const DEG = Math.PI / 180, HW = R * Math.sin(12 * DEG), UP = Math.PI / 2, K = R / 7.2;
-const BAY_Z_BACK = -6.12 * K, SILL = .44, TOP = 3.3, HOLE = 3.3 * K, EDGE = [4.0 * K, -8.1 * K], MID = [2.1 * K, -8.65 * K], GLASS_TOP = 3.62;
+const BAY_Z_BACK = -6.12 * K, SILL = .44, TOP = 3.3, HOLE = 1.75, EDGE = [3.4 * K, -8.1 * K], MID = [1.8 * K, -8.65 * K], GLASS_TOP = 3.62;
 // The screens you can fly over to and read, by panel. The stations' rows are the sessions themselves.
-const SCREENS = { engineSign: 'Engine', hailSign: 'Hails', decks: 'Decks', engineering: 'Engineering', shuttles: 'Shuttles', credits: 'Credits', clock: 'Ship time', door: 'Door', helmLeft: 'Helm', helmRight: 'Helm', comm: 'Comm' };
-// A station's upper display, by index: the signs up front. The bays behind have none.
-const UPPER = [['engineSign', 1.35], ['hailSign', 1.35], ['decks'], ['engineering'], ['shuttles'], ['credits']];
+const SCREENS = { shipLeft: 'Engineering', shipRight: 'Hails', clock: 'Ship time', door: 'Door', helmLeft: 'Helm', helmRight: 'Helm', comm: 'Comm' };
 const BLACK = new THREE.Color(0);
 
 function roundedPath(path, x, y, w, h, r) { path.moveTo(x + r, y); path.lineTo(x + w - r, y); path.quadraticCurveTo(x + w, y, x + w, y + r); path.lineTo(x + w, y + h - r); path.quadraticCurveTo(x + w, y + h, x + w - r, y + h); path.lineTo(x + r, y + h); path.quadraticCurveTo(x, y + h, x, y + h - r); path.lineTo(x, y + r); path.quadraticCurveTo(x, y, x + r, y); return path; }
@@ -71,7 +69,7 @@ export function buildRoom(world, still = false) {
   const glow = {
     neon: lit('#fff'), rib: additive({ map: glowTexture }), ring: additive({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),
     chase: new THREE.MeshBasicMaterial({ map: chaseMap }), chaseMap,
-    lamp: lit('#f4f6ff', 1.5), recess: lit('#f2f5ff', 1.35), edge: lit('#fff'), strip: new THREE.MeshBasicMaterial({ color: 0 }), glass,
+    lamp: lit('#f4f6ff', 1.5), recess: lit('#f2f5ff', 1.35), edge: lit('#fff'), glass,
   };
   function glowRing(r, width, y) {
     const geometry = new THREE.RingGeometry(r - width / 2, r + width / 2, 120, 2), pos = geometry.attributes.position, colors = new Float32Array(pos.count * 3);
@@ -123,15 +121,13 @@ export function buildRoom(world, still = false) {
   screen(panel('clock', 640, 64), 1.9, .19, null, 0, 3.5, BAY_Z_BACK + .3);
   add(box(2, .25, .06), MAT.black, null, 0, 3.5, BAY_Z_BACK + .27);
 
-  // Either side of the opening: lamp panels and a tall lamp strip. Lamps with no meaning behind them use the palette's tones.
+  // Either side of the opening: a tall column about the whole ship, turned a little towards the chair, over a few bars in the palette's tones.
   const jewels = [], flankBars = [];
   const jewel = (parent, x, y, z, color, bright, rnd, shape = 0, owner = null) => jewels.push({ parent, x, y, z, color, bright, shape, owner, on: rnd() > .5, base: new THREE.Color() });
   for (const s of [-1, 1]) {
-    const g = new THREE.Group(); g.position.set(s * 3.78 * K, 0, BAY_Z_BACK + .3); group.add(g);
-    add(box(.62 * K, 1.5, .05), MAT.black, g, 0, 2.2, 0);
-    const rnd = seeded(`flank${s}`);
-    for (let r = 0; r < 10; r++) for (let c = 0; c < 5; c++) if (rnd() > .25) jewel(g, (-.2 + c * .1) * K, 1.6 + r * .125, .035, Math.floor(rnd() * 3), 1.5, rnd, 1);
-    add(box(.1 * K, 1.5, .03), glow.strip, g, s * -.45 * K, 2.2, 0);
+    const g = new THREE.Group(); g.position.set(s * 2.12, 0, BAY_Z_BACK + .45); g.rotation.y = -s * .2; group.add(g);
+    add(box(.88, 1.78, .05), MAT.black, g, 0, 2.35, 0);
+    screen(panel(s < 0 ? 'shipLeft' : 'shipRight', 512, 1088), .8, 1.7, g, 0, 2.35, .03);
     add(box(.5 * K, .34, .04), MAT.black, g, 0, 1.1, 0);
     for (let i = 0; i < 5; i++) { const m = lit('#fff'); flankBars.push(m); add(box(.07 * K, .22, .02), m, g, (-.17 + i * .085) * K, 1.1, .03); }
   }
@@ -153,15 +149,11 @@ export function buildRoom(world, still = false) {
     const rnd = seeded(seed);
     for (let r = 0; r < 4; r++) { const n = 5 + r * 2; for (let i = 0; i < n; i++) { const a = (15 + 150 * i / (n - 1)) * DEG, rad = (.12 + r * .065) * K; if (rnd() < .12) continue; jewel(desk, cx + Math.cos(a) * rad * 1.5, .035, .23 * K - Math.sin(a) * rad * 1.2, Math.floor(rnd() * 3), .7, rnd, rnd() > .6 ? 1 : 0, owner); } }
   }
-  // The bays around the wall. Each has a console, a row of lit tiles, an alcove above it, a cove light and a row of tiles in the step.
+  // The bays around the wall. Each has a console, a row of lit tiles on a dark mount, a cove light and a row of tiles in the step.
   const stations = STATION_ANGLES.map((theta, index) => {
-    const g = around(theta, WALL), width = 2 * HW, seed = `bay${theta}`, [upperName, upperGain] = UPPER[index] || [];
+    const g = around(theta, WALL), width = 2 * HW, seed = `bay${theta}`;
     const station = { index, angle: theta, group: g, status: null, lamps: [] };
-    add(box(width, 2.14, .12), MAT.wall, g, 0, DECK + 1.07, -.06);
-    add(frameGeometry(width, .8, width - .14, .7, .1, .16, 0), MAT.wall, g, 0, 2.925, 0);
-    // The alcove's display on a dark mount.
-    add(box(1.78, .68, .04), MAT.black, g, 0, 2.925, .06);
-    if (upperName) { station.upper = panel(upperName, 1024, 375, upperGain); screen(station.upper, 1.7, .62, g, 0, 2.925, .085); }
+    add(box(width, 2.965, .12), MAT.wall, g, 0, DECK + 1.4825, -.06);
     // The console: kick plate, sloped desk with jewels, a pale lip, the agent's display above a dark band.
     add(box(width, .3, .42), MAT.body, g, 0, .51, .21);
     const desk = new THREE.Group(); desk.position.set(0, .72, .3); desk.rotation.x = .28; g.add(desk);
@@ -169,10 +161,9 @@ export function buildRoom(world, still = false) {
     add(box(width, .05, .04), MAT.rail, g, 0, .66, .52);
     fan(desk, -.82 * K, `${seed}a`, station); fan(desk, .82 * K, `${seed}b`, station);
     add(box(width, .42, .09), MAT.black, g, 0, 1.22, .08);
-    add(box(width, 1.13, .1), MAT.black, g, 0, DISPLAY.bottom + DISPLAY.height / 2, .05);
+    add(box(width, 1.75, .1), MAT.black, g, 0, DISPLAY.bottom + .875, .05);
     station.row = panel(`row${index}`, 1408, 256, .75);
     station.mesh = screen(station.row, DISPLAY.width, DISPLAY.height, g, 0, DISPLAY.bottom + DISPLAY.height / 2, DISPLAY.z);
-    add(box(width, .05, .2), MAT.trim, g, 0, 2.53, .1);
     station.chair = chair(g, 0, DECK, CREW_Z); station.chair.visible = false;
     rib(theta + 12);
     // Coved light in the ceiling, and lit tiles in the step down to the pit: both show the session's state.
@@ -183,10 +174,9 @@ export function buildRoom(world, still = false) {
     add(box(1.15 * K, .28, .04), MAT.black, block, 0, .18, .02);
     const pool = additive({ color: 0, map: glowTexture });
     add(new THREE.PlaneGeometry(2.4 * K, 1.3 * K), pool, block, 0, .03, .75 * K, -UP);
-    // The status bar on the window's ledge, and a lamp above the left panel.
+    // The status bar on the window's ledge.
     const ledge = lit('#000'), x = (index - 4.5) * .44 * K; add(box(.34 * K, .07, .05), ledge, null, x, SILL + .06, -7.7 * K); add(box(.4 * K, .1, .08), MAT.black, null, x, SILL + .04, -7.67 * K);
-    const small = lit('#000'); add(new THREE.CircleGeometry(.05, 12), small, null, (-3.78 - .12 + (index % 3) * .12) * K, 3.1 + Math.floor(index / 3) * .13 - .14, BAY_Z_BACK + .34);
-    station.lamps.push({ material: coveMat, gain: 1.5, vacant: C('#cfd8ff', .5) }, { material: blockMat, gain: 1.5, vacant: C('#120d10') }, { material: pool, gain: .3, vacant: BLACK }, { material: ledge, gain: 1.5, vacant: BLACK }, { material: small, gain: 1.8, vacant: BLACK });
+    station.lamps.push({ material: coveMat, gain: 1.5, vacant: C('#cfd8ff', .5) }, { material: blockMat, gain: 1.5, vacant: C('#120d10') }, { material: pool, gain: .3, vacant: BLACK }, { material: ledge, gain: 1.5, vacant: BLACK });
     return station;
   });
   for (const theta of [-156, -36, 36]) rib(theta);
@@ -260,7 +250,7 @@ export function buildRoom(world, still = false) {
     const list = jewels.filter(j => j.shape === shape), mesh = new THREE.InstancedMesh(geometry, new THREE.MeshBasicMaterial(), list.length); mesh.frustumCulled = false; group.add(mesh);
     const o = new THREE.Object3D(), out = new THREE.Matrix4();
     list.forEach((j, i) => {
-      o.position.set(j.x, j.y, j.z); o.rotation.x = j.z < .05 && j.parent.position.z < -3 ? UP : 0; o.updateMatrix(); out.multiplyMatrices(j.parent.matrixWorld, o.matrix);
+      o.position.set(j.x, j.y, j.z); o.updateMatrix(); out.multiplyMatrices(j.parent.matrixWorld, o.matrix);
       mesh.setMatrixAt(i, out); j.index = i; j.mesh = mesh;
     });
   });

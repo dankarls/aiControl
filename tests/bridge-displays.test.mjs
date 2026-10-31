@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { fitText, stationName } from '../client/bridge/displays.js';
+import { fitText, stationName, visibleLimits } from '../client/bridge/displays.js';
 
 const measure = text => [...text].length * 10;
 test('short text is untouched', () => assert.equal(fitText('short', 100, measure), 'short'));
@@ -20,4 +20,9 @@ test('a session always has a name', () => {
 test('missing and multi-line text', () => {
   assert.equal(fitText(null, 100, measure), '');
   assert.equal(fitText('a\n  b', 100, measure), 'a b');
+});
+test('limits that fit stay in order, and otherwise the fullest are kept', () => {
+  const rows = [10, 90, 50, 70, 20, 30].map(used => ({ used }));
+  assert.deepEqual(visibleLimits(rows.slice(0, 3), 5), rows.slice(0, 3));
+  assert.deepEqual(visibleLimits(rows, 5).map(row => row.used), [90, 70, 50, 30, 20]);
 });

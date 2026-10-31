@@ -10,7 +10,7 @@ const INK = '#f2f4ff', DIM = '#aeb4c6', Y = '#eef0f6', O = '#c4cad8', BACK = '#0
 const SIGNAL_COLOUR = { need: RED, working: TEAL, idle: BLUE };
 const LABELS = { question: 'HAILING', permission: 'AUTHORIZE', working: 'ON DUTY', idle: 'STANDBY', error: 'FAULT', offline: 'OFFLINE' };
 const GLYPHS = { claude: '✳', codex: '⌘' };
-const MAX_LIMIT_ROWS = 6, MAX_PROJECTS = 6, MAX_SHUTTLES = 3;
+const MAX_LIMIT_ROWS = 5, MAX_SPENDERS = 4;
 export const font = (weight, size) => `${weight} ${size}px Antonio, 'Arial Narrow', 'Liberation Sans Narrow', sans-serif`;
 const graphemes = text => [...new Intl.Segmenter().segment(text)].map(part => part.segment);
 
@@ -107,65 +107,52 @@ function drawRow(g, W, H, facts, seed, pal) {
     g.fillStyle = INK; g.font = font(400, 26); wrap(g, facts.model, 16, 118, w - 28, 32, 3);
   });
 }
-function title(g, text, w, right, color = O) {
-  g.fillStyle = BACK; g.fillRect(0, 0, w, 999);
-  g.fillStyle = color; g.font = font(700, 46); g.fillText(fit(g, text, w * .6), 28, 54);
-  if (right) { g.fillStyle = DIM; g.font = font(400, 30); g.textAlign = 'right'; g.fillText(fit(g, right, w * .3), w - 28, 52); g.textAlign = 'left'; }
+// Text that fills `width`, up to a size.
+function big(g, weight, size, text, width) {
+  g.font = font(weight, size); const wide = g.measureText(text).width;
+  if (wide > width) g.font = font(weight, Math.floor(size * width / wide));
 }
-function drawEngineering(g, w, h, d) {
-  title(g, d.mode === 'limit' ? 'ENGINE OFFLINE' : 'ENGINEERING', w, d.left, d.mode === 'limit' ? RED : O);
-  const each = Math.min(72, (h - 84) / Math.max(1, d.rows.length));
-  d.rows.forEach((row, i) => {
-    const y = 84 + i * each, color = row.full ? RED : row.near ? ORANGE : O;
-    g.fillStyle = INK; g.font = font(600, 36); g.fillText(fit(g, row.name, 220), 28, y + 34);
-    g.fillStyle = color; g.font = font(600, 32); g.fillText(row.text, 266, y + 34);
-    cells(g, 450, y + 8, w - 640, 30, row.used / 100, color);
-    g.fillStyle = DIM; g.font = font(400, 28); g.textAlign = 'right'; g.fillText(row.left, w - 28, y + 34); g.textAlign = 'left';
-  });
-}
-// Our own ship from above: a deck per project, a lamp per session, shuttles for subagents.
-function drawDecks(g, w, h, d) {
+// All of them if they fit; the fullest if they don't.
+export const visibleLimits = (rows, max) => rows.length > max ? [...rows].sort((a, b) => b.used - a.used).slice(0, max) : rows;
+// The two tall columns either side of the window, big enough to read from the chair. Left: the engines and every limit.
+function drawShipLeft(g, w, h, d) {
+  const limit = d.mode === 'limit', top = 280, pad = 24;
   g.fillStyle = BACK; g.fillRect(0, 0, w, h);
-  const rows = d.decks.length || 1, rowH = Math.min(72, (h - 40 - (d.overflow ? 40 : 0)) / rows);
-  d.decks.forEach((deck, i) => {
-    const y = 20 + i * rowH;
-    g.fillStyle = deck.alert ? RED : OFF; rr(g, 24, y + 5, 370, rowH - 12, (rowH - 12) / 2); g.fill();
-    g.fillStyle = deck.alert ? '#100708' : INK; g.font = font(600, Math.min(36, rowH * .6)); g.fillText(fit(g, deck.name.toUpperCase(), 320), 50, y + rowH / 2 + 12);
-    let x = 446;
-    for (const signal of deck.lamps) { g.fillStyle = SIGNAL_COLOUR[signal]; g.beginPath(); g.arc(x, y + rowH / 2, Math.min(20, rowH * .3), 0, 7); g.fill(); x += 58; if (x > w - 30) break; }
-    for (const signal of deck.shuttles) { if (x > w - 40) break; g.fillStyle = SIGNAL_COLOUR[signal]; const c = y + rowH / 2; g.beginPath(); g.moveTo(x, c - 15); g.lineTo(x + 32, c); g.lineTo(x, c + 15); g.closePath(); g.fill(); x += 50; }
-  });
-  if (d.overflow) { g.fillStyle = O; g.font = font(600, 34); g.textAlign = 'right'; g.fillText(`+${d.overflow}`, w - 28, h - 16); g.textAlign = 'left'; }
-}
-function drawShuttles(g, w, h, d) {
-  title(g, d.shuttles.length ? 'SHUTTLES OUT' : 'ALL DOCKED', w, d.moreShuttles ? `+${d.moreShuttles}` : '');
-  d.shuttles.forEach((s, i) => {
-    const y = 86 + i * 92, color = SIGNAL_COLOUR[s.signal];
-    g.fillStyle = color; g.beginPath(); g.moveTo(34, y + 8); g.lineTo(90, y + 34); g.lineTo(34, y + 60); g.closePath(); g.fill();
-    g.fillStyle = INK; g.font = font(600, 38); g.fillText(fit(g, s.title, w - 140), 112, y + 32);
-    g.fillStyle = color; g.font = font(400, 26); g.fillText(fit(g, `${s.label} · ${s.project}`.toUpperCase(), w - 140), 112, y + 66);
+  g.fillStyle = limit ? '#e01f12' : '#0c0e16'; g.fillRect(0, 0, w, top);
+  g.textAlign = 'center'; g.fillStyle = limit ? '#2a0300' : d.warp ? TEAL : d.offline ? DIM : Y; big(g, 700, 132, d.left, w - 2 * pad); g.fillText(d.left, w / 2, top / 2 + 16);
+  g.fillStyle = limit ? '#2a0300' : DIM; big(g, 600, 54, d.engineLine, w - 2 * pad); g.fillText(fit(g, d.engineLine, w - 2 * pad), w / 2, top / 2 + 92); g.textAlign = 'left';
+  const each = Math.min(158, (h - top - 16) / Math.max(1, d.limitRows.length));
+  d.limitRows.forEach((row, i) => {
+    const y = top + 16 + i * each, color = row.full ? RED : row.near ? ORANGE : O;
+    g.fillStyle = INK; g.font = font(600, 54); g.fillText(fit(g, row.name, w * .5), pad, y + 50);
+    g.fillStyle = color; g.textAlign = 'right'; g.fillText(fit(g, row.text, w * .42), w - pad, y + 50); g.textAlign = 'left';
+    cells(g, pad, y + 64, w - 2 * pad, 26, row.used / 100, color);
+    g.fillStyle = DIM; g.font = font(400, 38); g.fillText(fit(g, row.left, w - 2 * pad), pad, y + 130);
   });
 }
-function drawCredits(g, w, h, d) {
-  title(g, 'CREDITS SPENT', w);
-  g.fillStyle = Y; g.font = font(700, 44); g.textAlign = 'right'; g.fillText(dollars(d.total), w - 28, 54); g.textAlign = 'left';
-  d.credits.forEach(([name, usd], i) => {
-    const y = 108 + i * 52; g.fillStyle = INK; g.font = font(400, 34); g.fillText(fit(g, name, w - 200), 28, y);
-    g.textAlign = 'right'; g.fillStyle = Y; g.fillText(dollars(usd), w - 28, y); g.textAlign = 'left';
+// Right: who's waiting, and what the crew has spent.
+function drawShipRight(g, w, h, d) {
+  const waiting = d.waiting && !d.offline, top = 400, pad = 24;
+  g.fillStyle = BACK; g.fillRect(0, 0, w, h);
+  g.fillStyle = waiting ? '#e01f12' : '#0c0e16'; g.fillRect(0, 0, w, top);
+  g.textAlign = 'center';
+  if (waiting) {
+    g.fillStyle = '#fff5f2'; g.font = font(700, 190); g.fillText(String(d.waiting), w / 2, 180);
+    g.font = font(600, 66); g.fillText('WAITING', w / 2, 262);
+    g.font = font(600, 54); g.fillText(fit(g, `NEXT ▸ ${d.rightName.toUpperCase()}`, w - 2 * pad), w / 2, 350);
+  } else {
+    const line = d.offline ? 'NO SIGNAL' : 'NO HAILS';
+    g.fillStyle = d.offline ? DIM : Y; big(g, 700, 132, line, w - 2 * pad); g.fillText(line, w / 2, top / 2 + 40);
+  }
+  g.textAlign = 'left'; let y = top + 66;
+  if (d.overflow) { g.fillStyle = O; g.font = font(600, 50); g.fillText(`+${d.overflow} UNSEATED`, pad, y); y += 76; }
+  g.fillStyle = DIM; g.font = font(600, 50); g.fillText('CREDITS', pad, y);
+  g.fillStyle = Y; g.font = font(700, 62); g.textAlign = 'right'; g.fillText(dollars(d.total), w - pad, y + 4); g.textAlign = 'left'; y += 28;
+  d.credits.forEach(([name, usd]) => {
+    y += 76; const cost = dollars(usd);
+    g.font = font(400, 46); g.textAlign = 'right'; g.fillStyle = Y; g.fillText(cost, w - pad, y); const room = w - 2 * pad - g.measureText(cost).width - 20;
+    g.textAlign = 'left'; g.fillStyle = INK; g.fillText(fit(g, name, room), pad, y);
   });
-}
-// The big alcove signs: one about the engines, one about hails.
-function drawEngineSign(g, w, h, d) {
-  const limit = d.mode === 'limit', at = d.warp > 0;
-  g.fillStyle = limit ? '#e01f12' : BACK; g.fillRect(0, 0, w, h);
-  g.textAlign = 'center'; g.fillStyle = limit ? '#2a0300' : at ? TEAL : d.offline ? DIM : Y; g.font = font(700, 118); g.fillText(d.left, w / 2, h / 2 + 12);
-  g.font = font(600, 46); g.fillStyle = limit ? '#2a0300' : DIM; g.fillText(fit(g, d.engineLine, w - 60), w / 2, h / 2 + 88); g.textAlign = 'left';
-}
-function drawHailSign(g, w, h, d) {
-  const waiting = d.right && !d.offline;
-  g.fillStyle = waiting ? '#e01f12' : BACK; g.fillRect(0, 0, w, h);
-  g.textAlign = 'center'; g.fillStyle = waiting ? '#fff5f2' : d.offline ? DIM : Y; g.font = font(700, 118); g.fillText(d.right || 'NO HAILS', w / 2, h / 2 + (waiting ? 8 : 40));
-  if (waiting) { g.font = font(600, 46); g.fillText(fit(g, `NEXT ▸ ${d.rightName.toUpperCase()}`, w - 60), w / 2, h / 2 + 84); } g.textAlign = 'left';
 }
 function drawArm(g, w, h, d) {
   g.fillStyle = BACK; g.fillRect(0, 0, w, h);
@@ -219,12 +206,8 @@ export function createDisplays(room) {
     if (!facts) return;
     const d = facts, pal = palette, helmColor = d.warp ? TEAL : O;
     room.stations.forEach((station, i) => paint(`row${i}`, d.rows[i], (g, w, h) => drawRow(g, w, h, d.rows[i], `bay${station.angle}`, pal)));
-    paint('engineSign', [d.mode, d.warp, d.left, d.engineLine, d.offline], (g, w, h) => drawEngineSign(g, w, h, d));
-    paint('hailSign', [d.right, d.rightName, d.offline], (g, w, h) => drawHailSign(g, w, h, d));
-    paint('engineering', [d.mode, d.left, d.limitRows], (g, w, h) => drawEngineering(g, w, h, { mode: d.mode, left: d.left, rows: d.limitRows }));
-    paint('decks', [d.decks, d.overflow], (g, w, h) => drawDecks(g, w, h, d));
-    paint('shuttles', [d.shuttles, d.moreShuttles], (g, w, h) => drawShuttles(g, w, h, d));
-    paint('credits', [d.total, d.credits], (g, w, h) => drawCredits(g, w, h, d));
+    paint('shipLeft', [d.mode, d.warp, d.left, d.engineLine, d.offline, d.limitRows], (g, w, h) => drawShipLeft(g, w, h, d));
+    paint('shipRight', [d.waiting, d.rightName, d.offline, d.overflow, d.total, d.credits], (g, w, h) => drawShipRight(g, w, h, d));
     paint('arm', [d.waiting, d.warp, d.offline, d.rightName], (g, w, h) => drawArm(g, w, h, d));
     paint('dial', d.signals, (g, w, h) => drawDial(g, w, h, d, pal));
     paint('helmLeft', [d.warp], (g, w, h) => drawHelmPlate(g, w, h, d.warp ? `WARP ${d.warp}` : 'COASTING', helmColor));
@@ -240,17 +223,12 @@ export function createDisplays(room) {
   }
   return {
     update({ state, stations, overflow = 0, sessions, usage, machine, unread = () => false, now = Date.now() }) {
-      const byId = new Map(sessions.map(session => [session.id, session])), quiet = session => state.offline ? 'idle' : signalOf(session), main = sessions.filter(session => !session.parentId), subs = sessions.filter(session => session.parentId);
+      const byId = new Map(sessions.map(session => [session.id, session])), main = sessions.filter(session => !session.parentId);
       const limitRows = state.limits.map(limit => {
         const view = usageWindowView({ label: limit.window, usedPercent: limit.usedPercent, resetsAt: limit.resetsAt }, now);
         return { name: `${glyph(limit.provider)} ${(limit.label || limit.provider || '').toUpperCase()}`, text: `${view.shortLabel.toUpperCase()} ${Math.round(limit.usedPercent)}%`, used: view.expired ? 0 : limit.usedPercent, left: view.resetIn.toUpperCase(), near: limit.near, full: limit.full, label: limit.window };
       });
-      const worst = [...limitRows].sort((a, b) => b.used - a.used), shown = limitRows.length > MAX_LIMIT_ROWS ? worst.slice(0, MAX_LIMIT_ROWS) : limitRows, full = worst.find(row => row.full);
-      const projects = new Map();
-      for (const session of main) { const name = session.project || 'Session'; if (!projects.has(name)) projects.set(name, { name, alert: false, lamps: [], shuttles: [] }); const deck = projects.get(name); const signal = quiet(session); deck.lamps.push(signal); deck.alert ||= signal === 'need'; }
-      for (const session of subs) projects.get(session.project || 'Session')?.shuttles.push(quiet(session));
-      const decks = [...projects.values()].sort((a, b) => b.alert - a.alert).slice(0, MAX_PROJECTS);
-      const out = [...subs].sort((a, b) => ['need', 'working', 'idle'].indexOf(signalOf(a)) - ['need', 'working', 'idle'].indexOf(signalOf(b)));
+      const worst = [...limitRows].sort((a, b) => b.used - a.used), full = worst.find(row => row.full);
       // Subagents share their parent's bill, so only main sessions count.
       const spent = main.filter(session => session.cost?.usd != null).sort((a, b) => b.cost.usd - a.cost.usd);
       const comm = state.next && !state.offline ? { project: state.next.project || '', ask: requestText(state.next) || 'Waiting for you', title: stationName(state.next) } : null;
@@ -258,8 +236,8 @@ export function createDisplays(room) {
         mode: state.mode, warp: state.warp, waiting: state.waiting, offline: state.offline, left: state.left, right: state.right, rightName: state.rightName, machine: machine || '', clock: clock(now),
         engineLine: state.offline ? 'RECONNECTING' : state.mode === 'limit' ? full ? `RESETS IN ${full.left}` : '' : state.warp ? `${state.warp} ON DUTY` : `SHIP TIME ${clock(now)}`,
         limitLine: full ? `${full.name} ${full.label.toUpperCase()} LIMIT REACHED · RESETS IN ${full.left}` : '',
-        limitRows: shown, decks, overflow, shuttles: out.slice(0, MAX_SHUTTLES).map(session => ({ title: stationName(session), signal: quiet(session), label: state.offline ? 'NO SIGNAL' : LABELS[session.status] || 'STANDBY', project: session.project || '' })), moreShuttles: Math.max(0, out.length - MAX_SHUTTLES),
-        total: spent.reduce((sum, session) => sum + session.cost.usd, 0), credits: spent.slice(0, 5).map(session => [stationName(session), session.cost.usd]),
+        limitRows: visibleLimits(limitRows, MAX_LIMIT_ROWS), overflow,
+        total: spent.reduce((sum, session) => sum + session.cost.usd, 0), credits: spent.slice(0, MAX_SPENDERS).map(session => [stationName(session), session.cost.usd]),
         comm, crystals: worst.slice(0, room.crystals.length),
         signals: stationSignals(stations, sessions, state.offline),
         rows: stations.map(seat => { if (!seat) return null; const session = seat.goneAt == null && byId.get(seat.id); return session ? rowFacts(session, unread(session), state.offline) : 'dark'; }),

@@ -33,7 +33,6 @@ export function createLights(world, glow, still = false) {
       glow.lamp.color.copy(limit ? RED : hail ? tmp.copy(WARM).lerp(RED, .6) : LAMP).multiplyScalar(limit ? .22 : hail ? .6 + pulse * .4 : 1);
       glow.recess.color.copy(limit ? RED : hail ? tmp.copy(RECESS).lerp(RED, .65) : RECESS).multiplyScalar(limit ? .2 : hail ? .35 + pulse : 1.35);
       glow.edge.color.copy(hail ? RED : limit ? DULL : neon).multiplyScalar(hail ? .4 + pulse * 1.5 : limit ? 1 : 1.7);
-      glow.strip.color.copy(RED).multiplyScalar(limit ? .2 : hail ? .1 + pulse * 2.3 : .008);
       glow.glass.color.setScalar(limit ? .4 : 1 + flash * 3);
     },
   };
