@@ -79,6 +79,10 @@ export function moveBody(b, dt, world, building, reachable = () => true) {
   else if (b.rest) { b.hits.clear(); b.home.copy(b.pos); }
 }
 
+// Where a thing can lie and still be got at: the office (to the middle of its walls, so the doorway counts) or a room off it.
+// A new room joins the `||`s.
+export const reachableIn = (room, { width, depth }, p) => (p.x >= -WALL_T / 2 && p.x <= width + WALL_T / 2 && p.z >= 0 && p.z <= depth) || room.secret.inside(p) || room.kitchen.inside(p);
+
 export function createProps(scene, { room, cast, camera, player, view, bounds, reducedMotion, onHit, others = () => [], hand }) {
   const root = new THREE.Group(); scene.add(root);
   const bodies = [], matrix = new THREE.Matrix4(), one = new THREE.Vector3(1, 1, 1), none = new THREE.Vector3(0, 0, 0);
@@ -102,9 +106,7 @@ export function createProps(scene, { room, cast, camera, player, view, bounds, r
   // Where it starts, and where it goes back to if its home is gone: a ball to its spot, a desk thing to the middle of the room.
   const start = (b, w, d) => { if (b.obj) b.home.set(w / 2, 1, d / 2); else { const [x, z] = b.kind.spots(w, d)[b.i]; b.home.set(x, b.kind.radius, z); } };
   const spawn = (b, w, d) => { start(b, w, d); b.pos.copy(b.home); b.vel.set(0, 0, 0); b.rest = false; b.turn.setFromAxisAngle(UP, b.i * 2.1); };
-  // Where a thing can lie and still be got at: the office (to the middle of its walls, so the doorway counts) or a room off it.
-  // A new room joins the `||`s.
-  const reachable = p => { const { width, depth } = bounds(); return (p.x >= -WALL_T / 2 && p.x <= width + WALL_T / 2 && p.z >= 0 && p.z <= depth) || room.secret.inside(p) || room.kitchen.inside(p); };
+  const reachable = p => reachableIn(room, bounds(), p);
   // In a room off the office that isn't drawn now (shut, or the overview), so neither is what's in it. What's in hand goes with you.
   const hides = p => (!room.kitchen.shown && room.kitchen.inside(p)) || (!room.secret.shown && room.secret.inside(p));
 

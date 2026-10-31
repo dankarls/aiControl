@@ -127,14 +127,15 @@ const fit = (g, text, w, h, most) => {
 const lines = (g, list, x, y, size, step = size * 1.12) => { g.textAlign = 'center'; g.textBaseline = 'middle'; list.forEach((l, i) => g.fillText(l, x, y + (i - (list.length - 1) / 2) * step)); };
 // The fruit's own black hand (fruit.js's fistGeometry) side-on: an arm up to a wide fist, fingers stacked at the far side, a short fat thumb at the near edge leaning off them. It's on anything, so it has a light edge.
 function drawThumb(g, hx, hy, fromX, fromY) {
-  const parts = [[hx - 52, hy - 50, 100, 100, 34], ...[0, 1, 2, 3].map(k => [hx + 4, hy - 50 + k * 25, 56, 25, 12.5])];
+  const FINGER = 100 / 3;
+  const parts = [[hx - 52, hy - 50, 100, 100, 34], ...[0, 1, 2].map(k => [hx + 4, hy - 50 + k * FINGER, 56, FINGER, FINGER / 2])];
   g.save(); g.lineCap = g.lineJoin = 'round';
   for (const [color, grow] of [['#fbf6e8', 8], [LIMB, 0]]) {
     g.strokeStyle = g.fillStyle = color; g.lineWidth = 20 + grow; g.beginPath(); g.moveTo(fromX, fromY); g.quadraticCurveTo(hx - 56, fromY, hx - 38, hy + 34); g.stroke(); g.lineWidth = grow;
     g.save(); g.translate(hx - 28, hy - 34); g.rotate(-0.26); g.beginPath(); g.roundRect(-23, -56, 46, 80, 23); g.fill(); if (grow) g.stroke(); g.restore();
     for (const p of parts) { g.beginPath(); g.roundRect(...p); g.fill(); if (grow) g.stroke(); }
   }
-  g.strokeStyle = '#fbf6e8'; g.lineWidth = 3; for (let k = 1; k < 4; k++) { g.beginPath(); g.moveTo(hx + 22, hy - 50 + k * 25); g.lineTo(hx + 52, hy - 50 + k * 25); g.stroke(); }
+  g.strokeStyle = '#fbf6e8'; g.lineWidth = 3; for (let k = 1; k < 3; k++) { g.beginPath(); g.moveTo(hx + 22, hy - 50 + k * FINGER); g.lineTo(hx + 52, hy - 50 + k * FINGER); g.stroke(); }
   g.restore();
 }
 function drawCutout(g, { fruit, says, small }, i) {
@@ -164,22 +165,21 @@ function drawPrint(g, W, H) {
   { const [x, y, w, h] = CELLS.banner; g.fillStyle = LOOK.banner; g.fillRect(x, y, w, h); g.strokeStyle = '#f2c230'; g.lineWidth = 8; g.strokeRect(x + 12, y + 12, w - 24, h - 24); g.fillStyle = '#fbf6e8'; const big = fit(g, COPY.company, w - 70, 120, 104); g.font = face(big.size); lines(g, big.lines, x + w / 2, y + 88, big.size); g.fillStyle = '#f2c230'; g.font = face(58); lines(g, [COPY.motto], x + w / 2, y + 176, 58); }
   { const [x, y, w, h] = CELLS.motto, { size } = fit(g, COPY.wall, w - 8, h, 124); g.fillStyle = '#2f6b66'; g.font = face(size); lines(g, [COPY.wall], x + w / 2, y + h / 2 + 4, size); }
   { const [x, y, w, h] = CELLS.back; g.fillStyle = KRAFT; g.beginPath(); g.roundRect(x + 2, y + 1, w - 4, h - 2, 9); g.fill(); g.fillStyle = '#9a7648'; g.fillRect(x + 2, y + 150, w - 4, 3); }
-  { const [x, y, w, h] = CELLS.wet; g.fillStyle = LOOK['sign-1']; g.fillRect(x, y, w, h); g.fillStyle = INK; g.beginPath(); g.moveTo(x + w / 2, y + 26); g.lineTo(x + w - 42, y + 196); g.lineTo(x + 42, y + 196); g.closePath(); g.fill(); g.fillStyle = LOOK['sign-1']; g.font = face(120); lines(g, ['!'], x + w / 2, y + 128, 120); g.fillStyle = INK; const a = fit(g, COPY.wet[0], w - 32, 80, 64), b = fit(g, COPY.wet[1], w - 32, 110, 92); g.font = face(a.size); lines(g, a.lines, x + w / 2, y + 268, a.size); g.font = face(b.size); lines(g, b.lines, x + w / 2, y + 366, b.size); g.lineWidth = 10; g.strokeStyle = INK; g.strokeRect(x + 7, y + 7, w - 14, h - 14); }
+  { const [x, y, w, h] = CELLS.wet; g.fillStyle = LOOK['sign-1']; g.fillRect(x, y, w, h); g.fillStyle = INK; for (const [text, mid, tall] of [[COPY.wet[0], 126, 190], [COPY.wet[1], 358, 358]]) { const { size } = fit(g, text, w - 44, h, 200); g.save(); g.translate(x + w / 2, y + mid); g.scale(1, tall / size); g.font = face(size); lines(g, [text], 0, 0, size); g.restore(); } g.lineWidth = 10; g.strokeStyle = INK; g.strokeRect(x + 7, y + 7, w - 14, h - 14); }
   { const [x, y, w, h] = CELLS.special; g.fillStyle = LOOK['sign-2']; g.fillRect(x, y, w, h); g.strokeStyle = '#a87b4f'; g.lineWidth = 16; g.strokeRect(x + 8, y + 8, w - 16, h - 16); g.fillStyle = '#fbf6e8'; const top = COPY.special.slice(0, 2), a = fit(g, top.join(' '), w - 56, 170, 72), b = fit(g, COPY.special[2], w - 50, 120, 80); g.font = face(a.size); lines(g, top, x + w / 2, y + 150, a.size); g.fillStyle = '#f2c230'; g.font = face(b.size); lines(g, [COPY.special[2]], x + w / 2, y + 340, b.size); }
   { const [x, y, w, h] = CELLS.juicer; g.fillStyle = '#ffe873'; g.fillRect(x, y, w, h); g.fillStyle = INK; const { size } = fit(g, COPY.juicer[1], w - 14, 44, 34); g.font = face(size); lines(g, COPY.juicer, x + w / 2, y + h / 2, size); }
 }
+const fromCell = (g, [x, y, w, h]) => { const uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, (x + uv.getX(i) * w) / ATLAS[0], 1 - (y + (1 - uv.getY(i)) * h) / ATLAS[1]); return g; };
 // A plane on a box's face, its picture from a cell: from the front, or (`behind`) its back as you'd read it from there.
-const onFace = (b, [x, y, w, h], behind = false) => {
-  const g = new THREE.PlaneGeometry(b.half.x * 2, b.half.y * 2), uv = g.attributes.uv;
-  for (let i = 0; i < uv.count; i++) uv.setXY(i, (x + uv.getX(i) * w) / ATLAS[0], 1 - (y + (1 - uv.getY(i)) * h) / ATLAS[1]);
+const onFace = (b, cell, behind = false) => {
+  const g = fromCell(new THREE.PlaneGeometry(b.half.x * 2, b.half.y * 2), cell);
   if (behind) g.rotateY(Math.PI);
   return g.translate(0, 0, (behind ? -1 : 1) * (b.half.z + 0.0015)).applyQuaternion(b.quaternion).translate(b.centre.x, b.centre.y, b.centre.z);
 };
 function printed() {
   const of = name => flightBoxes().filter(b => b.surface === name), cards = [1, 2, 3, 4].map(n => of(`cutout-${n}`).find(isCard)), [banner] = of('banner'), [jx, jz] = [JUICER.x, JUICER.z];
   const motto = new THREE.PlaneGeometry(SPOTS.motto.w, SPOTS.motto.h).rotateY(Math.PI / 2).translate(-KITCHEN.width + 0.006, SPOTS.motto.y, SPOTS.motto.z), note = new THREE.PlaneGeometry(0.11, 0.11).translate(jx, 0.985, jz + 0.092);
-  const put = (g, [x, y, w, h]) => { const uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, (x + uv.getX(i) * w) / ATLAS[0], 1 - (y + (1 - uv.getY(i)) * h) / ATLAS[1]); return g; };
-  const all = [...cards.flatMap((c, i) => [onFace(c, CELLS.cutouts[i]), onFace(c, CELLS.back, true)]), onFace(banner, CELLS.banner), onFace(banner, CELLS.banner, true), ...of('sign-1').map(b => onFace(b, CELLS.wet)), ...of('sign-2').map(b => onFace(b, CELLS.special)), put(motto, CELLS.motto), put(note, CELLS.juicer)];
+  const all = [...cards.flatMap((c, i) => [onFace(c, CELLS.cutouts[i]), onFace(c, CELLS.back, true)]), onFace(banner, CELLS.banner), onFace(banner, CELLS.banner, true), ...of('sign-1').map(b => onFace(b, CELLS.wet)), ...of('sign-2').map(b => onFace(b, CELLS.special)), fromCell(motto, CELLS.motto), fromCell(note, CELLS.juicer)];
   const print = new THREE.Mesh(mergeGeometries(all), toonMaterial('#ffffff', { map: canvasTexture(...ATLAS, drawPrint), alphaTest: 0.5, alphaToCoverage: true }));
   print.raycast = () => {};
   return print;

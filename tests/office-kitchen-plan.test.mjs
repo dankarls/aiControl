@@ -6,6 +6,7 @@ import { walkGrid, findPath, nearestOpen } from '../client/office/path.js';
 import { KITCHEN, PAN, TIERS, ZONES, SPOTS, flightBoxes, walkBoxes, behind, surfaceTier, levelWorld } from '../client/office/kitchen-plan.js';
 import { kitchenDoor, kitchenShift } from '../client/office/layout.js';
 import { WALL_T } from '../client/office/furniture.js';
+import { STARTS } from '../client/office/levels.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const ball = { radius: 0.05, low: 0.05, bounce: 0.5, roll: 1, drag: 0.1, upright: false };
@@ -196,7 +197,7 @@ const kitchenGrid = (depth, dx = 0) => {
 };
 const MARKS = {
   doorway: [-0.7, 0], bin: [-1.4, -2.5], eastOfIsland: [-3, -3.6], westOfIsland: [-7.5, -3.6], sink: [-6.8, -6.8], stove: [-3, -6.8], fridge: [-8.4, -6.8], bucket: [-1.8, -4.9],
-  shelf: [-9.2, -6.3], backWall: [-0.7, -7.5], farTable: [-6.25, -0.5], tray: [-8.6, -0.5], vending: [-8.6, -0.4], mug: [-5.2, -0.5],
+  shelf: [-9.2, -6.3], backWall: [-0.7, -7.5], farTable: [-6.25, -0.5], tray: [-8.6, -0.5], vending: [STARTS.vending.x, STARTS.vending.z], mug: [-5.2, -0.5],
 };
 
 test('every area a start mark can go is routable from the doorway', () => {

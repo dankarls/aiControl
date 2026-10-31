@@ -5,12 +5,11 @@ import { createKitchen, DOOR_NEAR, DOOR_FAR } from '../client/office/kitchen.js'
 import { KITCHEN, flightBoxes } from '../client/office/kitchen-plan.js';
 import { kitchenDoor, kitchenShift } from '../client/office/layout.js';
 import { WALL_H, WALL_T } from '../client/office/furniture.js';
-import { createSecret } from '../client/office/secret.js';
 import { walkGrid, findPath, nearestOpen } from '../client/office/path.js';
 import { free, resolveStep } from '../client/office/player.js';
-import { moveBody } from '../client/office/props.js';
+import { moveBody, reachableIn } from '../client/office/props.js';
+import { createRoom } from '../client/office/room.js';
 import { escaped, makeBody } from '../client/office/flight.js';
-const makeShot = makeBody;
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 // No document in Node: a blank canvas for its textures.
@@ -171,16 +170,15 @@ test('a game gets the group when it is built, is updated with it, and what it st
 });
 
 // The kitchen reaches 9.5 m back from the room's front, so in a room shallower than that its back is behind the office's windows wall, where nothing else is built.
-// The office's walls as room.js stands them; the smallest room layout.js makes is 8 deep.
+// The real room, with no desks; the smallest layout.js makes is 8 deep.
 const WIDTH = 10;
 function building(t, depth) {
   const was = globalThis.document; globalThis.document = { createElement: () => ({ getContext: blank }), fonts: undefined };
   t.after(() => { if (was) globalThis.document = was; else delete globalThis.document; });
-  const kitchen = createKitchen(), secret = createSecret({ onPress() {} }), door = kitchenDoor(depth), box = (x0, z0, x1, z1) => new THREE.Box3(V(x0, 0, z0), V(x1, WALL_H, z1));
-  const office = [box(-WALL_T, -WALL_T, WIDTH + WALL_T, 0), box(-WALL_T, depth, WIDTH + WALL_T, depth + WALL_T), box(-WALL_T, 0, 0, door - 0.75), box(-WALL_T, door + 0.75, 0, depth), box(WIDTH, 0, WIDTH + WALL_T, depth - 4.45), box(WIDTH, depth - 3.15, WIDTH + WALL_T, depth)];
-  const walls = [...office, ...secret.build({ width: WIDTH, depth, shell: new THREE.Group() }), ...kitchen.build({ depth, shell: new THREE.Group(), wall: leftWall(depth) })];
+  const room = createRoom(new THREE.Scene(), {}), size = { width: WIDTH, depth }, door = kitchenDoor(depth), { kitchen, secret } = room;
+  room.sync({ room: size, door: { x: WIDTH / 2, z: depth }, desks: new Map(), pods: [] }, new Map());
   kitchen.update(1 / 60, V(-3, 1.6, door), true, 0); // built, the doors open
-  return { kitchen, secret, door, walls, bounds: secret.bounds({ width: WIDTH, depth }) };
+  return { room, kitchen, door, size, walls: room.colliders, bounds: secret.bounds(size) };
 }
 
 for (const depth of [8, 8.6, 9.2]) test(`in a room ${depth} deep you can walk to the kitchen's back wall, and no further`, t => {
@@ -197,12 +195,11 @@ for (const depth of [8, 8.6, 9.2]) test(`in a room ${depth} deep you can walk to
 });
 
 for (const depth of [8, 8.6]) test(`in a room ${depth} deep what's thrown at the kitchen's back stays in it`, t => {
-  const { kitchen, secret, door, walls, bounds } = building(t, depth), world = { colliders: [...walls.filter(b => !b.walkOnly), ...kitchen.flight], columns: [], ceiling: WALL_H, onContact() {} };
-  const reachable = p => kitchen.inside(p) || secret.inside(p) || (p.x >= -WALL_T && p.x <= WIDTH + WALL_T && p.z >= 0 && p.z <= depth);
+  const { room, door, size, bounds } = building(t, depth), world = { colliders: room.flightColliders, columns: [], ceiling: WALL_H, onContact() {} }, reachable = p => reachableIn(room, size, p);
   const kind = { radius: 0.06, low: 0.06, bounce: 0.6, roll: 1, drag: 0.1, upright: false };
   let n = 0;
   for (const [x, z] of [[-0.9, -7.5], [-3, -6.8], [-9.3, -6.9], [-1, 0]]) for (let a = 0; a < 16; a++) for (const speed of [5, 12, 20]) for (const up of [-0.1, 0.4, 2]) {
-    const home = V(x, 1.5, door + z), yaw = a * Math.PI / 8, b = { ...makeShot(kind, home, V(Math.sin(yaw) * speed, up * speed / 2, Math.cos(yaw) * speed)), home, turn: new THREE.Quaternion(), hits: new Set() };
+    const home = V(x, 1.5, door + z), yaw = a * Math.PI / 8, b = { ...makeBody(kind, home, V(Math.sin(yaw) * speed, up * speed / 2, Math.cos(yaw) * speed)), home, turn: new THREE.Quaternion(), hits: new Set() };
     for (let i = 0; i < 480 && !b.rest; i++) { moveBody(b, 1 / 60, world, bounds, reachable); assert.ok(!escaped(b.pos, bounds), `escaped at ${b.pos.toArray()}`); assert.ok(reachable(b.pos), `thrown from ${x},${z} at ${a} ${speed} ${up}: out at ${b.pos.toArray()}`); }
     n++;
   }
@@ -210,8 +207,8 @@ for (const depth of [8, 8.6]) test(`in a room ${depth} deep what's thrown at the
 });
 
 test('nothing of the kitchen stands in the office, so its windows wall hides it', t => {
-  const { kitchen, walls } = building(t, 8), back = walls.find(b => b.min.x === -WALL_T && b.max.z === 0 && b.max.x > WIDTH);
+  const { kitchen, walls } = building(t, 8), on = (a, b) => Math.abs(a - b) < 1e-6, back = walls.find(b => on(b.min.x, -WALL_T) && on(b.max.z, 0) && b.max.x > WIDTH);
   assert.ok(flightBoxes(kitchen.origin).every(b => b.max.x <= 1e-9), 'all of it this side of x = 0');
-  assert.ok(back && back.min.y === 0 && back.max.y === WALL_H, 'the windows wall reaches its corner, floor to ceiling');
+  assert.ok(back && on(back.min.y, 0) && on(back.max.y, WALL_H), 'the windows wall reaches its corner, floor to ceiling');
   assert.ok(walls.some(b => b.surface === 'wall-e' && b.max.z === -WALL_T && b.min.x === -WALL_T), 'and the kitchen has its own east wall past it');
 });

@@ -17,7 +17,6 @@ export const STARTS = {
   doors: mark(-1, 0, -5, -2.5),
   island: mark(-7.5, -3.6, -5, -2.5),
   farTable: mark(-6.25, -0.5, -5, -2.5),
-  betweenTables: mark(-6.35, 0.45, -5, -2.5),
   fridge: mark(-8.4, -6.8, -5, -2.5),
   vending: mark(-8.6, -0.5, -5, -2.5),
   stove: mark(-3, -6.8, -5, -2.5),

@@ -55,7 +55,7 @@ const leaning = (surface, x, z, yaw, lean, half, out = 0) => {
 export const CARD = [0.42, 0.72, 0.006];
 const cutout = (n, x, z, yaw, lean) => {
   const up = CARD[1] * 4 / 3, across = up * Math.sin(rad(lean)), height = up * Math.cos(rad(lean)), reach = 0.3;
-  return [leaning(`cutout-${n}`, x, z, yaw, lean, CARD), leaning(`cutout-${n}`, x, z, yaw + 180, rad(0) + Math.atan2(reach, height) * 180 / Math.PI, [0.035, Math.hypot(reach, height) / 2, 0.006], across + reach + 0.012)];
+  return [leaning(`cutout-${n}`, x, z, yaw, lean, CARD), leaning(`cutout-${n}`, x, z, yaw + 180, Math.atan2(reach, height) * 180 / Math.PI, [0.035, Math.hypot(reach, height) / 2, 0.006], across + reach + 0.012)];
 };
 // An A-frame sign: two faces leaning on each other, meeting at the top.
 const aFrame = (surface, x, z, yaw, half, lean) => [0, 180].map(side => leaning(surface, x, z, yaw + side, lean, half, 2 * half[1] * Math.sin(rad(lean))));

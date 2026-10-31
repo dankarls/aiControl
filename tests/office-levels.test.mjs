@@ -252,7 +252,7 @@ test('each item has three pairs or more, and together they use every target', ()
 // The real path grid at the kitchen's real place, as in the plan's own test: cells fall differently in rooms of different depths.
 const DEPTHS = [8, 8.6, 9.7, 10, 12.3, 14, 15.5], LEFT = -(WALL_T + KITCHEN.width);
 test('no start mark stands in a collider', () => {
-  assert.deepEqual(Object.keys(STARTS).sort(), ['betweenTables', 'doors', 'farTable', 'fridge', 'island', 'stove', 'vending']);
+  assert.deepEqual(Object.keys(STARTS).sort(), ['doors', 'farTable', 'fridge', 'island', 'stove', 'vending']);
   const boxes = flightBoxes();
   for (const [name, { x, z, stand }] of Object.entries(STARTS)) {
     assert.ok(Number.isFinite(stand), `${name} faces somewhere`);
