@@ -441,3 +441,16 @@ test('with reduced motion a thing let go of lands at once, as a thing thrown doe
   assert.equal(dropped.ball.rest, true); assert.equal(dropped.ball.pos.y, dropped.ball.kind.low);
   assert.equal(thrown.ball.rest, false);
 });
+test('with reduced motion a ball let go of is drawn where it landed, not left in the hand', () => {
+  const a = office({ colliders: walls(), still: true }), drawn = new THREE.Matrix4(), at = new THREE.Vector3();
+  inHand(a, 5, 8, 0, -1); a.props.throw(null, true);
+  a.scene.children[0].children[0].getMatrixAt(0, drawn); at.setFromMatrixPosition(drawn);
+  assert.ok(a.ball.rest && at.distanceTo(a.ball.pos) < 1e-6, `${at.toArray()} ${a.ball.pos.toArray()}`);
+});
+test('with reduced motion a thing off a desk let go of is drawn where it landed too', () => {
+  const a = office({ colliders: walls(), still: true }), mug = new THREE.Object3D(); mug.userData.loose = 'mug'; a.scene.add(mug); a.room.flightColliders = walls(); a.run(0.05);
+  at(a, 5, 8, 0, -1);
+  const b = mug.userData.prop(); b.pos.copy(a.player.position); a.props.grab(b); a.run(0.05); a.props.throw(null, true);
+  const middle = b.kind.centre.clone().applyQuaternion(mug.quaternion).add(mug.position); // a thing's origin is at its foot, its `pos` at its middle
+  assert.ok(b.rest && middle.distanceTo(b.pos) < 1e-6, `${middle.toArray()} ${b.pos.toArray()}`);
+});

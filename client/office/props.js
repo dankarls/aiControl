@@ -223,7 +223,7 @@ export function createProps(scene, { room, cast, camera, player, view, bounds, r
       // door with it) it stays in the office, by the door where the shelf isn't, open or shut.
       stopShort(player.position, b.pos, b.kind, world.colliders);
       if (drop && room.secret.inside(b.pos)) { const { x, z } = room.secret.spot; b.pos.x = x; b.pos.z = z; }
-      if (drop && reducedMotion() && building) settle(b);
+      if (drop && reducedMotion() && building) { settle(b); show(b); }
     },
     // Outline the thing a click or E would pick up.
     aim(b) { if (b === aimed) return; if (aimed) light(aimed, false); if (b) light(b, true); aimed = b; },
