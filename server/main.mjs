@@ -13,6 +13,7 @@ import { UsagePoller, claudeUsageReader } from './usage.mjs';
 import { createHandler } from './http.mjs';
 import { fail } from './requests.mjs';
 import { spawnAgent } from './claude-messaging.mjs';
+import { OfficeSeats } from './seats.mjs';
 import { root, authFile, dataDir, hookSocket, port, claudeAccounts } from './config.mjs';
 
 export async function startServer({ host, hostname, tls = null }) {
@@ -30,9 +31,10 @@ export async function startServer({ host, hostname, tls = null }) {
   const claudeUsage = accounts.map(({ dir, label }) => ({ label, poller: new UsagePoller('claude', label ? `Claude Code · ${label}` : 'Claude Code', claudeUsageReader({ credentialsFile: join(dir, '.credentials.json') })) }));
   // Loading the .mjs directly avoids temporary bundled configs triggering Node 22's imported-module watcher.
   const vite = await createViteServer({ configFile: join(root, 'vite.config.mjs'), configLoader: 'native', server: { middlewareMode: true, hmr: false, allowedHosts: origins.map(o => new URL(o).hostname) } });
+  const seats = new OfficeSeats(join(dataDir, 'office-seats.json'));
   const snapshot = () => {
     const sessions = mergeSessions([...codex.list(), ...claude.list()], store.list());
-    return { sessions, usage: [codex.usage.snapshot(), ...claudeUsage.map(({ label, poller }) => ({ ...poller.snapshot(), label }))], features: { messaging: true, steering: true, claudeMessaging: true }, updatedAt: Date.now(), machine: machineName(), claudeAccounts: accounts.map(({ label }) => label), providers: [{ name: 'Codex', connected: codex.connected, detail: codex.detail }, { name: 'Claude Code', connected: claude.connected, detail: claude.detail }] };
+    return { sessions, office: seats.update(sessions), usage: [codex.usage.snapshot(), ...claudeUsage.map(({ label, poller }) => ({ ...poller.snapshot(), label }))], features: { messaging: true, steering: true, claudeMessaging: true }, updatedAt: Date.now(), machine: machineName(), claudeAccounts: accounts.map(({ label }) => label), providers: [{ name: 'Codex', connected: codex.connected, detail: codex.detail }, { name: 'Claude Code', connected: claude.connected, detail: claude.detail }] };
   };
   const messageTarget = id => {
     const session = codex.list().find(session => session.id === id);

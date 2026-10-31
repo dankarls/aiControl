@@ -9,6 +9,7 @@ import { createServer as createViteServer } from 'vite';
 import { Auth, savePassword } from '../server/auth.mjs';
 import { RequestStore, fail } from '../server/requests.mjs';
 import { createHandler } from '../server/http.mjs';
+import { OfficeSeats } from '../server/seats.mjs';
 import { claudeRequest } from '../server/claude.mjs';
 import { codexRequest } from '../server/codex.mjs';
 import { root } from '../server/config.mjs';
@@ -93,10 +94,12 @@ const usage = [
   { provider: 'claude', name: 'Claude Code', windows: [usageWindow('five_hour', '5-hour', 64, 71), usageWindow('seven_day', 'Weekly', 47, 2 * 1440)], updatedAt: now, status: 'ready', detail: '' },
 ];
 // Same merge as server/main.mjs: a pending request sets the session status.
+const seats = new OfficeSeats();
 const snapshot = () => {
   const requests = store.list();
   return {
     sessions: sessions.map(s => { const own = requests.filter(r => r.sessionId === s.id); return { ...s, ...(own.length ? { status: own[0].kind === 'question' ? 'question' : 'permission' } : {}), requests: own }; }),
+    office: seats.update(sessions),
     usage, features: { messaging: true, steering: true, claudeMessaging: true }, updatedAt: Date.now(), machine: 'demo',
     providers: [{ name: 'Codex', connected: true, detail: 'Demo data' }, { name: 'Claude Code', connected: true, detail: 'Demo data' }],
   };

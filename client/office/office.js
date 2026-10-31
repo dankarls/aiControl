@@ -1,7 +1,7 @@
 // The Office theme: a 3D office where each session is a fruit at a desk. main.js mounts it in place of the list.
 import * as THREE from 'three';
 import './office.css';
-import { layoutOffice, VACANT_MS, DESK_W } from './layout.js';
+import { layoutOffice, sharedLayout, VACANT_MS, DESK_W } from './layout.js';
 import { officeStatus, identity, monitorLines } from './status.js';
 import { createRoom } from './room.js';
 import { Cast } from './animation.js';
@@ -57,22 +57,6 @@ export function mountOffice(container, hooks) {
   const cast = new Cast(scene, { reducedMotion: () => !!reducedMotion?.matches, route });
   let layout;
   const fired = new Map(); // session id → when it was fired from the panel
-  // Seats outlive a reload: the first layout starts from the last one's desks and pods' cells (anyone gone since is dropped at
-  // once, not left to walk out; layout.js closes up what they leave empty), or pods would line up by name and everyone sit in
-  // whatever order the snapshot lists them. A desk still walking out is kept, in case they're back (a server restart lists
-  // nobody for a moment).
-  const seatsKey = 'ai-control-office-seats';
-  let seats = '';
-  const savedSeats = () => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(seatsKey) || '{}'), { desks = [], pods = [] } = Array.isArray(saved) ? { desks: saved } : saved; // an array: desks only, as saved before
-      return { saved: true, desks: new Map(desks.map(([id, podKey, slot]) => [id, { podKey, slot, vacantSince: -Infinity }])), pods: pods.map(([key, col, row]) => ({ key, col, row })), room: { width: 0, depth: 0 } };
-    } catch { return undefined; }
-  };
-  const saveSeats = () => {
-    const now = JSON.stringify({ desks: [...layout.desks.values()].map(desk => [desk.sessionId, desk.podKey, desk.slot]), pods: layout.pods.map(pod => [pod.key, pod.col, pod.row]) });
-    if (now !== seats) { seats = now; try { localStorage.setItem(seatsKey, now); } catch { /* per tab only */ } }
-  };
 
   const frames = new Set(), listeners = [];
   const listen = (target, type, fn, options) => { target.addEventListener(type, fn, options); listeners.push(() => target.removeEventListener(type, fn, options)); };
@@ -296,7 +280,11 @@ export function mountOffice(container, hooks) {
     onFrame(fn) { frames.add(fn); return () => frames.delete(fn); },
     update(snapshot, { error = '' } = {}) {
       office.snapshot = snapshot; office.error = error;
-      layout = layoutOffice(snapshot.sessions, layout || savedSeats()); view.setLayout(layout); saveSeats();
+      // The server's seats, the same on every device (server/seats.mjs). Worked out here only until a server from before them restarts.
+      const before = layout?.room;
+      layout = snapshot.office ? sharedLayout(snapshot.office) : layoutOffice(snapshot.sessions, layout); view.setLayout(layout);
+      // The floor closed up while this page was away or the server restarted: you might be standing outside the walls now.
+      if (before && (layout.room.width < before.width || layout.room.depth < before.depth)) office.placed = false;
       cast.frozen = !!error;
       office.statuses = new Map(snapshot.sessions.map(session => [session.id, { ...officeStatus(session), identity: identity(session.id), monitor: monitorLines(session) }]));
       // The fired cry at their desks, hands over their faces, then run out like that.

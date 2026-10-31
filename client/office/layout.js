@@ -18,6 +18,9 @@ const podKey = session => session.cwd || session.project || 'Unknown';
 // A desk's `rotation` is the yaw its sitter faces (0 = +z). Slot k is pair k >> 1; even slots face +z, odd face -z, across a shared desk edge.
 const seat = (pod, slot) => ({ x: pod.left + DESK_W * ((slot >> 1) + 0.5), z: pod.z + (slot % 2 ? DESK_D / 2 : -DESK_D / 2), rotation: slot % 2 ? Math.PI : 0 });
 
+// The layout as the server sends it (server/seats.mjs), desks as a list, back in the form everything here reads.
+export const sharedLayout = office => ({ ...office, desks: new Map(office.desks.map(desk => [desk.sessionId, desk])) });
+
 // A session that ends keeps its (empty) desk for VACANT_MS, so it can walk out and the pod doesn't jump at once.
 export function layoutOffice(sessions, previous, now = Date.now()) {
   const top = sessions.filter(s => !s.parentId), ids = new Set(top.map(s => s.id));
