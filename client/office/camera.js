@@ -22,8 +22,10 @@ export class OfficeCamera {
       g.fillStyle = '#e8574a'; g.fillRect(0, 0, w, h); g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle';
       g.font = '900 140px system-ui, sans-serif'; g.fillText('#1', w / 2, h * 0.33); g.font = '900 104px system-ui, sans-serif'; g.fillText('BOSS', w / 2, h * 0.7);
     });
-    // Outlined thinner than the room's, being this close.
-    mug.add(withOutline(new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.05, 0.12, 24, 1, true, Math.PI), toonMaterial('#fff', { map: label })), LINE));
+    mug.add(new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.05, 0.12, 24, 1, true, Math.PI), toonMaterial('#fff', { map: label })));
+    // Outlined as one closed cup, bottom and rim too, off an unseen lathe of its outside; thinner than the room's, being this close.
+    const cup = [[0, -0.06], [0.05, -0.06], [0.055, 0.06], [0.05, 0.06]].map(([x, y]) => new THREE.Vector2(x, y));
+    mug.add(withOutline(new THREE.Mesh(new THREE.LatheGeometry(cup, 24), new THREE.MeshBasicMaterial({ visible: false })), LINE));
     mug.add(new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.046, 0.12, 24, 1, true), toonMaterial('#c94538', { side: THREE.BackSide })));
     mug.add(new THREE.Mesh(new THREE.RingGeometry(0.05, 0.055, 24).rotateX(-Math.PI / 2).translate(0, 0.06, 0), red));
     mug.add(new THREE.Mesh(new THREE.CircleGeometry(0.05, 24).rotateX(Math.PI / 2).translate(0, -0.06, 0), red));

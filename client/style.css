@@ -74,6 +74,9 @@ input:is([type=checkbox], [type=radio]) { width: 18px; height: 18px; margin: 0; 
 :is(.tab, .theme-choice):hover { background: var(--panel-2); color: var(--text); }
 .tab.active, .theme-choice[aria-pressed=true] { background: var(--accent-soft); color: var(--accent-2); font-weight: 600; }
 .theme-choice[aria-pressed=true]::after { content: '✓'; margin-left: auto; }
+.office-option { margin-top: 4px; border-top: 1px solid var(--line); }
+.office-option .icon { margin-inline: 5px; }
+:root:not([data-theme=office]) .office-option { display: none; }
 .theme-swatch { width: 16px; height: 16px; flex: none; border-radius: 50%; border: 1px solid #0003; }
 .theme-swatch.modern { background: linear-gradient(135deg, #f4f5f8 0 50%, #0b0d12 50%); box-shadow: inset 0 0 0 3px #6366f1; }
 .theme-swatch.modern-light { background: radial-gradient(circle, #6366f1 0 32%, #f4f5f8 36%); }

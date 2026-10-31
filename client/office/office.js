@@ -9,7 +9,7 @@ import { Player, pick, rayAt, officeHasKeys, menuOpen, sceneFocused, standNear, 
 import { OfficeCamera } from './camera.js';
 import { Bubbles, createCard, createMenu, createOverlays } from './bubbles.js';
 import { createBoards } from './boards.js';
-import { highlight } from './toon.js';
+import { highlight, showOutlines } from './toon.js';
 import { shared } from './furniture.js';
 import { PITCH } from './overview.js';
 import { createProps, REACH } from './props.js';
@@ -325,6 +325,7 @@ export function mountOffice(container, hooks) {
       renderer.dispose(); renderer.domElement.remove();
     },
     room, cast, player, view,
+    outlines: showOutlines, // on everything, or only on what's hovered or picked (the theme menu)
     // Their session was just ended from the panel.
     fire(id) { fired.set(id, Date.now()); if (office.snapshot) office.update(office.snapshot, { error: office.error }); },
     // Fly over, they turn to you, the view settles on their face, then their session opens beside the scene.
