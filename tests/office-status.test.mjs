@@ -30,6 +30,12 @@ test('identity is deterministic and varied', () => {
   const fruits = new Set(Array.from({ length: 50 }, (_, i) => identity(`s${i}`).fruit));
   assert.ok(fruits.size >= 5 && [...fruits].every(f => FRUITS.includes(f)));
 });
+test('every fruit gets hired, and comes in a colour', () => {
+  const people = Array.from({ length: 500 }, (_, i) => identity(`s${i}`));
+  assert.deepEqual(new Set(people.map(p => p.fruit)), new Set(FRUITS));
+  assert.ok(['kiwi', 'watermelon', 'pineapple'].every(f => FRUITS.includes(f)));
+  assert.ok(people.every(p => /^#[0-9a-f]{6}$/.test(p.color)));
+});
 test('accessories combine, one per slot', () => {
   const people = Array.from({ length: 300 }, (_, i) => identity(`s${i}`)), hats = ['beanie', 'cap', 'headphones', 'bow', 'flower'];
   assert.ok(people.some(p => p.accessories.includes('glasses') && p.accessories.includes('tie')));

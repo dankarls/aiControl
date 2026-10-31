@@ -29,8 +29,10 @@ const profiles = {
   // Long and slim, heaviest low down, so it never reads as a purple pear.
   eggplant: [[0, 0], [0.14, 0.015], [0.22, 0.08], [0.245, 0.2], [0.235, 0.34], [0.21, 0.5], [0.175, 0.66], [0.13, 0.8], [0.08, 0.9], [0, 0.93]],
   strawberry: [[0, 0], [0.06, 0.02], [0.16, 0.13], [0.26, 0.3], [0.31, 0.45], [0.28, 0.55], [0.14, 0.6], [0, 0.6]],
-  // The boss only.
   pineapple: [[0, 0], [0.18, 0.02], [0.29, 0.14], [0.32, 0.32], [0.3, 0.5], [0.22, 0.64], [0.1, 0.69], [0, 0.7]],
+  // Its top is sliced off flat, for the green inside to show (stemGeometry).
+  kiwi: [[0, 0], [0.1, 0.005], [0.2, 0.06], [0.26, 0.18], [0.275, 0.31], [0.255, 0.44], [0.215, 0.54], [0.2, 0.56], [0.1, 0.565], [0, 0.565]],
+  watermelon: Array.from({ length: 13 }, (_, i) => { const a = -Math.PI / 2 + Math.PI * i / 12; return [Math.max(0, Math.cos(a) * 0.33), 0.37 + Math.sin(a) * 0.37]; }),
 };
 // Banana: a bent tube, fattest in the middle; `curve` is its spine.
 const bananaSpine = new THREE.CatmullRomCurve3([V(-0.02, 0.0), V(0.11, 0.2), V(0.14, 0.42), V(0.08, 0.66), V(-0.06, 0.86)]);
@@ -157,8 +159,26 @@ const diamonds = () => textures.pineapple ??= canvasTexture(128, (g, n) => {
   g.fillStyle = '#f2b632'; g.fillRect(0, 0, n, n); g.strokeStyle = '#b97d1c'; g.lineWidth = 4;
   for (let i = -n; i < n * 2; i += 32) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i + n, n); g.stroke(); g.beginPath(); g.moveTo(i + n, 0); g.lineTo(i, n); g.stroke(); }
 });
+// A kiwi's fuzz: short hairs, lighter and darker than the skin.
+const fuzz = color => textures[`fuzz${color}`] ??= canvasTexture(256, (g, n) => {
+  g.fillStyle = color; g.fillRect(0, 0, n, n); g.lineWidth = 1.5; g.lineCap = 'round';
+  for (let i = 0; i < 2600; i++) {
+    const x = Math.random() * n, y = Math.random() * n, a = Math.random() * 7;
+    g.strokeStyle = i % 2 ? 'rgba(235,205,150,.4)' : 'rgba(55,32,12,.4)'; g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * 5, y + Math.sin(a) * 5); g.stroke();
+  }
+});
+// A watermelon's rind: one dark, jagged stripe from pole to pole on pale green, its wobbles whole waves so it tiles.
+const rind = color => textures[`rind${color}`] ??= canvasTexture(128, (g, n) => {
+  g.fillStyle = '#8cc65a'; g.fillRect(0, 0, n, n); g.fillStyle = color; g.beginPath();
+  const edge = (y, side) => { const k = y / n * Math.PI * 2; return [n / 2 + 7 * Math.sin(k * 3) + 3 * Math.sin(k * 7 + 1) + side * (24 + 5 * Math.sin(k * 5) + (y / 4 % 2 ? 4 : -4)), y]; };
+  for (let y = 0; y <= n; y += 4) g.lineTo(...edge(y, 1));
+  for (let y = n; y >= 0; y -= 4) g.lineTo(...edge(y, -1));
+  g.fill();
+});
 function bodyMaterial(fruit, color) {
   if (fruit === 'orange') return toonMaterial(color, { bumpMap: peel(), bumpScale: 1.2 });
+  if (fruit === 'kiwi') { const map = fuzz(color).clone(); map.repeat.set(3, 2); map.needsUpdate = true; return toonMaterial('#ffffff', { map }); }
+  if (fruit === 'watermelon') { const map = rind(color).clone(); map.repeat.set(8, 1); map.needsUpdate = true; return toonMaterial('#ffffff', { map }); }
   if (fruit === 'pineapple') { const map = diamonds().clone(); map.repeat.set(4, 2); map.needsUpdate = true; return toonMaterial('#ffffff', { map }); }
   if (fruit === 'strawberry') { const map = seeds(color).clone(); map.repeat.set(3, 2); map.needsUpdate = true; return toonMaterial('#ffffff', { map }); }
   return toonMaterial(color).clone(); // its own, since wear browns it
@@ -287,7 +307,17 @@ function stemGeometry(fruit, h) {
   } else if (fruit === 'strawberry') {
     for (let i = 0; i < 6; i++) parts.push([baked(new THREE.SphereGeometry(0.075, 10, 6).scale(1, 0.15, 0.45).translate(0.06, 0, 0), V(0, h - 0.01), [0, i / 6 * Math.PI * 2, -0.35]), green]);
     parts.push([new THREE.CylinderGeometry(0.018, 0.025, 0.09, 8).translate(0, h + 0.03, 0), '#3f7d22']);
-  } else if (fruit === 'banana') {
+  } else if (fruit === 'kiwi') {
+    // The cut face: green flesh, a pale core and a ring of seeds. Core and seeds stand half out of the flesh, so their outlines stay under it.
+    const dome = 0.012;
+    parts.push([new THREE.SphereGeometry(0.205, 24, 6, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, dome / 0.205, 1).translate(0, h - 0.003, 0), '#9ccb3b']);
+    parts.push([new THREE.SphereGeometry(0.058, 16, 6).scale(1, 0.17, 1).translate(0, h + dome - 0.007, 0), '#eef2c8']);
+    for (let i = 0; i < 12; i++) {
+      const a = i / 12 * Math.PI * 2;
+      parts.push([baked(new THREE.SphereGeometry(0.014, 8, 5).scale(0.6, 0.4, 1.3), V(Math.cos(a) * 0.1, h + dome - 0.006, Math.sin(a) * 0.1), [0, Math.PI / 2 - a, 0]), INK]);
+    }
+  } else if (fruit === 'watermelon') parts.push([arc([V(0, h - 0.02), V(0.01, h + 0.06), V(0.07, h + 0.07)], 0.016), '#5d7a2a']);
+  else if (fruit === 'banana') {
     parts.push([new THREE.CylinderGeometry(0.02, 0.028, 0.07, 8).translate(0, 0.03, 0).translate(...bananaSpine.getPoint(1).toArray()), brown]);
     parts.push([new THREE.SphereGeometry(0.03, 8, 6).translate(...bananaSpine.getPoint(0).toArray()), brown]);
   }
