@@ -19,16 +19,16 @@ const BODY = 0.3, KICK = 10; // the boss is a column this wide; the hardest kick
 const UP = new THREE.Vector3(0, 1, 0), axis = new THREE.Vector3(), q = new THREE.Quaternion(), tilt = new THREE.Quaternion();
 // Balls: spots are [x, z] in a room `w` by `d`; `roll` is how fast they slow on the ground, `drag` in the air, `tumble` how
 // fast a throw spins them. `low` is how high their middle rests, `centre` where it is from their mesh's origin.
-const BALLS = [
-  { radius: 0.11, bounce: 0.6, roll: 0.8, drag: 0.05, throw: 7, spots: (w, d) => [[w - 3.2, d - 2.6]], make: football },
-  { radius: 0.045, bounce: 0.25, roll: 4, drag: 0.5, throw: 8, spots: w => [[w - 0.95, 0.85], [w - 1.25, 1.45], [w - 1.5, 2.2], [w - 0.85, 2.7]], make: () => crumpled(0.045) },
+export const BALLS = [
+  { radius: 0.11, bounce: 0.6, roll: 0.8, drag: 0.05, throw: 11, spots: (w, d) => [[w - 3.2, d - 2.6]], make: football },
+  { radius: 0.045, bounce: 0.35, roll: 4, drag: 0.3, throw: 13, spots: w => [[w - 0.95, 0.85], [w - 1.25, 1.45], [w - 1.5, 2.2], [w - 0.85, 2.7]], make: () => crumpled(0.045) },
 ].map(kind => ({ ...kind, low: kind.radius, tumble: 20, centre: new THREE.Vector3() }));
 // What's on the desks, by furniture.js's name: how high its middle is over its base, how far it reaches from there, what its
 // owner calls it, and how bouncy it is. These slide rather than roll, and stand back up.
-const LOOSE = Object.fromEntries(Object.entries({
+export const LOOSE = Object.fromEntries(Object.entries({
   mug: [0.05, 0.07, 'mug'], cup: [0.07, 0.08, 'coffee'], duck: [0.07, 0.09, 'duck', 0.55], books: [0.054, 0.12, 'books'],
   plant: [0.13, 0.16, 'plant'], cactus: [0.11, 0.13, 'cactus'], frame: [0.07, 0.09, 'photo'],
-}).map(([key, [low, radius, name, bounce = 0.2]]) => [key, { low, radius, name, bounce, roll: 6, drag: 0.3, throw: 6, tumble: 8, upright: true, centre: new THREE.Vector3(0, low, 0) }]));
+}).map(([key, [low, radius, name, bounce = 0.2]]) => [key, { low, radius, name, bounce, roll: 6, drag: 0.3, throw: 10, tumble: 8, upright: true, centre: new THREE.Vector3(0, low, 0) }]));
 // What they say: hit by something, by the coffee, coffee on their desk, something knocking into it.
 const LINES = { hit: ['Hey!', 'Ow!', 'Watch it!', 'Really?'], coffee: ['Hot!', 'My shirt!', 'Seriously?'], desk: ['My desk!', 'Not the keyboard!', 'Ugh, sticky!'], knock: ['Careful!', 'Hey!', 'Easy!'] };
 // Coffee: drops a second while pouring, how much of a mug a second, what each drop adds to a puddle (m²), the largest puddle.
@@ -142,7 +142,7 @@ export function createProps(scene, { room, cast, camera, player, view, bounds, r
     colliders: [], columns: [], ceiling: WALL_H,
     onContact(b, { surface, box }) {
       const who = surface === 'person' ? box.id : box?.owner;
-      if (!who || b.hits.has(who) || b.vel.lengthSq() <= (surface === 'person' ? 2.25 : 4)) return;
+      if (!who || b.hits.has(who) || b.vel.lengthSq() <= (surface === 'person' ? 5.76 : 10.24)) return; // 2.4 and 3.2 m/s: a tap at a desk still isn't a knock
       b.hits.add(who); hit(who, performance.now() / 1000, surface === 'person' ? 'hit' : 'knock');
     },
   };

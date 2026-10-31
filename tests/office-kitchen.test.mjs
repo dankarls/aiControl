@@ -2,9 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { createKitchen, DOOR_NEAR, DOOR_FAR } from '../client/office/kitchen.js';
-import { KITCHEN } from '../client/office/kitchen-plan.js';
+import { KITCHEN, flightBoxes } from '../client/office/kitchen-plan.js';
 import { kitchenDoor, kitchenShift } from '../client/office/layout.js';
 import { WALL_H, WALL_T } from '../client/office/furniture.js';
+import { createSecret } from '../client/office/secret.js';
+import { walkGrid, findPath, nearestOpen } from '../client/office/path.js';
+import { free, resolveStep } from '../client/office/player.js';
+import { moveBody } from '../client/office/props.js';
+import { escaped, makeBody } from '../client/office/flight.js';
+const makeShot = makeBody;
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 // No document in Node: a blank canvas for its textures.
@@ -162,4 +168,50 @@ test('a game gets the group when it is built, is updated with it, and what it st
   assert.equal(calls.at(-1)[1], true);
   const late = []; kitchen.add({ build: group => late.push(group), update() {} });
   assert.deepEqual(late, [kitchen.group], 'added after it was built: at once');
+});
+
+// The kitchen reaches 9.5 m back from the room's front, so in a room shallower than that its back is behind the office's windows wall, where nothing else is built.
+// The office's walls as room.js stands them; the smallest room layout.js makes is 8 deep.
+const WIDTH = 10;
+function building(t, depth) {
+  const was = globalThis.document; globalThis.document = { createElement: () => ({ getContext: blank }), fonts: undefined };
+  t.after(() => { if (was) globalThis.document = was; else delete globalThis.document; });
+  const kitchen = createKitchen(), secret = createSecret({ onPress() {} }), door = kitchenDoor(depth), box = (x0, z0, x1, z1) => new THREE.Box3(V(x0, 0, z0), V(x1, WALL_H, z1));
+  const office = [box(-WALL_T, -WALL_T, WIDTH + WALL_T, 0), box(-WALL_T, depth, WIDTH + WALL_T, depth + WALL_T), box(-WALL_T, 0, 0, door - 0.75), box(-WALL_T, door + 0.75, 0, depth), box(WIDTH, 0, WIDTH + WALL_T, depth - 4.45), box(WIDTH, depth - 3.15, WIDTH + WALL_T, depth)];
+  const walls = [...office, ...secret.build({ width: WIDTH, depth, shell: new THREE.Group() }), ...kitchen.build({ depth, shell: new THREE.Group(), wall: leftWall(depth) })];
+  kitchen.update(1 / 60, V(-3, 1.6, door), true, 0); // built, the doors open
+  return { kitchen, secret, door, walls, bounds: secret.bounds({ width: WIDTH, depth }) };
+}
+
+for (const depth of [8, 8.6, 9.2]) test(`in a room ${depth} deep you can walk to the kitchen's back wall, and no further`, t => {
+  const { kitchen, door, walls, bounds } = building(t, depth), grid = walkGrid(walls, bounds), back = door + KITCHEN.back, spot = V(-0.9, 1.5, back + 0.32);
+  assert.ok(back < 0, 'behind the windows wall');
+  assert.ok(free(spot, walls, bounds), 'there is floor by the back wall');
+  const path = findPath(grid, V(3, 0, door), spot); assert.ok(path, 'a route from the office');
+  let at = V(3, 1.5, door);
+  for (const to of path) for (let i = 0; i < 2000 && Math.hypot(to.x - at.x, to.z - at.z) > 0.03; i++) { const d = V(to.x - at.x, 0, to.z - at.z).clampLength(0, 0.05); at = resolveStep(at, d, walls, bounds); }
+  assert.ok(Math.hypot(spot.x - at.x, spot.z - at.z) < 0.05, `walked to the back wall, got to ${at.x},${at.z}`);
+  for (const dir of [V(0, 0, -0.05), V(0.05, 0, 0), V(0.05, 0, -0.05)]) { let p = at.clone(); for (let i = 0; i < 400; i++) p = resolveStep(p, dir, walls, bounds); assert.ok(kitchen.inside(p), `pushed along ${dir.toArray()}: still in, at ${p.x},${p.z}`); }
+  const outside = V(5, 0, -0.1), stand = nearestOpen(grid, outside); assert.ok(stand.z > 0, `the nearest floor to the windows wall is in the office, not behind it (${stand.z})`);
+  if (back < -0.8) assert.ok(!free(V(3, 1.5, bounds.back + 0.5), walls, bounds), 'no floor behind the office');
+});
+
+for (const depth of [8, 8.6]) test(`in a room ${depth} deep what's thrown at the kitchen's back stays in it`, t => {
+  const { kitchen, secret, door, walls, bounds } = building(t, depth), world = { colliders: [...walls.filter(b => !b.walkOnly), ...kitchen.flight], columns: [], ceiling: WALL_H, onContact() {} };
+  const reachable = p => kitchen.inside(p) || secret.inside(p) || (p.x >= -WALL_T && p.x <= WIDTH + WALL_T && p.z >= 0 && p.z <= depth);
+  const kind = { radius: 0.06, low: 0.06, bounce: 0.6, roll: 1, drag: 0.1, upright: false };
+  let n = 0;
+  for (const [x, z] of [[-0.9, -7.5], [-3, -6.8], [-9.3, -6.9], [-1, 0]]) for (let a = 0; a < 16; a++) for (const speed of [5, 12, 20]) for (const up of [-0.1, 0.4, 2]) {
+    const home = V(x, 1.5, door + z), yaw = a * Math.PI / 8, b = { ...makeShot(kind, home, V(Math.sin(yaw) * speed, up * speed / 2, Math.cos(yaw) * speed)), home, turn: new THREE.Quaternion(), hits: new Set() };
+    for (let i = 0; i < 480 && !b.rest; i++) { moveBody(b, 1 / 60, world, bounds, reachable); assert.ok(!escaped(b.pos, bounds), `escaped at ${b.pos.toArray()}`); assert.ok(reachable(b.pos), `thrown from ${x},${z} at ${a} ${speed} ${up}: out at ${b.pos.toArray()}`); }
+    n++;
+  }
+  assert.ok(n > 500);
+});
+
+test('nothing of the kitchen stands in the office, so its windows wall hides it', t => {
+  const { kitchen, walls } = building(t, 8), back = walls.find(b => b.min.x === -WALL_T && b.max.z === 0 && b.max.x > WIDTH);
+  assert.ok(flightBoxes(kitchen.origin).every(b => b.max.x <= 1e-9), 'all of it this side of x = 0');
+  assert.ok(back && back.min.y === 0 && back.max.y === WALL_H, 'the windows wall reaches its corner, floor to ceiling');
+  assert.ok(walls.some(b => b.surface === 'wall-e' && b.max.z === -WALL_T && b.min.x === -WALL_T), 'and the kitchen has its own east wall past it');
 });

@@ -17,7 +17,8 @@ function baked(geometry, position, turn = [0, 0, 0]) {
 }
 export const LEG = 0.56;            // hip to floor when standing
 const LIMB_R = 0.02, TUBE = 14, RADIAL = 7;
-const INK = '#1b1a1f', LIMB = '#26252b', ROT = new THREE.Color('#5c3c1c'); // ROT: what wear browns the skin toward
+export const LIMB = '#26252b';
+const INK = '#1b1a1f', ROT = new THREE.Color('#5c3c1c'); // ROT: what wear browns the skin toward
 
 // Profiles run bottom to top as [radius, height]; a Catmull-Rom pass smooths them before lathing.
 const profiles = {
@@ -49,6 +50,13 @@ function shareNormals(geometry) {
 function smooth(points, count = 28) {
   const curve = new THREE.CatmullRomCurve3(points.map(([r, y]) => V(r, y)));
   return curve.getPoints(count).map(p => new THREE.Vector2(Math.max(0, p.x), p.y));
+}
+
+// A fruit seen from the front, for a flat picture of one: [x, y] all the way round, shaped as its body is. Its y runs from the foot up.
+export function outline(fruit) {
+  if (fruit === 'banana') { const up = [], down = [], T = 40; for (let i = 0; i <= T; i++) { const t = i / T, p = bananaSpine.getPoint(t), d = bananaSpine.getTangent(t), r = bananaRadius(t); up.push([p.x - d.y * r, p.y + d.x * r]); down.unshift([p.x + d.y * r, p.y - d.x * r]); } return [...up, ...down]; }
+  const side = smooth(profiles[fruit]);
+  return [...side.map(p => [p.x, p.y]), ...side.toReversed().map(p => [-p.x, p.y])];
 }
 
 // Each body: geometry plus a `surface(y)` → { x, r } (centre offset and radius at height y) so the face and clothes sit on it;

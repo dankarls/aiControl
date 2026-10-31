@@ -29,7 +29,7 @@ export class TiltedBox {
 const vec = v => v?.isVector3 ? v.clone() : new Vector3().fromArray(v ?? [0, 0, 0]);
 export const makeBody = (kind, pos, vel) => ({ kind, pos: vec(pos), vel: vec(vel), spin: new Vector3(), ground: false, rest: false, due: 0, quiet: 0 });
 // More than a metre outside the building: it got past the walls somehow.
-export const escaped = (p, { left, width, depth }) => p.x < left - 1 || p.x > width + 1 || p.z < -1 || p.z > depth + 1;
+export const escaped = (p, { left, back = 0, width, depth }) => p.x < left - 1 || p.x > width + 1 || p.z < back - 1 || p.z > depth + 1;
 
 // Put somewhere by hand (let go of, nudged), not flown: a thing of this kind goes from `from` to `to` in one jump, too far to bounce.
 // `to` is moved back to the first box on the way, on `from`'s side, so it can't be put through a wall or left past its middle; a
@@ -94,12 +94,9 @@ function leave(b, box) {
   return -depth;
 }
 
-// One STEP. ponytail: a paper ball (r 4.5 cm) can step over a 2 cm plate above about 15.6 m/s (0/200 at 15, 6/200 at 16); 12 m/s plus a fall from the ceiling is safe.
-// Port of the old props.js step, without the room's walls (they're colliders now) and without knocking owners.
-export function stepBody(b, world) {
-  if (b.rest) return;
-  const h = STEP, { radius: r, low, roll, drag, upright } = b.kind;
-  b.vel.y -= (b.kind.gravity ?? GRAVITY) * h; b.vel.multiplyScalar(Math.exp(-drag * h)); b.pos.addScaledVector(b.vel, h);
+// Hits at the body's place: the floor, the ceiling, columns (people), boxes. Port of the old props.js step, without the room's walls (they're colliders now) and without knocking owners. True if it's standing on something.
+function collide(b, world) {
+  const { radius: r, low } = b.kind;
   let ground = false;
   if (b.pos.y < low) { b.pos.y = low; ground = contact(b, world, floor, 'floor', null); }
   if (world.ceiling != null && b.pos.y > world.ceiling - r) { b.pos.y = world.ceiling - r; contact(b, world, ceiling, 'ceiling', null); }
@@ -121,6 +118,17 @@ export function stepBody(b, world) {
     b.pos.addScaledVector(normal, reach - gap);
     ground = contact(b, world, normal, box.surface ?? 'box', box) || ground;
   }
+  return ground;
+}
+
+// One STEP, moved in parts no longer than the distance a face is felt from (its radius, or `low` on a top): its middle can't get past a face between looks, so no thing is too thin and no speed too fast.
+export function stepBody(b, world) {
+  if (b.rest) return;
+  const h = STEP, { radius: r, low, roll, drag, upright } = b.kind;
+  b.vel.y -= (b.kind.gravity ?? GRAVITY) * h; b.vel.multiplyScalar(Math.exp(-drag * h));
+  const parts = Math.max(1, Math.ceil(b.vel.length() * h / Math.min(r, low)));
+  let ground = false;
+  for (let i = 0; i < parts; i++) { b.pos.addScaledVector(b.vel, h / parts); ground = collide(b, world) || ground; }
   // ponytail: no orientation here, only spin; whoever draws the thing turns it by `spin`
   if (ground) { const k = Math.exp(-roll * h); b.vel.x *= k; b.vel.z *= k; if (upright) b.spin.set(0, 0, 0); else b.spin.set(b.vel.z, 0, -b.vel.x).divideScalar(r); }
   else b.spin.multiplyScalar(Math.exp(-0.5 * h));

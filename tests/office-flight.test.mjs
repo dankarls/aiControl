@@ -151,6 +151,7 @@ test('a body outside the building counts as escaped', () => {
   const building = { left: -9, width: 20, depth: 10 };
   for (const [x, z] of [[-10.1, 5], [21.1, 5], [5, -1.1], [5, 11.1]]) assert.ok(escaped(V(x, 1, z), building), `${x} ${z}`);
   for (const [x, z] of [[5, 5], [-3, 5], [-9, 5], [-9.9, 5], [20.9, 5], [5, -0.9], [5, 10.9]]) assert.ok(!escaped(V(x, 1, z), building), `${x} ${z}`);
+  assert.ok(!escaped(V(-3, 1, -2.5), { ...building, back: -2 }) && escaped(V(-3, 1, -3.1), { ...building, back: -2 }), 'a building that starts behind z = 0');
 });
 
 test('put by hand, a thing stops short of what\'s between you and there', () => {
@@ -384,7 +385,7 @@ test('picked up in the games room, it lands in the office clear of the shelf, wh
 });
 
 test('nothing stays lost: what comes to rest where nobody can reach goes home, and that\'s not saved as home', () => {
-  const lost = [['beside the games room', [15, 0.11, 1]], ['past the far end of it', [15, 0.11, 9.6]], ['behind the kitchen', [-0.5, 0.11, 1]], ['past the kitchen\'s far end', [-0.5, 0.11, 9.8]], ['outside the window wall', [5, 0.11, -0.5]]];
+  const lost = [['beside the games room', [15, 0.11, 1]], ['past the far end of it', [15, 0.11, 9.6]], ['behind the kitchen', [-0.5, 0.11, 0.1]], ['past the kitchen\'s far end', [-0.5, 0.11, 9.8]], ['outside the window wall', [5, 0.11, -0.5]]];
   for (const [name, pos] of lost) {
     const a = office(), home = a.ball.home.clone();
     a.run(2); const start = a.ball.home.clone(); assert.deepEqual(start.toArray(), a.ball.pos.toArray());

@@ -97,3 +97,14 @@ test('the left edge is part of the grid key', () => {
   assert.notEqual(gridKey(walls, { width: 10, depth: 10 }), gridKey(walls, { left: -10, width: 10, depth: 10 }));
   assert.equal(gridKey(walls, { width: 10, depth: 10 }), gridKey(walls, { left: 0, width: 10, depth: 10 }));
 });
+
+test('a room with a back edge: cells behind z = 0, on the same lattice', () => {
+  const walls = [box(-0.2, -3, 0, 2)], far = { back: -3.1, width: 5, depth: 5 }, near = { width: 5, depth: 5 }, a = walkGrid(walls, far), b = walkGrid(walls, near), to = new THREE.Vector3(2, 0, -2.5);
+  assert.equal(a.back, -3.25); assert.equal(a.rows, 33);
+  assert.equal(nearestOpen(a, new THREE.Vector3(2, 0, 3)).z, nearestOpen(b, new THREE.Vector3(2, 0, 3)).z, 'what was there stays on its cells');
+  assert.ok(gridKey(walls, far) !== gridKey(walls, near));
+  assert.ok(nearestOpen(a, to).distanceTo(to) < 0.2);
+  const path = findPath(a, new THREE.Vector3(2, 0, 4), to); assert.ok(path); assert.ok(path.at(-1).distanceTo(to) < 1e-9);
+  assert.ok(nearestOpen(b, to).z > 0, 'without one, nothing is back there');
+  assert.ok(nearestOpen(a, new THREE.Vector3(2, 0, -9)).z >= -3.1 + 0.3 - 0.13, 'nothing past the edge');
+});

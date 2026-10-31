@@ -9,6 +9,7 @@ import * as THREE from 'three';
 import { WALL_H, WALL_T, mesh, once, canvasTexture, glowTexture, paint, painted, piece } from './furniture.js';
 import { toonMaterial } from './toon.js';
 import { KITCHEN } from './kitchen-plan.js';
+import { kitchenDoor } from './layout.js';
 
 // The doorway in the office's right wall: wide and high, its middle this far from the front wall (room.js cuts it).
 export const DOOR = { w: 1.3, h: 2.2, back: 3.8 };
@@ -79,8 +80,9 @@ export function createSecret({ onPress, onMove }) {
     shelf,
     // Inside the games room (past the middle of the wall), at `p`.
     inside(p) { return !!built && p.x > built.door.x + WALL_T / 2 && p.z > built.door.z - SECRET.back && p.z < built.door.z + SECRET.front; },
-    // How far you may walk: the office with the kitchen and the games room either side of it (walls and the shelf do the rest).
-    bounds(room) { return { left: -(WALL_T + KITCHEN.width), width: room.width + WALL_T + SECRET.w, depth: room.depth }; },
+    // How far you may walk: the office with the kitchen and the games room either side of it (walls and the shelf do the rest). In a small
+    // room the kitchen reaches back past the office's windows wall, so the building starts behind z = 0.
+    bounds(room) { return { left: -(WALL_T + KITCHEN.width), back: Math.min(0, kitchenDoor(room.depth) + KITCHEN.back - WALL_T), width: room.width + WALL_T + SECRET.w, depth: room.depth }; },
     // Where to stand to press the right book.
     get shown() { return !!built?.room?.visible; },
     get spot() { return built && new THREE.Vector3(built.door.x - 0.9, 0, built.door.z); },
@@ -106,7 +108,9 @@ export function createSecret({ onPress, onMove }) {
       built = { door, shell, room: null, collider, lamps }; place();
       // What a game stands on the floor (in the room's frame) blocks walking too.
       const blocks = games.flatMap(game => game.blocks ?? []).map(b => b.clone().translate(new THREE.Vector3(x0, 0, door.z)));
-      return [...walls, ...blocks, collider];
+      // The floor outside the office's windows wall, beside the kitchen where it reaches back that far: nobody gets there, so no route may end there.
+      const edge = secret.bounds({ width, depth }).back, outside = edge < -WALL_T ? [Object.assign(box(-WALL_T, edge, x0 + w + WALL_T, -WALL_T), { surface: 'behind', walkOnly: true })] : [];
+      return [...walls, ...blocks, collider, ...outside];
     },
     // Each frame, with where you stand (not the camera, which the overview lifts away).
     update(dt, at, still, overview) {

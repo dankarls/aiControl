@@ -158,12 +158,12 @@ test('a shot still moving at 8 s, or ended by a second floor touch inside a zone
 });
 
 test('a door rattling in its frame is a few touches, not one per bounce between its faces', () => {
-  const r = runShot(makeBody(kind(0.436215489), V(-8.090594645166115, 1.8204622549565799, -4.9696031492061925), V(-4.536360383749176, 0.7948744729137394, -0.9532840428656361)), null);
+  const r = runShot(makeBody(kind(0.436215489), V(-8.090594645166115, 1.8204622549565799, -6.9696031492061925), V(-4.536360383749176, 0.7948744729137394, -0.9532840428656361)), null);
   assert.deepEqual(r.contacts.map(c => c.surface), ['fridge', 'fridge', 'floor', 'floor']);
 });
 
 test('a soft event just before a hard one on the same surface doesn\'t swallow it', () => {
-  const r = runShot(makeBody(kind(0.85), V(-3.931104635586962, 2.23621227350086, -2.9684287677519023), V(-6.652099726126528, -2.0635864889875903, -7.460915273121503)), null);
+  const r = runShot(makeBody(kind(0.85), V(-3.931104635586962, 2.23621227350086, -4.9684287677519023), V(-6.652099726126528, -2.0635864889875903, -7.460915273121503)), null);
   assert.ok(r.surfaces.includes('cupboard-2'), r.surfaces.join());
 });
 

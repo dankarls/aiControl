@@ -1,14 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { makeBody, stepBody } from '../client/office/flight.js';
+import { STEP, makeBody, stepBody } from '../client/office/flight.js';
 import { launch, throwSpeed } from '../client/office/throwing.js';
 import { runShot } from '../client/office/shot.js';
 import { CELL, walkGrid, findPath } from '../client/office/path.js';
 import { EYE, LOOK_UP, free } from '../client/office/player.js';
-import { KITCHEN, VESSELS, ZONES, flightBoxes, walkBoxes, behind, levelWorld } from '../client/office/kitchen-plan.js';
+import { KITCHEN, VESSELS, ZONES, flightBoxes, walkBoxes, behind, levelWorld, surfaceTier } from '../client/office/kitchen-plan.js';
 import { kitchenDoor } from '../client/office/layout.js';
-import { WALL_T } from '../client/office/furniture.js';
+import { WALL_H, WALL_T } from '../client/office/furniture.js';
+import { BALLS, LOOSE } from '../client/office/props.js';
 import { ITEMS, STARTS, MONDAY, PAIRS, lineDone } from '../client/office/levels.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z), rad = d => d * Math.PI / 180;
@@ -50,7 +51,7 @@ const OPTIONS = { timeout: 120000 };
 
 test('the items are what the plan says', () => {
   assert.deepEqual(Object.keys(ITEMS), ['paper', 'rubber', 'roll', 'mug', 'plate', 'teabag']);
-  assert.deepEqual(Object.values(ITEMS).map(k => k.throw), [8, 12, 9, 9, 10, 7]);
+  assert.deepEqual(Object.values(ITEMS).map(k => k.throw), [13, 20, 14, 13, 16, 11]);
   for (const [id, k] of Object.entries(ITEMS)) {
     assert.ok(typeof k.name === 'string' && k.name, `${id} has a name`);
     for (const f of ['radius', 'low', 'bounce', 'roll', 'drag', 'tumble']) assert.ok(k[f] >= 0, `${id}.${f}`);
@@ -58,8 +59,16 @@ test('the items are what the plan says', () => {
   }
   const { paper, rubber, roll, mug, plate, teabag } = ITEMS, all = Object.values(ITEMS), most = f => Math.max(...all.map(k => k[f])), least = f => Math.min(...all.map(k => k[f]));
   assert.ok(Math.abs(rubber.bounce - 0.85) < 0.05); assert.equal(plate.bounce, [...all].sort((a, b) => b.bounce - a.bounce)[1].bounce, 'the plate bounces second to the rubber');
-  assert.ok(paper.bounce <= 0.3 && mug.bounce <= 0.3); assert.equal(teabag.drag, most('drag')); assert.equal(plate.roll, least('roll')); assert.ok(roll.roll >= 4, 'the roll stops short');
+  assert.ok(paper.bounce <= 0.35 && mug.bounce <= 0.4); assert.equal(teabag.bounce, least('bounce'), 'the tea bag is the other end'); assert.equal(teabag.drag, most('drag')); assert.equal(plate.roll, least('roll')); assert.ok(roll.roll >= 4, 'the roll stops short');
   assert.ok(roll.tumble > paper.tumble, 'the roll tumbles'); assert.ok(mug.upright && plate.upright, 'a mug and a plate land the right way up');
+});
+
+// You throw with one arm: the kitchen's paper ball is the office's, and how far things go doesn't change at the door.
+test('throwing is the same in the office and the kitchen', () => {
+  const [football, paper] = BALLS;
+  for (const f of ['radius', 'low', 'bounce', 'roll', 'drag', 'throw', 'tumble']) assert.equal(ITEMS.paper[f], paper[f], f);
+  assert.equal(football.throw, 11);
+  assert.ok(Object.values(LOOSE).every(k => k.throw === 10), 'desk things');
 });
 
 test('the clipboard has one line per item, each naming things that exist', () => {
@@ -121,7 +130,7 @@ test('the bucket\'s water keeps what lands in it, and nothing else does', () => 
 });
 
 // A step at speed can go clean through a thin bottom: then the floor is what it hits, not what it was thrown at. A ladder of speeds, at several phases of the fixed step.
-const SPEEDS = [4, 8, 10, 25], PHASES = 12;
+const SPEEDS = [4, 8, 10, 20, 30], PHASES = 12;
 for (const name of ['bucket', 'bin', 'basket']) test(`nothing dropped into the ${name} goes through its bottom, at any speed`, () => {
   const zone = ZONES[name], rim = zone.centre.y + zone.half.y, failed = [];
   for (const [id, kind] of Object.entries(ITEMS)) for (const speed of SPEEDS) for (let phase = 0; phase < PHASES; phase++) {
@@ -130,6 +139,37 @@ for (const name of ['bucket', 'bin', 'basket']) test(`nothing dropped into the $
     if (name === 'bucket' && !r.made) failed.push(`${id} at ${speed} m/s, phase ${phase}: not made, ${r.surfaces}`);
   }
   assert.deepEqual(failed, []);
+});
+
+// The fastest thing there is: a rubber ball at full charge, thrown at a run, with its lift and a fall on top. At every phase of the step, straight on and glancing, it comes off the thin face it met.
+const FASTEST = ITEMS.rubber.throw + 4 * 1.9 + 1.2 + 4, THIN = /^(table|chair|cutout|pan|banner|sign|cupboard|tray|wall|bin|tableMug)/;
+test('nothing goes through anything, however thin and however fast', () => {
+  const failed = [];
+  for (const kind of [ITEMS.rubber, ITEMS.plate]) for (const box of flightBoxes().filter(b => THIN.test(b.surface))) {
+    const middle = box.centre ?? box.getCenter(V()), half = box.half ?? box.getSize(V()).multiplyScalar(0.5), q = box.quaternion ?? new THREE.Quaternion();
+    const axis = ['x', 'y', 'z'].reduce((a, c) => half[c] < half[a] ? c : a), n = V(0, 0, 0).setComponent('xyz'.indexOf(axis), 1).applyQuaternion(q);
+    const along = V(0, 0, 0).setComponent(('xyz'.indexOf(axis) + 1) % 3, 1).applyQuaternion(q);
+    for (const side of [1, -1]) for (const slant of [0, 0.5]) for (let phase = 0; phase < PHASES; phase++) {
+      let hit = false; const world = { colliders: [box], columns: [], onContact: () => { hit = true; } };
+      const heading = n.clone().multiplyScalar(-side).addScaledVector(along, slant).normalize(), from = middle.clone().addScaledVector(heading, -(0.6 + phase * FASTEST * STEP / PHASES));
+      if (from.y < 0.3) continue; // that would be from under the floor
+      const body = makeBody(kind, from, heading.clone().multiplyScalar(FASTEST));
+      for (let i = 0; i < 60 && !hit; i++) stepBody(body, world);
+      if (!hit || body.pos.clone().sub(middle).dot(n) * side <= 0) failed.push(`${kind.name} ${hit ? 'through' : 'missed'} ${box.surface}, side ${side}, slant ${slant}, phase ${phase}`);
+    }
+  }
+  assert.deepEqual(failed, []);
+});
+
+// And in the room as it is: flat out in every direction, on the run, from every mark. It's still in when it's over.
+test('the fastest throw stays in the room', () => {
+  const kind = ITEMS.rubber, out = [], reach = 0.001;
+  for (const { x, z } of Object.values(STARTS)) for (let yaw = 0; yaw < 360; yaw += 15) for (const pitch of [-20, 0, 20, 45]) {
+    const dir = look(rad(yaw), rad(pitch)), walk = look(rad(yaw), 0).multiplyScalar(4 * 1.9), { pos, vel } = launch(kind, 1, { position: V(x, EYE, z) }, dir, walk);
+    const r = runShot(makeBody(kind, pos, vel), null);
+    for (let i = 0; i < r.path.length; i += 3) if (r.path[i] < -KITCHEN.width - reach || r.path[i] > reach || r.path[i + 1] < 0 || r.path[i + 1] > WALL_H + reach || r.path[i + 2] < KITCHEN.back - reach || r.path[i + 2] > KITCHEN.front + reach) { out.push(`${x},${z} yaw ${yaw} pitch ${pitch}: at ${[...r.path.slice(i, i + 3)]}`); break; }
+  }
+  assert.deepEqual(out, []);
 });
 
 // The water is the inside of the bucket: from outside, even low down, it's a wall you hit, and the ball comes back.
@@ -156,15 +196,21 @@ test('every clipboard line has a pocket a hand can stay in', OPTIONS, () => {
   assert.deepEqual(failed, []);
 });
 
-// A set is the highest round score up to 600 you can do on purpose, and that isn't the trick over again: within a tenth of the same throws, it's one line, not two.
+// A set is the highest round score up to 1500 you can do on purpose, and that isn't the trick over again: within a tenth of the same throws, it's one line, not two.
 // Only when no score is both is it allowed to be the trick. Then it's the highest with a pocket.
 const apart = (e, score) => { const list = madeOf(e), hits = list.filter(t => t.result.score >= score), other = list.filter(t => (t.result.score >= score) !== lineDone('trick', t.result, e)); return other.length >= 0.1 * Math.max(1, hits.length); };
-const ROUNDS = [600, 500, 400, 300, 200, 100];
+const ROUNDS = Array.from({ length: 15 }, (_, i) => 1500 - i * 100);
 test('every set score is the highest round one with a pocket, apart from the trick if it can be', OPTIONS, () => {
   const pockets = e => ROUNDS.filter(score => bestPocket(e, r => r.score >= score) >= POCKET);
   const wanted = e => { const held = pockets(e); return held.find(score => apart(e, score)) ?? held[0]; };
   assert.deepEqual(Object.fromEntries(MONDAY.map(e => [e.id, e.set])), Object.fromEntries(MONDAY.map(e => [e.id, wanted(e)])));
-  assert.deepEqual(MONDAY.filter(e => !apart(e, e.set)).map(e => e.id), ['teabag'], 'only the tea bag has no other way to score');
+  assert.deepEqual(MONDAY.filter(e => !apart(e, e.set)).map(e => e.id), []);
+});
+
+// A throw should fly, bounce and hit things: each level has a made throw off three different things that score.
+const scoredOff = r => new Set(r.surfaces.filter(s => surfaceTier(s) !== 'floor')).size;
+test('every clipboard level has a made throw off three surfaces or more', OPTIONS, () => {
+  assert.deepEqual(MONDAY.filter(e => !madeOf(e).some(t => scoredOff(t.result) >= 3)).map(e => e.id), []);
 });
 
 test('every clipboard level can be put away', OPTIONS, () => {
@@ -204,7 +250,7 @@ test('each item has three pairs or more, and together they use every target', ()
 });
 
 // The real path grid at the kitchen's real place, as in the plan's own test: cells fall differently in rooms of different depths.
-const DEPTHS = [8, 8.6, 10, 12.3, 14, 15.5], LEFT = -(WALL_T + KITCHEN.width);
+const DEPTHS = [8, 8.6, 9.7, 10, 12.3, 14, 15.5], LEFT = -(WALL_T + KITCHEN.width);
 test('no start mark stands in a collider', () => {
   assert.deepEqual(Object.keys(STARTS).sort(), ['betweenTables', 'doors', 'farTable', 'fridge', 'island', 'stove', 'vending']);
   const boxes = flightBoxes();
@@ -215,10 +261,10 @@ test('no start mark stands in a collider', () => {
     assert.ok(ahead.x > -KITCHEN.width && ahead.x < 0 && ahead.z > KITCHEN.back && ahead.z < KITCHEN.front, `${name} faces the room`);
   }
   for (const depth of DEPTHS) {
-    const origin = { x: -WALL_T, z: kitchenDoor(depth) }, room = { left: LEFT, width: WALL_T, depth }, at = (x, z) => V(x + origin.x, 0, z + origin.z);
+    const origin = { x: -WALL_T, z: kitchenDoor(depth) }, room = { left: LEFT, back: Math.min(0, origin.z + KITCHEN.back - WALL_T), width: WALL_T, depth }, at = (x, z) => V(x + origin.x, 0, z + origin.z);
     const colliders = [...flightBoxes(origin, { doorShut: false }).filter(b => b.surface.startsWith('wall-')), ...walkBoxes(origin), behind(origin)], grid = walkGrid(colliders, room);
     for (const [name, { x, z }] of Object.entries(STARTS)) {
-      const p = at(x, z), cell = Math.floor(p.z / CELL) * grid.cols + Math.floor((p.x - grid.left) / CELL);
+      const p = at(x, z), cell = Math.floor((p.z - grid.back) / CELL) * grid.cols + Math.floor((p.x - grid.left) / CELL);
       assert.ok(free(p, colliders, room), `${name} (room ${depth}) stands in something you walk round`);
       assert.equal(grid.open[cell], 1, `${name} (room ${depth}) is not on an open cell`);
       const way = findPath(grid, at(-1, 0), p);
