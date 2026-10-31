@@ -2,19 +2,20 @@
 // A football in the lounge and paper balls by the printer are one instanced mesh per kind plus its outline. What stands on
 // the desks (furniture.js marks it userData.loose) comes loose the first time it's picked up and stays the mesh it was. The
 // coffee is a stream of drops and the puddles they leave, one draw call each, and only while there are any.
-// Walking into a ball kicks it; E or a click picks a thing up and throws it; F (held) pours; the machine (fill) tops it up.
+// Walking into a ball kicks it; E or a click picks a thing up, into your hand, and held down and let go throws it (office.js
+// charges it, throwing.js has how); F (held) pours; the machine (fill) tops it up.
 // Whoever gets hit, or whose desk or things do, turns on the boss with a word or two (onHit); `others` adds anyone else who
 // can be hit (the goose). The goose can carry a thing off in its beak (carry, drop).
-// With reduced motion a kick or a throw lands at once, and pouring leaves its puddle without the stream.
+// With reduced motion a kick lands at once, and pouring leaves its puddle without the stream. A throw flies: you aimed it.
 import * as THREE from 'three';
 import { WALL_H, WALL_T, canvasTexture } from './furniture.js';
 import { toonMaterial, instancedOutline, highlight } from './toon.js';
 import { EYE } from './player.js';
 import { GRAVITY, advance, contact, escaped, makeBody, stopShort } from './flight.js';
+import { createHand, launch } from './throwing.js';
 
 export const REACH = 2.6; // from your eyes
 const BODY = 0.3, KICK = 10; // the boss is a column this wide; the hardest kick, m/s
-const HOLD = new THREE.Vector3(-0.3, -0.27, -0.8); // where a thing sits in hand, in front of the camera
 const UP = new THREE.Vector3(0, 1, 0), axis = new THREE.Vector3(), q = new THREE.Quaternion(), tilt = new THREE.Quaternion();
 // Balls: spots are [x, z] in a room `w` by `d`; `roll` is how fast they slow on the ground, `drag` in the air, `tumble` how
 // fast a throw spins them. `low` is how high their middle rests, `centre` where it is from their mesh's origin.
@@ -78,7 +79,7 @@ export function moveBody(b, dt, world, building, reachable = () => true) {
   else if (b.rest) { b.hits.clear(); b.home.copy(b.pos); }
 }
 
-export function createProps(scene, { room, cast, camera, player, view, bounds, reducedMotion, onHit, others = () => [] }) {
+export function createProps(scene, { room, cast, camera, player, view, bounds, reducedMotion, onHit, others = () => [], hand = createHand(camera) }) {
   const root = new THREE.Group(); scene.add(root);
   const bodies = [], matrix = new THREE.Matrix4(), one = new THREE.Vector3(1, 1, 1);
   const near = new THREE.Vector3(), normal = new THREE.Vector3();
@@ -197,29 +198,31 @@ export function createProps(scene, { room, cast, camera, player, view, bounds, r
 
   const props = {
     get holding() { return holding; },
+    get heldKind() { return holding?.kind; },
+    release(charge, direction) { props.throw(direction, false, charge); },
+    abort() { hand.pull(0); }, // it stays in your hand
     // A thing comes to hand if it's within reach; it turns with you from then on.
     grab(b) {
       if (holding || b.held || b.pos.distanceTo(player.position) > REACH) return;
       if (!b.free) free(b);
-      holding = b; b.held = true; b.carried = null; b.rest = false; b.vel.set(0, 0, 0); b.spin.set(0, 0, 0);
+      holding = b; b.held = true; b.carried = null; b.rest = false; b.vel.set(0, 0, 0); b.spin.set(0, 0, 0); hand.hold(null, b.kind.radius);
       b.grip.setFromAxisAngle(UP, -player.yaw).multiply(b.turn);
       if (aimed === b) props.aim(null);
     },
-    // Where you look (or along `direction`), on top of how you're moving; a let go drops it.
-    throw(direction, drop = false) {
+    // Where you look (or along `direction`), as hard as `charge` says; a let go drops it.
+    throw(direction, drop = false, charge = 1) {
       const b = holding; if (!b) return;
-      holding = null; b.held = false; b.grace = 0.3; b.hits.clear();
+      holding = null; b.held = false; b.grace = 0.3; b.hits.clear(); hand.free();
       if (drop) b.vel.set(0, 0, 0);
-      else { // let go on the line you aim along, so it goes where you look
-        const aim = direction || camera.getWorldDirection(forward);
-        b.pos.copy(camera.position).addScaledVector(aim, 0.5); b.vel.copy(aim).multiplyScalar(b.kind.throw).add(walk); b.vel.y += 1.2;
+      else {
+        const { pos, vel } = launch(b.kind, charge, camera, direction || camera.getWorldDirection(forward), walk);
+        b.pos.copy(pos); b.vel.copy(vel);
         b.spin.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(b.kind.tumble);
       }
       // Let go, it's this side of any wall in front of you. Dropped and still in the games room (you're going through the secret
       // door with it) it stays in the office, by the door where the shelf isn't, open or shut.
       stopShort(player.position, b.pos, b.kind, world.colliders);
       if (drop && room.secret.inside(b.pos)) { const { x, z } = room.secret.spot; b.pos.x = x; b.pos.z = z; }
-      if (reducedMotion() && building) settle(b);
     },
     // Outline the thing a click or E would pick up.
     aim(b) { if (b === aimed) return; if (aimed) light(aimed, false); if (b) light(b, true); aimed = b; },
@@ -253,7 +256,7 @@ export function createProps(scene, { room, cast, camera, player, view, bounds, r
       if (holding && busy) props.throw(null, true);
       camera.updateMatrixWorld();
       for (const b of bodies) {
-        if (b.held) { b.pos.copy(HOLD).applyMatrix4(camera.matrixWorld); b.turn.setFromAxisAngle(UP, player.yaw).multiply(b.grip); show(b); continue; }
+        if (b.held) { hand.palm.getWorldPosition(b.pos); b.turn.setFromAxisAngle(UP, player.yaw).multiply(b.grip); show(b); continue; }
         if (b.carried) { b.pos.copy(b.carried()); show(b); continue; }
         if (!Number.isFinite(b.pos.x + b.pos.y + b.pos.z)) { if (b.obj) b.pos.set(w / 2, 1, d / 2); else spawn(b, w, d); }
         if (b.grace) b.grace = Math.max(0, b.grace - dt);

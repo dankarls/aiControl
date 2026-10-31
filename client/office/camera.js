@@ -93,7 +93,7 @@ export class OfficeCamera {
     Object.assign(was, { x: p.position.x, z: p.position.z, yaw: p.yaw, pitch: p.pitch });
     // Now and then a sip: up to your mouth at the bottom of the screen, tipped, and back. Not in a game, the overview, a
     // talk or a pour, running or flying over, with the mug empty or with reduced motion, nor in the few seconds after any of those.
-    const free = !instant && !this.game && !this.gameAmount && !this.amount && !this.focusPoint && this.pour < 0.01 && !p.running && !p.flight;
+    const free = !instant && !this.game && !this.gameAmount && !this.amount && !this.focusPoint && this.pour < 0.01 && !p.running && !p.flight && !this.hands.userData.full;
     let sip = 0, sipping = 0;
     if (instant) this.sipping = null;
     if (this.sipping === null) { this.nextSip = free && this.level > 0.05 ? this.nextSip - dt : Math.max(this.nextSip, 3); if (this.nextSip <= 0) { this.sipping = 0; this.sipTilt = TILT[0] + (TILT[1] - TILT[0]) * (1 - this.level); } }

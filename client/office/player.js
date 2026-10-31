@@ -1,5 +1,7 @@
 // You, the boss: first-person movement with WASD (Shift runs, Space jumps), arrow keys to look, collision with walls and desks.
 // With a mouse, a click captures it (pointer lock): moving looks around, a click picks what's under the dot, right-click or Esc lets go.
+// Holding something, a press charges a throw instead (`onPress` says so) and letting go throws it (`onRelease`). Right-click calls it
+// off first of all (`onCancel`, true if there was one), and so do losing the mouse or the window. Not captured, a drag does too.
 // Captured is what you want until you let go yourself: whatever else takes the mouse (a panel, a menu, the overview, another
 // window) gives it back when it's done (`wanted`, `resume`). Looking with the arrow keys aims with the dot too, until the mouse moves.
 // Touch drags the view along with the finger and taps to walk or pick someone. While the overview is up it has the keys and drags.
@@ -29,12 +31,17 @@ export function officeHasKeys(event) {
 export const sceneFocused = canvas => [document.body, canvas, null].includes(document.activeElement);
 
 export class Player {
-  constructor(canvas, { colliders, room, onPick, route }) {
+  constructor(canvas, { colliders, room, onPick, onPress = () => false, onRelease = () => {}, onCancel = () => false, route }) {
     this.canvas = canvas; this.position = new THREE.Vector3(0, EYE, 0); this.yaw = Math.PI; this.pitch = -0.08; this.spin = 0;
-    this.colliders = colliders; this.room = room; this.onPick = onPick; this.route = route; this.held = new Set(); this.target = null;
+    this.colliders = colliders; this.room = room; this.onPick = onPick; this.onPress = onPress; this.onRelease = onRelease; this.onCancel = onCancel; this.route = route; this.held = new Set(); this.target = null;
     this.locked = this.wanted = this.releasing = this.asking = false; this.overview = false; this.keyLook = false; this.shift = false; this.running = false; this.height = 0; this.rise = 0; this.flight = null;
     const listen = (target, type, fn, options) => { target.addEventListener(type, fn, options); this.disposers.push(() => target.removeEventListener(type, fn, options)); };
     this.disposers = [];
+    // A drag; and `charging`: this press charged a throw, so its release is that throw's, even if it's been called off since, and
+    // never a click. Called off with the button out of sight, the press is over, for it may come up where we can't see it.
+    let drag = null, charging = false;
+    const noThrow = () => { if (charging) { charging = false; this.onCancel(); } };
+    const callOff = () => { if (charging) drag = null; charging = false; this.onCancel(); };
     listen(document, 'keydown', event => {
       this.shift = event.shiftKey;
       if (!officeHasKeys(event) || this.overview) return;
@@ -42,10 +49,11 @@ export class Player {
       else if (event.code === 'Space' && sceneFocused(canvas)) { event.preventDefault(); this.jump(); }
     });
     listen(document, 'keyup', event => { this.shift = event.shiftKey; this.held.delete(event.code); });
-    listen(window, 'blur', () => { this.held.clear(); this.shift = false; });
+    listen(window, 'blur', () => { this.held.clear(); this.shift = false; callOff(); });
     // Let go of without our asking: Esc (you want the mouse), or the window losing focus (you'll want it back).
     listen(document, 'pointerlockchange', () => {
       const lost = this.locked && document.pointerLockElement !== canvas && !this.releasing;
+      if (this.locked && document.pointerLockElement !== canvas) callOff();
       this.locked = document.pointerLockElement === canvas; this.releasing = this.asking = false;
       if (lost) setTimeout(() => { if (document.hasFocus() && !document.hidden) this.wanted = false; }, 100);
     });
@@ -53,23 +61,28 @@ export class Player {
     const look = (x, y, speed) => { this.yaw -= x * speed; this.pitch = THREE.MathUtils.clamp(this.pitch - y * speed, -1.1, 0.8); if (this.target) this.target.looked += (Math.abs(x) + Math.abs(y)) * speed; };
     // Captured: every move looks, a left click picks under the dot, a right click lets go.
     // Otherwise a drag looks around and a press that barely moves is a click on what's under it; a second finger makes it neither.
-    let drag = null;
     listen(canvas, 'contextmenu', event => event.preventDefault());
     listen(canvas, 'pointerdown', event => {
-      if (this.locked) { if (event.button === 0) this.onPick(this.centre, true); else if (event.button === 2) { this.wanted = false; this.unlock(); } return; }
+      if (this.locked) {
+        if (event.button === 0) { charging = this.onPress(this.centre, true); if (!charging) this.onPick(this.centre, true); }
+        else if (event.button === 2 && !this.onCancel()) { this.wanted = false; this.unlock(); }
+        return;
+      }
       this.keyLook = false;
-      if (event.button !== 0) return;
+      if (event.button !== 0) { if (event.button === 2) this.onCancel(); return; }
       this.spin = 0;
-      if (drag) { drag.moved = true; return; }
+      if (drag) { drag.moved = true; noThrow(); return; }
       drag = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false, t: event.timeStamp, v: 0 }; canvas.setPointerCapture(event.pointerId);
+      charging = this.onPress(event, event.pointerType === 'mouse');
     });
     listen(canvas, 'pointermove', event => {
+      if (charging && event.button === 2) this.onCancel(); // pressed with the left still down, a right click is only a move
       if (this.locked) { look(event.movementX, event.movementY, LOCKED_LOOK); return; }
       // Browsers send still moves when the page shifts under the pointer (bubbles move); only a real one takes over from the keys.
       if (event.pointerType === 'mouse' && (event.movementX || event.movementY)) this.keyLook = false;
       if (!drag || drag.id !== event.pointerId) return;
       if (!drag.moved && Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < DRAG_SLOP) return;
-      drag.moved = true;
+      drag.moved = true; noThrow();
       const dx = event.clientX - drag.x, dy = event.clientY - drag.y; drag.x = event.clientX; drag.y = event.clientY;
       // A finger drags the scene along with it (turning the other way to a mouse): a swipe across the screen turns
       // about 225° whatever its size, and the turn's speed (smoothed) carries on as a fling when the finger lifts.
@@ -80,12 +93,13 @@ export class Player {
       drag.v = drag.v * 0.6 + dx * speed / ms * 1000 * 0.4; drag.t = event.timeStamp;
     });
     listen(canvas, 'pointerup', event => {
-      if (drag && !drag.moved) this.onPick(event, event.pointerType === 'mouse');
+      if (charging) { charging = false; this.onRelease(this.locked ? this.centre : event); }
+      else if (drag && !drag.moved) this.onPick(event, event.pointerType === 'mouse');
       // A finger that stopped before lifting doesn't fling.
       else if (drag && event.pointerType === 'touch' && event.timeStamp - drag.t < 100 && !reduceMotion?.matches) this.spin = drag.v;
       drag = null;
     });
-    listen(canvas, 'pointercancel', () => { drag = null; });
+    listen(canvas, 'pointercancel', () => { drag = null; noThrow(); });
   }
 
   // You stop where you are while the overview is up.

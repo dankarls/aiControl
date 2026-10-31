@@ -15,6 +15,7 @@ import { PITCH } from './overview.js';
 import { createProps, REACH } from './props.js';
 import { createScreenshots } from './screenshots.js';
 import { createDarts } from './darts.js';
+import { createCharge, createHand } from './throwing.js';
 import { createGolf } from './golf.js';
 import { createPinball } from './pinball.js';
 import { createGoose, GOOSE } from './goose.js';
@@ -82,12 +83,14 @@ export function mountOffice(container, hooks) {
     room: () => layout && room.secret.bounds(layout.room), // the secret room's beside the office
     route: yourRoute,
     // In first person, a mouse click that isn't on someone (or a board, a pod's sign or a ball) captures the mouse; captured, a
-    // click on the floor walks there. With a ball in hand a click throws it that way; playing a game, the game has the click.
-    // A press that closes the sign's menu does nothing else.
+    // click on the floor walks there. With something in hand a press charges a throw instead; playing a game, the game has the
+    // click. A press that closes the sign's menu does nothing else.
+    onPress: () => !dismissed && startCharge(),
+    onRelease: at => letGo(at),
+    onCancel: () => callOff(),
     onPick: (at, mouse) => {
       if (dismissed) return;
       if (playing) { playing.click(rayAt(at, renderer.domElement, camera)); return; }
-      if (props.holding && !view.overview) { props.throw(rayAt(at, renderer.domElement, camera)); return; }
       const hit = under(at);
       if (hit?.kind === 'character') office.talkTo(hit.id);
       else if (hit?.kind === 'monitor') office.readScreen(hit.id, hit.node, hit.point);
@@ -102,7 +105,19 @@ export function mountOffice(container, hooks) {
   const view = new OfficeCamera(camera, scene, player, room, { reducedMotion: () => !!reducedMotion?.matches, container });
   // Whoever gets hit, or whose things do, jumps, glares and says so; the goose comes for you.
   const onHit = (id, line) => { if (id === GOOSE) { goose.hit(); return; } cast.startle(id); bubbles.say(id, '💢', line); };
-  const props = createProps(scene, { room, cast, camera, player, view, bounds: () => layout?.room, reducedMotion: () => !!reducedMotion?.matches, onHit, others: () => [goose.column] });
+  const hand = createHand(view.hands);
+  const props = createProps(scene, { room, cast, camera, player, view, bounds: () => layout?.room, reducedMotion: () => !!reducedMotion?.matches, onHit, others: () => [goose.column], hand });
+  // A throw: pressed, it charges while it's all still yours (no panel or menu's come up, no overview); let go, it flies along `at`.
+  const charge = createCharge(), clock = () => performance.now() / 1000, noEvent = {};
+  const thrower = () => props;
+  const canCharge = () => !playing && thrower().holding && !view.overview && !menu.open;
+  const startCharge = () => { if (!canCharge()) return false; charge.press(clock()); return true; };
+  const callOff = () => { if (!charge.active) return false; charge.cancel(); overlays.setCharge(null); thrower().abort(); return true; };
+  const letGo = at => {
+    if (!canCharge() || !officeHasKeys(noEvent)) { callOff(); return; }
+    const level = charge.release(clock()); if (level === null) return;
+    overlays.setCharge(null); thrower().release(level, rayAt(at, renderer.domElement, camera));
+  };
   // A thing out of reach: walk over (as near as the furniture lets you) and pick it up.
   const pickUp = body => { if (body.pos.distanceTo(player.position) <= REACH) props.grab(body); else player.walkTo(body.pos.clone().setY(0), () => props.grab(body), 0.7, true); };
   // The coffee machine: fills the mug if you're by it, else you walk over first.
@@ -165,11 +180,13 @@ export function mountOffice(container, hooks) {
       player.unlock(); menu.show(null, { clientX: r.right, clientY: r.bottom }, true, hireChoices(office.snapshot, ''), known);
     } });
   // Tab toggles the overview and Esc closes the menu or leaves the overview (Tab only from the scene itself: on a button or
-  // link it keeps moving focus). E throws what you hold or picks up the outlined thing, else talks to whoever is outlined (or
-  // looks at their screen, goes to the board, flips a toggle, or opens a pod sign's menu), else to whoever is in front of you.
+  // link it keeps moving focus). E, held, charges a throw of what you hold (Esc calls it off), or it picks up the outlined thing,
+  // else talks to whoever is outlined (or looks at their screen, goes to the board, flips a toggle, or opens a pod sign's menu),
+  // else to whoever is in front of you.
   // F, held, pours. Moving takes the mouse back if the browser wouldn't hand it back by itself (see `free`). Playing a game,
   // E plays (where the mouse is), and Esc or a walking key steps back; a game's own keys (the pinball's flippers) are its.
   listen(document, 'keydown', event => {
+    if (event.key === 'Escape' && callOff()) { event.preventDefault(); return; }
     if (!officeHasKeys(event)) return;
     if (playing && event.key !== 'Tab') {
       if (playing.key?.(event.code, true)) { event.preventDefault(); return; }
@@ -183,11 +200,11 @@ export function mountOffice(container, hooks) {
     else if (event.key === 'Escape' && view.overview) overview(false);
     else if (event.code === 'KeyE' && !menu.contains(event.target)) {
       event.preventDefault();
-      if (props.holding) props.throw(); else if (prop) pickUp(prop); else if (monitor) office.readScreen(monitor.id, monitor.node, monitor.point); else if (board) office.readBoard(board); else if (toggle) toggle.userData.toggle(togglePoint); else if (hire) office.offerHire(hire, dot ? player.centre : mouse, true); else office.talkTo(aimed || office.nearest());
+      if (thrower().holding) { if (!event.repeat) startCharge(); } else if (prop) pickUp(prop); else if (monitor) office.readScreen(monitor.id, monitor.node, monitor.point); else if (board) office.readBoard(board); else if (toggle) toggle.userData.toggle(togglePoint); else if (hire) office.offerHire(hire, dot ? player.centre : mouse, true); else office.talkTo(aimed || office.nearest());
     }
     else if (event.code === 'KeyF' && !view.overview && !office.talking) { event.preventDefault(); if (!event.repeat) props.pour(true); }
   });
-  listen(document, 'keyup', event => { if (event.code === 'KeyF') props.pour(false); playing?.key?.(event.code, false); });
+  listen(document, 'keyup', event => { if (event.code === 'KeyF') props.pour(false); if (event.code === 'KeyE') letGo(player.centre); playing?.key?.(event.code, false); });
   listen(window, 'blur', () => { props.pour(false); playing?.blur?.(); });
   // Outline whatever a click (or E) would get, with its card: under the dot when aiming with it, else under the mouse
   // (the scene or a bubble, not the buttons). Ten times a second is plenty.
@@ -232,6 +249,10 @@ export function mountOffice(container, hooks) {
   const tiltSigns = () => { for (const sign of signs) { sign.rotation.x = -PITCH * view.amount; sign.scale.setScalar(1 + 0.4 * view.amount); } };
   frames.add(dt => {
     if (player.locked && document.body.classList.contains('panel-open')) player.unlock();
+    if (charge.active) {
+      if (!canCharge() || !officeHasKeys(noEvent)) callOff();
+      else { const level = charge.level(clock()); overlays.setCharge(level); if (!reducedMotion?.matches) hand.pull(level); }
+    }
     // Whatever took the mouse is done with it.
     const now = free(); if (now && !wasFree) player.resume(); wasFree = now;
     // The overview has the keys and drags while it's up: you stay where you were.

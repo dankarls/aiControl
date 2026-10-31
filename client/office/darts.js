@@ -16,6 +16,7 @@ import { mesh, once, canvasTexture, glowTexture, paint, painted } from './furnit
 import { DRAG_SLOP } from './player.js';
 import { SECRET } from './secret.js';
 import { toonMaterial } from './toon.js';
+import { handModel } from './throwing.js';
 
 // Clockwise from the top, and the rings' outer radii in metres (a regulation board).
 export const ORDER = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5];
@@ -153,16 +154,8 @@ export function createDarts({ hands, camera, canvas, onPlay }) {
   try { best = Number(localStorage.getItem(BEST)) || null; } catch {}
   // Your hand, with the next dart pinched near the back of its barrel, the arm running off the bottom left like the mug's
   // (camera.js). It follows the ring round the board, shakes as it sways and flicks forward as it lets go (update).
-  const arm = new THREE.Group(), grip = new THREE.Group(), ink = toonMaterial('#26252b'); arm.visible = false; hands.add(arm);
-  const held = dart(0); held.visible = false; arm.add(held, grip);
-  for (const m of [held, grip]) m.rotation.set(0.3, -0.5, 0.2);
-  const fist = new THREE.Vector3(0.006, -0.022, 0.068);
-  grip.add(new THREE.Mesh(new THREE.SphereGeometry(0.016, 14, 10).scale(1, 1.1, 1.2).translate(fist.x, fist.y, fist.z), ink));
-  for (const z of [0.044, 0.056]) grip.add(new THREE.Mesh(new THREE.TorusGeometry(0.008, 0.0042, 6, 12, Math.PI * 1.15).rotateZ(-0.35).translate(0, 0, z), ink));
-  grip.add(new THREE.Mesh(new THREE.CapsuleGeometry(0.0045, 0.022, 4, 8).rotateX(Math.PI / 2).rotateY(0.4).translate(-0.006, -0.007, 0.06), ink));
-  grip.updateMatrix(); fist.applyMatrix4(grip.matrix); const wrist = new THREE.Vector3(0.006, -0.03, 0.08).applyMatrix4(grip.matrix);
-  arm.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.QuadraticBezierCurve3(wrist, new THREE.Vector3(-0.04, -0.12, 0.12), new THREE.Vector3(-0.14, -0.3, 0.3)), 16, 0.012, 8), ink));
-  arm.add(new THREE.Mesh(new THREE.SphereGeometry(0.0125, 12, 8).translate(wrist.x, wrist.y, wrist.z), ink));
+  const { arm, grip, fist } = handModel(); arm.visible = false; hands.add(arm);
+  const held = dart(0); held.visible = false; held.rotation.copy(grip.rotation); arm.add(held);
   let stuck, ring, chalk, call, glow, hud, pad;
   // On the board's face in the room's frame: where the ring's been steered to, where this dart's started, where it's pulled
   // back to (drifting about there) and the ring with the sway; the stick, as a push up to 1; the drift's phases this dart.

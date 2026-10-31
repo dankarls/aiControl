@@ -404,3 +404,32 @@ test('a room that grows leaves nothing in the void: the ball in the old games ro
     assert.deepEqual(thing.home.toArray(), thing.pos.toArray());
   }
 });
+
+test('in hand it sits on the palm, wherever you are', () => {
+  const a = office(); inHand(a, 5, 5, 0, -1);
+  assert.deepEqual(a.props.heldKind, a.ball.kind);
+  const palm = V(-0.3, -0.27, -0.8).applyMatrix4(a.camera.matrixWorld);
+  assert.ok(a.ball.pos.distanceTo(palm) < 1e-6, a.ball.pos.toArray().join());
+});
+test('how hard it leaves is how long you held: a tap a quarter, a full charge all of it, on the line you look along', () => {
+  const a = office(), b = office();
+  inHand(a, 5, 5, 0, -1); inHand(b, 5, 5, 0, -1);
+  a.props.release(0, V(0, 0, -1)); b.props.release(1, V(0, 0, -1));
+  assert.equal(a.props.holding, null); assert.ok(a.ball.grace > 0);
+  assert.ok(Math.abs(a.ball.vel.z + a.ball.kind.throw * 0.25) < 1e-9, `tap ${a.ball.vel.z}`);
+  assert.ok(Math.abs(b.ball.vel.z + b.ball.kind.throw) < 1e-9, `full ${b.ball.vel.z}`);
+  assert.deepEqual(a.ball.pos.toArray(), [5, 1.6, 4.5]);
+});
+test('a charge called off leaves it in your hand', () => {
+  const a = office(); inHand(a, 5, 5, 0, -1);
+  a.props.abort();
+  assert.equal(a.props.holding, a.ball);
+});
+test('with reduced motion a throw flies too, and comes down where a thrown thing does', () => {
+  const quick = office({ colliders: walls() }), still = office({ colliders: walls(), still: true });
+  for (const a of [quick, still]) { inHand(a, 5, 8, 0, -1); a.props.release(0.5, V(0, 0, -1)); }
+  assert.equal(still.ball.rest, false, 'not there yet');
+  assert.ok(still.ball.pos.z > 7, `${still.ball.pos.z}`);
+  for (const a of [quick, still]) a.run(8);
+  assert.ok(still.ball.rest && still.ball.pos.distanceTo(quick.ball.pos) < 1e-6, `${still.ball.pos.toArray()} ${quick.ball.pos.toArray()}`);
+});
