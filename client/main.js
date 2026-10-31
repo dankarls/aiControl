@@ -108,7 +108,6 @@ const icons = {
   exit: '<path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4m5-12 4 4-4 4m4-4H9"/>',
   eraser: '<path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21m9 0H7M5 11l9 9"/>',
   bridge: '<path d="M12 2c3 2.5 4.5 6 4.5 10l-1.5 5H9l-1.5-5C7.500 8 9 4.500 12 2Zm-3 15-3 3 .5-5 1.500-3m7 5 3 3-.5-5-1.500-3M12 8.500v2"/>',
-  outline: '<rect x="8" y="8" width="8" height="8" rx="1.5" fill="currentColor"/><rect x="4" y="4" width="16" height="16" rx="4"/>',
   office: '<path d="M4 21V5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v16m0-11h3a2 2 0 0 1 2 2v9M2 21h20M8 7h3m-3 4h3m-3 4h3"/>',
 };
 function icon(name) {
@@ -136,17 +135,19 @@ function themeMenu() {
   const menu = el('details', 'theme-menu');
   const summary = el('summary', 'quiet-button'); summary.append(icon('theme')); summary.setAttribute('aria-label', 'Change theme'); summary.title = 'Change theme';
   const choices = el('div', 'theme-options'); choices.setAttribute('aria-label', 'Color theme');
+  // The office's own checkbox, tucked under it and shown only while it's the theme.
+  const outlines = button('Outlines', 'theme-sub office-option', () => {
+    outlined = !outlined; try { localStorage.setItem(outlinesKey, outlined ? 'on' : 'off'); } catch { /* per tab only */ }
+    for (const option of document.querySelectorAll('.office-option')) option.setAttribute('aria-checked', String(outlined));
+    scene?.outlines?.(outlined);
+  });
+  outlines.setAttribute('role', 'checkbox'); outlines.setAttribute('aria-checked', String(outlined)); outlines.title = 'Off: only on what you point at';
   for (const theme of themes) {
     const choice = button(theme.name, 'theme-choice', () => { chooseTheme(theme.id); menu.open = false; summary.focus(); });
     choice.dataset.themeChoice = theme.id; choice.setAttribute('aria-pressed', String(document.documentElement.dataset.themeChoice === theme.id));
     choice.prepend(el('i', `theme-swatch ${theme.id}`)); choices.append(choice);
+    if (theme.id === 'office') choices.append(outlines);
   }
-  const outlines = button('Outlines', 'theme-choice office-option', () => {
-    outlined = !outlined; try { localStorage.setItem(outlinesKey, outlined ? 'on' : 'off'); } catch { /* per tab only */ }
-    for (const option of document.querySelectorAll('.office-option')) option.setAttribute('aria-pressed', String(outlined));
-    scene?.outlines?.(outlined);
-  }, 'outline');
-  outlines.title = 'Off: only on what you point at'; outlines.setAttribute('aria-pressed', String(outlined)); choices.append(outlines);
   menu.append(summary, choices); placeMenu(menu, summary, choices); return menu;
 }
 // The sidebar scrolls and would clip the list, so open it against the viewport there.
