@@ -10,7 +10,8 @@ import { createSlacking } from './slack.js';
 import { createWindows } from './windows.js';
 import { createScreens, SCREEN_W, SCREEN_H } from './screens.js';
 import { createSecret, DOOR } from './secret.js';
-import { DESK_W, DESK_D, COFFEE_X } from './layout.js';
+import { createKitchen } from './kitchen.js';
+import { DESK_W, DESK_D, COFFEE_X, KITCHEN_DOOR_W, kitchenDoor } from './layout.js';
 import {
   WALL_H, WALL_T, shared, once, rounded, mesh, canvasTexture, paint, painted, piece, deskItem, coffeeCup, plant, picture, sofa, armchair, lowTable, floorLamp, rug,
   counter, coffeeMachine, mugShelf, waterCooler, bookshelf, printer, filingCabinet, coatRack, extinguisher, glowTexture, floorShadow,
@@ -213,9 +214,9 @@ const badgeGeometry = () => { const g = new THREE.CylinderGeometry(0.12, 0.12, 0
 // The board's edges in one group and its two faces in another (a box's groups run +x, -x, +y, -y, +z, -z).
 const boardGeometry = () => { const g = rounded(1.6, 0.4, 0.05, 0.03), [, , , , front, back] = g.groups; g.clearGroups(); g.addGroup(0, front.start, 0); g.addGroup(front.start, front.count + back.count, 1); return g; };
 
-// A wall `w` long, centred and WALL_T thick like a box, with a doorway cut out of its foot at `door` along it.
-const notched = (w, door) => {
-  const [a, b, top, foot] = [door - DOOR.w / 2, door + DOOR.w / 2, DOOR.h - WALL_H / 2, -WALL_H / 2];
+// A wall `w` long, centred and WALL_T thick like a box, with a doorway `doorW` wide cut out of its foot at `door` along it.
+const notched = (w, door, doorW = DOOR.w) => {
+  const [a, b, top, foot] = [door - doorW / 2, door + doorW / 2, DOOR.h - WALL_H / 2, -WALL_H / 2];
   const shape = new THREE.Shape().moveTo(-w / 2, foot).lineTo(a, foot).lineTo(a, top).lineTo(b, top).lineTo(b, foot).lineTo(w / 2, foot).lineTo(w / 2, -foot).lineTo(-w / 2, -foot);
   return new THREE.ExtrudeGeometry(shape, { depth: WALL_T, bevelEnabled: false }).translate(0, 0, -WALL_T / 2);
 };
@@ -234,12 +235,14 @@ export function createRoom(scene, renderer) {
   const room = {
     // The secret room behind the lounge's bookshelf; pressing its right book calls room.onSecret (office.js walks you over).
     secret: createSecret({ onPress: () => room.onSecret?.(), onMove: () => room.refreshFlight() }),
+    // The kitchen through the left wall's doors; when it's first built or its doors move, things fly differently (and new things need dimming).
+    kitchen: createKitchen({ onMove: () => { room.refreshFlight(); lights.refresh(); } }),
     colliders: [], flightColliders: [], lintels: [], furnitureColliders: [], fadeables: { ceiling: null, walls: [] }, boards: {},
     // What thrown things meet: what blocks walking, less what's only for walking, plus what you can't walk into (the wall over a
     // doorway). A new list whenever room.colliders changes or a door moves: it's how props.js knows to wake things.
     // ponytail: so things can be thrown into the games room and lie there. Picked up in there they land back in the office, the
     // goose ignores them, and a ball in there floats over nothing in the overview, which doesn't draw the room.
-    refreshFlight() { room.flightColliders = [...room.colliders.filter(box => !box.walkOnly), ...room.lintels]; },
+    refreshFlight() { room.flightColliders = [...room.colliders.filter(box => !box.walkOnly), ...room.lintels, ...room.kitchen.flight]; },
     deskAnchor(id) {
       const desk = desks.get(id); if (!desk) return null;
       desk.group.updateMatrixWorld();
@@ -401,28 +404,29 @@ export function createRoom(scene, renderer) {
     // Walls, each with the inward normal used to fade the ones between the overview camera and the room.
     // What hangs on a wall is its child, so it hides with the wall. Side walls' local x runs toward -z: x = depth / 2 - z.
     room.fadeables.walls = []; room.wallColliders = []; room.lintels = [];
-    // `door`: where along it (its local x) a doorway is cut, DOOR.w wide and DOOR.h high; the trim and what blocks walking stop
+    // `door`: where along it (its local x) a doorway is cut, `doorW` wide and DOOR.h high; the trim and what blocks walking stop
     // either side of it.
-    const wall = (w, x, z, rotation, normal, color = '#eef1f5', door) => {
-      const spans = door === undefined ? [[-w / 2, w / 2]] : [[-w / 2, door - DOOR.w / 2], [door + DOOR.w / 2, w / 2]];
+    const wall = (w, x, z, rotation, normal, color = '#eef1f5', door, doorW = DOOR.w) => {
+      const spans = door === undefined ? [[-w / 2, w / 2]] : [[-w / 2, door - doorW / 2], [door + doorW / 2, w / 2]];
       // The trim stops a hair short of the doorway: ending flush, its ends would share the jambs' faces and flicker.
-      const trims = door === undefined ? spans : [[-w / 2, door - DOOR.w / 2 - 0.003], [door + DOOR.w / 2 + 0.003, w / 2]];
-      const m = mesh(door === undefined ? new THREE.BoxGeometry(w, WALL_H, WALL_T) : notched(w, door), toonMaterial(color, { transparent: true }), 0);
+      const trims = door === undefined ? spans : [[-w / 2, door - doorW / 2 - 0.003], [door + doorW / 2 + 0.003, w / 2]];
+      const m = mesh(door === undefined ? new THREE.BoxGeometry(w, WALL_H, WALL_T) : notched(w, door, doorW), toonMaterial(color, { transparent: true }), 0);
       m.position.set(x, WALL_H / 2, z); m.rotation.y = rotation; shell.add(m); m.updateMatrixWorld();
       const trim = mesh(mergeGeometries(trims.map(([a, b]) => new THREE.BoxGeometry(b - a, 0.14, WALL_T + 0.04).translate((a + b) / 2, 0, 0))), toonMaterial('#3a4352'), 0); trim.position.y = -WALL_H / 2 + 0.07; m.add(trim);
       room.fadeables.walls.push({ mesh: m, normal });
       const solid = (a, b, y = -WALL_H / 2) => new THREE.Box3(new THREE.Vector3(a, y, -WALL_T / 2), new THREE.Vector3(b, WALL_H / 2, WALL_T / 2)).applyMatrix4(m.matrixWorld);
       for (const [a, b] of spans) room.wallColliders.push(solid(a, b));
-      if (door !== undefined) room.lintels.push(solid(door - DOOR.w / 2, door + DOOR.w / 2, DOOR.h - WALL_H / 2));
+      if (door !== undefined) room.lintels.push(solid(door - doorW / 2, door + doorW / 2, DOOR.h - WALL_H / 2));
       return m;
     };
     // Two accent walls: teal behind the windows, coral on the right.
     const back = wall(width + WALL_T * 2, width / 2, -WALL_T / 2, 0, new THREE.Vector3(0, 0, 1), '#3fa39b');
     const front = wall(width + WALL_T * 2, width / 2, depth + WALL_T / 2, 0, new THREE.Vector3(0, 0, -1));
-    const left = wall(depth, -WALL_T / 2, depth / 2, Math.PI / 2, new THREE.Vector3(1, 0, 0));
+    const along = z => depth / 2 - z;
+    const left = wall(depth, -WALL_T / 2, depth / 2, Math.PI / 2, new THREE.Vector3(1, 0, 0), undefined, along(kitchenDoor(depth)), KITCHEN_DOOR_W);
     // The right wall has the secret room's doorway in it, behind the lounge's tall bookshelf (secret.js).
     const right = wall(depth, width + WALL_T / 2, depth / 2, Math.PI / 2, new THREE.Vector3(-1, 0, 0), '#ee8a6c', DOOR.back - depth / 2);
-    room.wallColliders.push(...room.secret.build({ width, depth, shell }));
+    room.wallColliders.push(...room.secret.build({ width, depth, shell }), ...room.kitchen.build({ depth, shell, wall: left }));
     // Hangs `item` on a wall at world height y; `along` is the wall's local x. Back and left walls face +z locally, front and right -z.
     const hang = (on, item, along, y, out = 0.02) => { const flip = on === front || on === right; item.position.set(along, y - WALL_H / 2, (WALL_T / 2 + out) * (flip ? -1 : 1)); if (flip) item.rotation.y = Math.PI; on.add(item); return item; };
 
@@ -474,7 +478,6 @@ export function createRoom(scene, renderer) {
     room.boards = { whiteboard: whiteboard.userData.face, clock: clockFace, waiting: waiting.userData.face, plate };
 
     // Left wall: a bookshelf at the back, the whiteboard, pictures where there's room; the front is kept clear for the kitchen doorway.
-    const along = z => depth / 2 - z;
     place(bookshelf(), 0.2, 1.45, Math.PI / 2); shadowUnder(0.25, 1.45, 0.5, 1);
     if (depth / 2 - 1.6 - 1.95 > 1.1) hang(left, picture(1, 0.8, 0.6), along((1.95 + depth / 2 - 1.6) / 2), 1.7);
     // The coffee corner is in the front corner of the door wall, beside the kitchen doorway.
@@ -543,6 +546,7 @@ export function createRoom(scene, renderer) {
     for (const w of [back, front, left, right]) bake(w, [windows]);
   }
 
+  root.add(room.kitchen.group);
   return room;
 }
 

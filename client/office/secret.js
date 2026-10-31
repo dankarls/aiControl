@@ -8,6 +8,7 @@
 import * as THREE from 'three';
 import { WALL_H, WALL_T, mesh, once, canvasTexture, glowTexture, paint, painted, piece } from './furniture.js';
 import { toonMaterial } from './toon.js';
+import { KITCHEN } from './kitchen-plan.js';
 
 // The doorway in the office's right wall: wide and high, its middle this far from the front wall (room.js cuts it).
 export const DOOR = { w: 1.3, h: 2.2, back: 3.8 };
@@ -78,8 +79,8 @@ export function createSecret({ onPress, onMove }) {
     shelf,
     // Inside the games room (past the middle of the wall), at `p`.
     inside(p) { return !!built && p.x > built.door.x + WALL_T / 2 && p.z > built.door.z - SECRET.back && p.z < built.door.z + SECRET.front; },
-    // How far you may walk: the office and the games room beside it (walls and the shelf do the rest).
-    bounds(room) { return { left: 0, width: room.width + WALL_T + SECRET.w, depth: room.depth }; },
+    // How far you may walk: the office with the kitchen and the games room either side of it (walls and the shelf do the rest).
+    bounds(room) { return { left: -(WALL_T + KITCHEN.width), width: room.width + WALL_T + SECRET.w, depth: room.depth }; },
     // Where to stand to press the right book.
     get spot() { return built && new THREE.Vector3(built.door.x - 0.9, 0, built.door.z); },
     toggle() { open = !open; idle = 0; press = PRESS; },

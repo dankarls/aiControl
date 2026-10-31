@@ -198,7 +198,7 @@ export function resolveStep(position, delta, colliders, room) {
     p[axis] += delta[axis];
     if (hits() || room?.inside?.(p) === false && !slide(p, axis, delta[axis], room, hits)) p[axis] = before;
   }
-  if (room) { p.x = THREE.MathUtils.clamp(p.x, RADIUS, room.width - RADIUS); p.z = THREE.MathUtils.clamp(p.z, RADIUS, room.depth - RADIUS); }
+  if (room) { p.x = THREE.MathUtils.clamp(p.x, (room.left ?? 0) + RADIUS, room.width - RADIUS); p.z = THREE.MathUtils.clamp(p.z, RADIUS, room.depth - RADIUS); }
   return p;
 }
 
@@ -231,7 +231,7 @@ export function standBefore(point, normal, distance, colliders, room) {
   }
   return null;
 }
-export const free = (p, colliders, room) => (!room || (p.x >= RADIUS && p.x <= room.width - RADIUS && p.z >= RADIUS && p.z <= room.depth - RADIUS)) && room?.inside?.(p) !== false && !colliders.some(box => inside(p, box));
+export const free = (p, colliders, room) => (!room || (p.x >= (room.left ?? 0) + RADIUS && p.x <= room.width - RADIUS && p.z >= RADIUS && p.z <= room.depth - RADIUS)) && room?.inside?.(p) !== false && !colliders.some(box => inside(p, box));
 
 // What's under a screen point: a character (by session id), a desk's monitor (userData.monitor: whose), a board on the wall
 // (userData.board), a pod's sign (userData.hire: { cwd, name }), a toggle (the light switch, the coffee machine), something to

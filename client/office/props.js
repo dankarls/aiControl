@@ -104,7 +104,7 @@ export function createProps(scene, { room, cast, camera, player, view, bounds, r
   const spawn = (b, w, d) => { start(b, w, d); b.pos.copy(b.home); b.vel.set(0, 0, 0); b.rest = false; b.turn.setFromAxisAngle(UP, b.i * 2.1); };
   // Where a thing can lie and still be got at: the office (to the middle of its walls, so the doorway counts) or a room off it.
   // A new room joins the `||`s.
-  const reachable = p => { const { width, depth } = bounds(); return (p.x >= 0 && p.x <= width + WALL_T / 2 && p.z >= 0 && p.z <= depth) || room.secret.inside(p); };
+  const reachable = p => { const { width, depth } = bounds(); return (p.x >= -WALL_T / 2 && p.x <= width + WALL_T / 2 && p.z >= 0 && p.z <= depth) || room.secret.inside(p) || room.kitchen.inside(p); };
 
   // The characters as columns: where, how wide, how tall. Someone hit, or whose things are, says so (once a moment).
   let people = [];
@@ -225,6 +225,8 @@ export function createProps(scene, { room, cast, camera, player, view, bounds, r
       if (drop && room.secret.inside(b.pos)) { const { x, z } = room.secret.spot; b.pos.x = x; b.pos.z = z; }
       if (drop && reducedMotion() && building) { settle(b); show(b); }
     },
+    // The kitchen moved `dz` with the room growing, and what lies in it (`inside`, still where it was) with it. In the air or in hand it's its own.
+    shift(inside, dz) { for (const b of bodies) { if (b.held || b.carried) continue; if (inside(b.pos)) { b.pos.z += dz; show(b); } if (inside(b.home)) b.home.z += dz; } },
     // Outline the thing a click or E would pick up.
     aim(b) { if (b === aimed) return; if (aimed) light(aimed, false); if (b) light(b, true); aimed = b; },
     pour(on) { if (on && !pouring && reducedMotion() && boxes) splash(performance.now() / 1000); pouring = on; },
@@ -234,7 +236,7 @@ export function createProps(scene, { room, cast, camera, player, view, bounds, r
     get machineSpot() { const machine = room.coffeeMachine; return machine && machine.localToWorld(new THREE.Vector3(machine.userData.spout.x, 0, 0.8)); },
     // What could be carried off: anything lying still, on the floor or a desk, that nobody has.
     loose() {
-      const out = bodies.filter(b => b.rest && !b.held && !b.carried && b.pos.x < bounds()?.width); // the goose stays out of the secret room
+      const out = bodies.filter(b => b.rest && !b.held && !b.carried && b.pos.x >= 0 && b.pos.x < bounds()?.width); // the goose stays out of the secret room and the kitchen
       scene.traverse(node => { if (node.userData.loose && !node.userData.body?.free) { const b = thing(node); if (b) out.push(b); } });
       return out;
     },

@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { makeBody, simulate, TiltedBox } from '../client/office/flight.js';
 import { walkGrid, findPath, nearestOpen } from '../client/office/path.js';
-import { KITCHEN, TIERS, ZONES, SPOTS, flightBoxes, walkBoxes, surfaceTier, levelWorld } from '../client/office/kitchen-plan.js';
+import { KITCHEN, TIERS, ZONES, SPOTS, flightBoxes, walkBoxes, behind, surfaceTier, levelWorld } from '../client/office/kitchen-plan.js';
+import { kitchenDoor, kitchenShift } from '../client/office/layout.js';
+import { WALL_T } from '../client/office/furniture.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const ball = { radius: 0.05, low: 0.05, bounce: 0.5, roll: 1, drag: 0.1, upright: false };
@@ -146,19 +148,65 @@ test('walk boxes are marked, cover every chair and leave the doorway clear', () 
   assert.ok(SPOTS.clipboard && SPOTS.lunchTables.length === 4 && SPOTS.scores.facing === 'north' && SPOTS.scores.z > 0.9);
 });
 
-// The real path grid (path.js: 0.25 cells, a body 0.3 wide), the walls and the walk boxes, the room's left edge at -10.2 as Task 6 will have it.
+// The real path grid (path.js: 0.25 cells, a body 0.3 wide) at the kitchen's real place: the origin the room gives it, the left edge of the
+// building, and the walls and walk boxes. In rooms of several depths, because the z the cells fall on changes with the depth.
+const DEPTHS = [8, 8.6, 10, 12.3, 14, 15.5], LEFT = -(WALL_T + KITCHEN.width);
+const kitchenGrid = (depth, dx = 0) => {
+  const origin = { x: -WALL_T + dx, z: kitchenDoor(depth) }, room = { left: LEFT, width: WALL_T, depth };
+  return { origin, at: (x, z) => V(x + origin.x, 0, z + origin.z), grid: walkGrid([...flightBoxes(origin, { doorShut: false }).filter(b => b.surface.startsWith('wall-')), ...walkBoxes(origin), behind(origin)], room) };
+};
+const MARKS = {
+  doorway: [-0.7, 0], bin: [-1.4, -2.5], eastOfIsland: [-3, -3.6], westOfIsland: [-7.5, -3.6], sink: [-6.8, -4.8], stove: [-3, -4.8], fridge: [-8.4, -4.8], bucket: [-8.6, -4.2],
+  shelf: [-9.2, -2.6], farTable: [-6, -0.45], tray: [-8.6, -0.5], vending: [-8.7, 0.4], mug: [-5.2, -0.5],
+};
+
 test('every area a start mark can go is routable from the doorway', () => {
-  for (const oz of [6.5, 7, 7.5]) {
-    const origin = { x: 10.2, z: oz }, room = { width: 10.4, depth: oz + 1.2 };
-    const grid = walkGrid([...flightBoxes(origin).filter(b => b.surface.startsWith('wall-')), ...walkBoxes(origin)], room);
-    const at = (x, z) => V(x + origin.x, 0, z + origin.z), spots = {
-      doorway: [-0.7, 0], bin: [-1.4, -2.5], eastOfIsland: [-3, -3.6], westOfIsland: [-7.5, -3.6], sink: [-6.8, -4.8], stove: [-3, -4.8], fridge: [-8.4, -4.8], bucket: [-8.6, -4.2],
-      shelf: [-9.2, -2.6], farTable: [-6, -0.45], tray: [-8.6, -0.5], vending: [-8.7, 0.4], mug: [-5.2, -0.5],
-    };
-    for (const [name, [x, z]] of Object.entries(spots)) {
+  for (const depth of DEPTHS) {
+    const { at, grid } = kitchenGrid(depth);
+    for (const [name, [x, z]] of Object.entries(MARKS)) {
       const p = at(x, z), open = nearestOpen(grid, p);
-      assert.ok(open && open.distanceTo(p) < 0.2, `${name} (z origin ${oz}) is not on an open cell`);
-      assert.ok(findPath(grid, at(...spots.doorway), p), `${name} (z origin ${oz}) is not reachable`);
+      assert.ok(open && open.distanceTo(p) < 0.2, `${name} (room ${depth}) is not on an open cell`);
+      assert.ok(findPath(grid, at(...MARKS.doorway), p), `${name} (room ${depth}) is not reachable`);
     }
   }
+});
+
+// The way out from between the table rows is 0.5 m wide or more, so it holds a cell wherever the cells fall, not just where they happen to today.
+test('the way out from between the table rows does not depend on where the cells fall', () => {
+  for (const depth of DEPTHS) for (const dx of [0, 0.05, 0.1, 0.15, 0.2]) {
+    const { at, grid } = kitchenGrid(depth, dx);
+    for (const name of ['farTable', 'mug']) {
+      const p = at(...MARKS[name]), way = findPath(grid, at(...MARKS.doorway), p);
+      assert.ok(way, `${name} (room ${depth}, cells off by ${dx}) is not reachable`);
+      assert.ok(nearestOpen(grid, p).distanceTo(p) < 0.25, `${name} (room ${depth}, cells off by ${dx}) is not on an open cell`);
+    }
+  }
+});
+
+test('walking boxes leave a way from the door to every zone and spot', () => {
+  const spots = { ...Object.fromEntries(Object.entries(ZONES).map(([name, z]) => [name, [z.centre.x, z.centre.z]])), clipboard: [SPOTS.clipboard.x, SPOTS.clipboard.z], scores: [SPOTS.scores.x, SPOTS.scores.z], panRack: [SPOTS.panRack.x, SPOTS.panRack.z], tap: [SPOTS.tap.x, SPOTS.tap.z], ...Object.fromEntries(SPOTS.lunchTables.map((t, i) => [`table${i}`, [t.x, t.z]])) };
+  for (const depth of DEPTHS) {
+    const { at, grid } = kitchenGrid(depth);
+    for (const [name, [x, z]] of Object.entries(spots)) {
+      const p = at(x, z), beside = nearestOpen(grid, p);
+      assert.ok(beside && beside.distanceTo(p) < 1.3, `${name} (room ${depth}): nowhere to stand within reach`);
+      assert.ok(findPath(grid, at(-1, 0), beside), `${name} (room ${depth}) can't be reached from the door`);
+    }
+  }
+});
+
+test("growing the room moves the kitchen's colliders and whoever's inside by the same amount", () => {
+  assert.equal(kitchenShift(8, 10), 2);
+  assert.equal(kitchenShift(10, 10), 0);
+  const before = flightBoxes({ x: 0, z: kitchenDoor(8) }), after = flightBoxes({ x: 0, z: kitchenDoor(10) });
+  assert.equal(before.length, after.length);
+  before.forEach((b, i) => {
+    assert.equal(after[i].surface, b.surface);
+    for (const k of ['min', 'max']) assert.ok(Math.abs(after[i][k].x - b[k].x) < 1e-9 && Math.abs(after[i][k].y - b[k].y) < 1e-9 && Math.abs(after[i][k].z - b[k].z - 2) < 1e-9, `${b.surface} ${k}`);
+    if (b.quaternion) assert.ok(b.quaternion.angleTo(after[i].quaternion) < 1e-6);
+  });
+});
+
+test('the chair by the way out stands 25 cm further east', () => {
+  assert.ok(flightBoxes().filter(b => b.surface === 'chair-6').every(b => b.min.x > -3.4), 'it has moved off the lane');
 });

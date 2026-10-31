@@ -122,6 +122,8 @@ export function mountOffice(container, hooks) {
   const pickUp = body => { if (body.pos.distanceTo(player.position) <= REACH) props.grab(body); else player.walkTo(body.pos.clone().setY(0), () => props.grab(body), 0.7, true); };
   // The coffee machine: fills the mug if you're by it, else you walk over first.
   room.onCoffee = () => { if (!props.fill()) player.walkTo(props.machineSpot, () => props.fill(), 0.3, true); };
+  // The room grew with you in the kitchen: you and what's lying in there go along with its door.
+  room.kitchen.moved = dz => { const { inside } = room.kitchen; if (inside(player.position)) { player.position.z += dz; player.target = null; } props.shift(inside, dz); };
   // The secret shelf's right book: pressed from where you stand if you can reach it, else you walk over first.
   room.onSecret = () => { const spot = room.secret.spot; if (player.position.clone().setY(0).distanceTo(spot) < 1.6) room.secret.toggle(); else player.walkTo(spot, () => room.secret.toggle(), 0.3, true); };
   // Darts, the putting green and the pinball in the secret room. Clicking one (from near enough, else you walk over first)
@@ -147,7 +149,7 @@ export function mountOffice(container, hooks) {
   const boards = createBoards(room);
   const bubbles = new Bubbles(container, id => office.talkTo(id));
   // It lets you be in the overview and on your way to someone.
-  const goose = createGoose(scene, { props, player, walkable, bounds: () => layout?.room, busy: () => view.overview || !!player.flight || !!office.talking,
+  const goose = createGoose(scene, { props, player, walkable, bounds: () => layout?.room, busy: () => view.overview || !!player.flight || !!office.talking || room.kitchen.inside(player.position),
     reducedMotion: () => !!reducedMotion?.matches, say: (icon, text) => bubbles.say(GOOSE, icon, text),
     sleepers: () => cast.sleepers(), wake: (id, line) => { cast.startle(id, goose.root.position); bubbles.say(id, '😱', line); } });
   const card = createCard(container);
@@ -259,9 +261,9 @@ export function mountOffice(container, hooks) {
     if (!view.overview && !playing) player.update(dt);
     // What you hold drops at the secret room's door (things in hand only know the office).
     if (props.holding && room.secret.inside(player.position)) props.throw(null, true);
-    // In the secret room the office's bubbles don't show through its walls.
-    const away = room.secret.inside(player.position);
-    view.update(dt); room.update(dt, camera.position, !!reducedMotion?.matches); room.secret.update(dt, player.position, !!reducedMotion?.matches, view.amount); cast.update(dt, player.position); goose.update(dt); props.update(dt); bubbles.update(camera, id => away ? null : id === GOOSE ? goose.top() : cast.positionOf(id), view.amount); boards.tick(); follow(); hover(dt);
+    // In the secret room or the kitchen the office's bubbles don't show through its walls.
+    const away = room.secret.inside(player.position) || room.kitchen.inside(player.position);
+    view.update(dt); room.update(dt, camera.position, !!reducedMotion?.matches); room.secret.update(dt, player.position, !!reducedMotion?.matches, view.amount); room.kitchen.update(dt, player.position, !!reducedMotion?.matches, view.amount); cast.update(dt, player.position); goose.update(dt); props.update(dt); bubbles.update(camera, id => away ? null : id === GOOSE ? goose.top() : cast.positionOf(id), view.amount); boards.tick(); follow(); hover(dt);
     tiltSigns();
   });
   const resize = () => {

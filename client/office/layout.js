@@ -10,6 +10,8 @@ const CHAIR = 0.9, START = 2.6, MIN_ROOM = 8, CELL_PAIRS = 3, LEFT = 1.5;
 // Where the coffee counter stands along the door wall (world x), and the kitchen doorway in the left wall (world z).
 export const KITCHEN_DOOR_W = 1.5, COFFEE_X = 1.05;
 export const kitchenDoor = depth => depth - 1.5;
+// How far the kitchen, and whoever's in it, moves when the room's depth changes.
+export const kitchenShift = (before, after) => kitchenDoor(after) - kitchenDoor(before);
 
 const podKey = session => session.cwd || session.project || 'Unknown';
 

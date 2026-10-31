@@ -69,7 +69,7 @@ const PARTS = shut => [
   tilt('tray', [-9.642, 0.2376, -0.5], [0.4, 0.01, 0.25], [0, 0, rad(-35)]),
   ...TABLES.map(([x, z], i) => box(`table-${i + 1}`, x - 0.7, 0.7, z - 0.4, x + 0.7, 0.74, z + 0.4)),
   ...vessel('tableMug', ...VESSELS.tableMug),
-  ...[[-7.6, -1.95, 15], [-6.9, -1.95, -30], [-5.8, -1.95, 40], [-4.9, -1.95, -20], [-8.3, -1.4, 140], [-3.3, -1.4, 255], [-4.2, 0.6, 100], [-6.2, 0.6, 200]].flatMap(([x, z, yaw], i) => chair(i + 1, x, z, yaw)),
+  ...[[-7.6, -1.95, 15], [-6.9, -1.95, -30], [-5.8, -1.95, 40], [-4.9, -1.95, -20], [-8.3, -1.4, 140], [-3.05, -1.4, 255], [-4.2, 0.6, 100], [-6.2, 0.6, 200]].flatMap(([x, z, yaw], i) => chair(i + 1, x, z, yaw)),
   ...chair(9, -2.9, -0.2, 50, 90),
   box('vending', -10, 0, 0, -9.2, 1.9, 0.8),
   ...vessel('bin', ...VESSELS.bin), ...vessel('bucket', ...VESSELS.bucket),
@@ -111,5 +111,8 @@ export function walkBoxes(origin = { x: 0, z: 0 }) {
   }
   return [...groups].map(([surface, b]) => Object.assign(b, { surface, walkOnly: true }));
 }
+
+// The floor between the kitchen's north wall and the building's edge: nobody gets there, so no route may end there.
+export const behind = origin => Object.assign(new THREE.Box3(new THREE.Vector3(origin.x - KITCHEN.width - WALL_T, 0, 0), new THREE.Vector3(origin.x, WALL_H, Math.max(origin.z + KITCHEN.back - WALL_T, 0))), { surface: 'behind', walkOnly: true });
 
 export const levelWorld = onContact => ({ colliders: flightBoxes(), columns: [], ceiling: WALL_H, onContact });

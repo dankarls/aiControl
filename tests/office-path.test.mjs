@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { walkGrid, findPath, gridKey } from '../client/office/path.js';
+import { walkGrid, findPath, gridKey, nearestOpen, CELL } from '../client/office/path.js';
 import { free } from '../client/office/player.js';
 
 const box = (x1, z1, x2, z2) => new THREE.Box3(new THREE.Vector3(x1, 0, z1), new THREE.Vector3(x2, 1, z2));
@@ -58,4 +58,42 @@ test("a round room's corners are not walkable", () => {
   const grid = walkGrid([], circle), corner = findPath(grid, V(1, 1), V(8, 8));
   assert.ok(circle.inside(corner[0]));
   assert.ok(!grid.open[0]);
+});
+
+test('a route crosses into the kitchen only through the doorway', () => {
+  const walls = [box(-0.2, 0, 0, 5.75), box(-0.2, 7.25, 0, 10)], wide = { left: -5, width: 5, depth: 10 }, from = V(1, 6.5), to = V(-3, 2);
+  for (const [a, b] of [[from, to], [to, from]]) {
+    const path = findPath(walkGrid(walls, wide), a, b), points = [a, ...path];
+    assert.ok(path && walkable(a, path, walls, false, wide), 'never through the wall');
+    assert.deepEqual(path.at(-1).toArray(), [b.x, 0, b.z]);
+    let crossings = 0;
+    for (let i = 1; i < points.length; i++) {
+      const p = points[i - 1], q = points[i]; if ((p.x < -0.1) === (q.x < -0.1)) continue;
+      crossings++; const z = p.z + (q.z - p.z) * (-0.1 - p.x) / (q.x - p.x);
+      assert.ok(z > 5.75 && z < 7.25, `crossed the wall at z ${z}`);
+    }
+    assert.equal(crossings, 1);
+  }
+  assert.equal(findPath(walkGrid([box(-0.2, 0, 0, 10)], wide), from, to), null, 'no gap, no way');
+});
+
+test('a left edge: cells are found and centred in world x, on the same lattice as the office', () => {
+  const grid = walkGrid([], { left: -5, width: 0, depth: 5 });
+  assert.equal(grid.cols, 20);
+  assert.deepEqual(nearestOpen(grid, V(-2.6, 1.1)).toArray(), [-2.625, 0, 1.125]);
+  assert.deepEqual(nearestOpen(grid, V(2.6, 1.1)).toArray(), [-0.625, 0, 1.125], 'past the right edge: the nearest open cell');
+  assert.deepEqual(nearestOpen(grid, V(-99, 1.1)).toArray(), [-4.375, 0, 1.125], 'past the left edge: the nearest open cell');
+  const path = findPath(grid, V(-4, 1), V(-1, 4)); assert.ok(path && path.every(p => p.x <= -1 + 1e-9 && p.x >= -4 - 1e-9));
+  // A left edge between cells: the office's cells stay where they were, so a route in the office doesn't change with what's beside it.
+  const uneven = walkGrid([], { left: -10.2, width: 5, depth: 5 }), plain = walkGrid([], { width: 5, depth: 5 });
+  assert.deepEqual(nearestOpen(uneven, V(2.1, 2.1)).toArray(), nearestOpen(plain, V(2.1, 2.1)).toArray());
+  assert.equal(Math.abs(nearestOpen(uneven, V(-5.03, 2.1)).x + 5.125) < 1e-9, true);
+  assert.ok(Math.abs(CELL - 0.25) < 1e-9);
+  assert.equal(uneven.open[0], 0, 'the cell cut by the edge is closed');
+});
+
+test('the left edge is part of the grid key', () => {
+  const walls = [box(2, 4, 8, 6)];
+  assert.notEqual(gridKey(walls, { width: 10, depth: 10 }), gridKey(walls, { left: -10, width: 10, depth: 10 }));
+  assert.equal(gridKey(walls, { width: 10, depth: 10 }), gridKey(walls, { left: 0, width: 10, depth: 10 }));
 });

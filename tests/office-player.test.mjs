@@ -153,3 +153,13 @@ test('a rectangular room is unchanged', () => {
   assert.ok(p.x < 10);
   assert.equal(free(new THREE.Vector3(5, 1.5, 5), [], { width: 10, depth: 10 }), true);
 });
+
+test('free and resolveStep respect a left edge', () => {
+  const west = new THREE.Vector3(-5, 1.5, 5), wide = { left: -10, width: 10, depth: 10 };
+  assert.equal(free(west, [], wide), true);
+  assert.equal(free(west, [], room), false, 'without a left edge the building starts at 0');
+  assert.equal(free(new THREE.Vector3(-9.9, 1.5, 5), [], wide), false, 'it keeps a body clear of the edge');
+  assert.equal(resolveStep(west, new THREE.Vector3(-1, 0, 0), [], wide).x, -6);
+  assert.ok(Math.abs(resolveStep(new THREE.Vector3(-9.5, 1.5, 5), new THREE.Vector3(-2, 0, 0), [], wide).x + 9.7) < 1e-9, 'stopped a body short of it');
+  assert.ok(resolveStep(new THREE.Vector3(1, 1.5, 5), new THREE.Vector3(-3, 0, 0), [], room).x > 0, 'no left edge: stopped at the old wall');
+});

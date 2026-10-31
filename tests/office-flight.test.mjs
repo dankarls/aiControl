@@ -240,7 +240,7 @@ const blank = () => new Proxy({}, { get: (t, k) => k in t ? t[k] : () => ({ addC
 const box3 = (x0, y0, z0, x1, y1, z1, extra) => Object.assign(box(x0, y0, z0, x1, y1, z1), extra);
 function office({ colliders = [], still = false, people = [] } = {}) {
   const heard = [], scene = new THREE.Scene(), player = { position: V(1, 1.6, 1), forward: V(0, 0, -1), yaw: 0, flight: null }, size = { width: 10, depth: 10 };
-  const room = { flightColliders: colliders, secret: { bounds: r => ({ left: 0, width: r.width + 13.2, depth: r.depth }), inside: p => p.x > 10.1 && p.z > size.depth - 7.9 && p.z < size.depth - 0.7, get spot() { return V(9.1, 0, size.depth - 3.8); } } };
+  const room = { flightColliders: colliders, kitchen: { inside: p => p.x < -0.1 && p.x > -10.2 && p.z > size.depth - 7.5 && p.z < size.depth - 0.5 }, secret: { bounds: r => ({ left: -10.2, width: r.width + 13.2, depth: r.depth }), inside: p => p.x > 10.1 && p.z > size.depth - 7.9 && p.z < size.depth - 0.7, get spot() { return V(9.1, 0, size.depth - 3.8); } } };
   const characters = new Map(people.map(p => [p.id, { scale: 1, root: { visible: true } }]));
   const cast = { characters, positionOf: id => { const p = people.find(p => p.id === id); return p && V(p.x, p.top + 0.08, p.z); } };
   const camera = new THREE.PerspectiveCamera(); camera.position.set(1, 1.6, 1);
@@ -299,12 +299,12 @@ test('what you drop going through the secret door stays in the office', () => {
 test('each person minds once a throw, however long it bounces about, and again once it has rested', () => {
   const clock = performance.now, ann = { id: 'ann', x: 5, z: 5, top: 1.6 }; let t = 1000; performance.now = () => t;
   try {
-    const a = office({ people: [ann] });
+    const a = office({ people: [ann], colliders: [box(-0.2, 0, 0, 0, 3, 10)] }); // the left wall: it's a long roll to anywhere else
     a.send([4, 1, 5], [5, 0, 0]); a.run(0.2);
     assert.deepEqual([...a.ball.hits], ['ann']); assert.equal(a.heard.length, 1);
     t += 10000; a.send([4, 1, 5], [5, 0, 0]); a.run(0.2); // well past "once a moment": only hits holds this one back
     assert.equal(a.heard.length, 1);
-    a.run(4); assert.ok(a.ball.rest); assert.equal(a.ball.hits.size, 0);
+    a.run(6); assert.ok(a.ball.rest); assert.equal(a.ball.hits.size, 0);
     t += 10000; a.send([4, 1, 5], [5, 0, 0]); a.run(0.2);
     assert.equal(a.heard.length, 2);
   } finally { performance.now = clock; }
@@ -380,14 +380,14 @@ test('picked up in the games room, it lands in the office clear of the shelf, wh
 });
 
 test('nothing stays lost: what comes to rest where nobody can reach goes home, and that\'s not saved as home', () => {
-  const lost = [['beside the games room', [15, 0.11, 1]], ['past the far end of it', [15, 0.11, 9.6]], ['in the band outside the left wall', [-0.5, 0.11, 5]], ['outside the window wall', [5, 0.11, -0.5]]];
+  const lost = [['beside the games room', [15, 0.11, 1]], ['past the far end of it', [15, 0.11, 9.6]], ['behind the kitchen', [-0.5, 0.11, 1]], ['past the kitchen\'s far end', [-0.5, 0.11, 9.8]], ['outside the window wall', [5, 0.11, -0.5]]];
   for (const [name, pos] of lost) {
     const a = office(), home = a.ball.home.clone();
     a.run(2); const start = a.ball.home.clone(); assert.deepEqual(start.toArray(), a.ball.pos.toArray());
     a.send(pos, [0, 0, 0]); a.run(1);
     assert.deepEqual(a.ball.home.toArray(), start.toArray(), name); assert.deepEqual(a.ball.pos.toArray(), start.toArray(), name); assert.ok(a.ball.rest, name); assert.ok(home);
   }
-  for (const [name, pos] of [['the games room', [15, 0.11, 5]], ['the doorway', [10.05, 0.11, doorZ]], ['the office', [5, 0.11, 5]]]) {
+  for (const [name, pos] of [['the games room', [15, 0.11, 5]], ['the doorway', [10.05, 0.11, doorZ]], ['the office', [5, 0.11, 5]], ['the kitchen', [-3, 0.11, 5]], ['its doorway', [-0.05, 0.11, 8.5]]]) {
     const a = office(); a.run(2); a.send(pos, [0, 0, 0]); a.run(1);
     assert.deepEqual(a.ball.pos.toArray(), pos, name); assert.deepEqual(a.ball.home.toArray(), pos, name);
   }
@@ -453,4 +453,32 @@ test('with reduced motion a thing off a desk let go of is drawn where it landed 
   const b = mug.userData.prop(); b.pos.copy(a.player.position); a.props.grab(b); a.run(0.05); a.props.throw(null, true);
   const middle = b.kind.centre.clone().applyQuaternion(mug.quaternion).add(mug.position); // a thing's origin is at its foot, its `pos` at its middle
   assert.ok(b.rest && middle.distanceTo(b.pos) < 1e-6, `${middle.toArray()} ${b.pos.toArray()}`);
+});
+
+test('a thing that comes to rest in the kitchen stays there, out of the goose\'s reach', () => {
+  const { props, run, ball, send } = office();
+  send([-3, 0.5, 5], [0, 0, 0]); run(3);
+  assert.ok(ball.rest && ball.pos.x === -3, 'it lies where it fell');
+  assert.ok(ball.home.x === -3);
+  assert.ok(!props.loose().includes(ball));
+});
+
+test('thrown past the kitchen, a thing goes back where it was', () => {
+  const { run, ball, send } = office();
+  const home = ball.home.clone();
+  send([-12, 1, 5], [0, 0, 0]); run(0.1);
+  assert.deepEqual(ball.pos.clone().setY(0).toArray(), home.clone().setY(0).toArray());
+});
+
+test('the room grows: what lies in the kitchen goes along with it, and what lies in the office stays', () => {
+  const { props, run, ball, send, room, size, scene } = office();
+  send([-3, 0.5, 5], [0, 0, 0]); run(3);
+  const inKitchen = ball.pos.clone(), other = scene.children[0].children[1].userData.prop(0), stays = other.pos.clone();
+  assert.ok(other.pos.x > 0);
+  props.shift(room.kitchen.inside, 2);
+  assert.equal(ball.pos.z, inKitchen.z + 2);
+  assert.equal(ball.home.z, inKitchen.z + 2);
+  assert.deepEqual(other.pos.toArray(), stays.toArray());
+  size.depth += 2; room.flightColliders = [...room.flightColliders]; run(1);
+  assert.ok(room.kitchen.inside(ball.pos) && Math.abs(ball.pos.z - inKitchen.z - 2) < 1e-9, 'it stays where it was put');
 });
