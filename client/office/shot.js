@@ -17,7 +17,7 @@ export function scoreContacts(contacts) {
     const n = seen.get(surface) ?? 0, tier = TIERS[surfaceTier(surface)]; seen.set(surface, n + 1);
     points += tier.points * REPEAT[Math.min(n, 3)]; if (!n) multiplier += tier.multiplier;
   }
-  return { points, multiplier, surfaces };
+  return { points: Math.round(points), multiplier, surfaces };
 }
 
 export const inZone = (pos, { centre, half }) => {
@@ -26,22 +26,25 @@ export const inZone = (pos, { centre, half }) => {
 };
 
 // flight.js reports a contact on every step the item is on a surface (before the bounce is resolved), so a rolling or resting item streams
-// events of a few cm/s (and a settling bounce is a soft touch of its own; only contacts of SOFT or more are kept). A touch is the first event of a run on one surface: the next STEP-apart events are the same touch, and the first
-// one carries the speed into the surface. A real bounce away from it takes at least 5 steps, so it breaks the run.
+// events of a few cm/s (and a settling bounce is a soft touch of its own; only contacts of SOFT or more are kept). A touch is the first kept
+// event of a run on one surface: the next events within SAME of it are the same touch, and the first one carries the speed into the surface.
+// A real bounce back onto one flat face takes at least 5 steps, so it breaks the run. ponytail: two faces with one name (a chair's seat and
+// back, a vessel's corner) can rebound in 3-4 steps and count as two touches; accepted.
 const SAME = 2.5 * STEP;
 
-// Simulates `body` (stepped in place) to its end: rest, a second floor touch, or 8 s. Made: at rest inside `zone`.
+// Simulates `body` to its end, consuming it (stepped in place: each shot takes a fresh body): rest, a second floor touch, or 8 s. Made: at rest inside `zone`.
 export function runShot(body, zone) {
   const last = new Map(), contacts = []; let floors = 0;
   const out = simulate(body, shared(), { maxTime: MOST_TIME, stop(c) {
-    const before = last.get(c.surface); last.set(c.surface, c.time);
-    if (before !== undefined && c.time - before < SAME) return false;
-    if (c.speed < SOFT) return false; // settling, not a hit: scores nothing and isn't a floor touch
+    const before = last.get(c.surface);
+    if (before !== undefined && c.time - before < SAME) { last.set(c.surface, c.time); return false; }
+    if (c.speed < SOFT) return false; // settling, not a hit: scores nothing, isn't a floor touch and opens no run
+    last.set(c.surface, c.time);
     contacts.push({ time: c.time, surface: c.surface, speed: c.speed, pos: body.pos.toArray() });
     return c.surface === 'floor' && ++floors >= 2;
   } });
   const made = out.rest && !!zone && inZone(out.pos, zone), { points, multiplier, surfaces } = scoreContacts(contacts);
-  return { path: out.path, contacts, time: out.time, made, rest: out.rest, pos: out.pos, points, multiplier, score: made ? Math.round(points * multiplier) : 0, surfaces };
+  return { path: out.path, contacts, time: out.time, made, rest: out.rest, pos: out.pos, points, multiplier, score: made ? points * multiplier : 0, surfaces };
 }
 
 const RATE = 1 / (4 * STEP); // path samples per second
@@ -66,7 +69,7 @@ export function createRun({ start, reducedMotion = false }) {
     advance(dt) {
       const r = run.result; if (run.state !== 'flying') return EMPTY;
       const slowAt = r.made && !reducedMotion ? r.time - SLOW_FOR : Infinity, events = [];
-      let t = clock, left = dt;
+      let t = clock, left = dt > 0 ? dt : 0; // a negative or NaN dt waits
       if (t < slowAt) { const d = Math.min(left, slowAt - t); t += d; left -= d; }
       t += left * (t >= slowAt ? SLOW : 1);
       clock = Math.min(t, r.time); run.time = clock;

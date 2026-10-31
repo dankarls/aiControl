@@ -114,7 +114,7 @@ test('slow motion covers the last 0.6 s of a made shot, and never under reduced 
     const run = createRun({ start, reducedMotion }); run.shoot(onBin(), ZONES.bin);
     const total = run.result.time; assert.ok(run.result.made && total > 1);
     let slow = 0, scaled = 0;
-    while (run.state === 'flying') {
+    for (let i = 0; i < 2000 && run.state === 'flying'; i++) {
       run.advance(1 / 60);
       if (run.timeScale < 1) { slow++; assert.ok(run.time > total - 0.6 - 1e-9, 'only in the last 0.6 s'); }
       if (run.time > total - 0.6 + 1 / 60 && run.state === 'flying') scaled++;
@@ -122,18 +122,19 @@ test('slow motion covers the last 0.6 s of a made shot, and never under reduced 
     assert.equal(slow > 0, !reducedMotion); assert.ok(reducedMotion || scaled > 0);
   }
   const run = createRun({ start }); run.shoot(makeBody(ball, V(-2, 1.5, -2.5), V(0, 0, 0)), ZONES.bin);
-  run.advance(1 / 60); while (run.state === 'flying') { assert.equal(run.timeScale, 1, 'a miss never slows'); run.advance(1 / 60); }
+  run.advance(1 / 60); for (let i = 0; i < 2000 && run.state === 'flying'; i++) { assert.equal(run.timeScale, 1, 'a miss never slows'); run.advance(1 / 60); }
+  assert.equal(run.state, 'done');
 });
 
 test('slow motion takes longer to play out than the shot', () => {
   const run = createRun({ start }); run.shoot(onBin(), ZONES.bin);
-  let t = 0; while (run.state === 'flying') { run.advance(1 / 60); t += 1 / 60; }
+  let t = 0; for (let i = 0; i < 2000 && run.state === 'flying'; i++) { run.advance(1 / 60); t += 1 / 60; }
   assert.ok(t > run.result.time + 0.5, `${t} vs ${run.result.time}`);
 });
 
 test('a reset during slow motion leaves nothing running', () => {
   const run = createRun({ start }); run.shoot(onBin(), ZONES.bin);
-  while (run.timeScale === 1) run.advance(1 / 60);
+  for (let i = 0; i < 2000 && run.timeScale === 1; i++) run.advance(1 / 60);
   assert.ok(run.timeScale < 1);
   run.reset();
   assert.equal(run.state, 'aiming'); assert.equal(run.timeScale, 1); assert.equal(run.result, null); assert.equal(run.time, 0);
@@ -146,4 +147,41 @@ test('a second shot after done or reset plays on its own', () => {
   run.shoot(makeBody(ball, V(-2, 1.5, -2.5), V(0, 0, 0)), ZONES.bin);
   assert.equal(run.state, 'flying'); assert.equal(run.time, 0);
   assert.equal(run.advance(1e6).filter(e => e.type === 'end').length, 1);
+});
+
+const everywhere = { centre: V(-5, 1.5, -3), half: V(6, 2, 4) }; // a zone no end can miss: only the end itself decides
+test('a shot still moving at 8 s, or ended by a second floor touch inside a zone, isn\'t made', () => {
+  const long = runShot(makeBody(kind(0.995), V(-0.5, 2.5, -2.5), V(0, 0, 0)), everywhere);
+  assert.ok(!long.rest && long.time === 8 && inZone(long.pos, everywhere) && !long.made);
+  const twice = runShot(makeBody(ball, V(-2, 1.5, -2.5), V(0, 0, 0)), everywhere);
+  assert.ok(!twice.rest && inZone(twice.pos, everywhere) && !twice.made && twice.score === 0);
+});
+
+test('a door rattling in its frame is a few touches, not one per bounce between its faces', () => {
+  const r = runShot(makeBody(kind(0.436215489), V(-8.090594645166115, 1.8204622549565799, -4.9696031492061925), V(-4.536360383749176, 0.7948744729137394, -0.9532840428656361)), null);
+  assert.deepEqual(r.contacts.map(c => c.surface), ['fridge', 'fridge', 'floor', 'floor']);
+});
+
+test('a soft event just before a hard one on the same surface doesn\'t swallow it', () => {
+  const r = runShot(makeBody(kind(0.85), V(-3.931104635586962, 2.23621227350086, -2.9684287677519023), V(-6.652099726126528, -2.0635864889875903, -7.460915273121503)), null);
+  assert.ok(r.surfaces.includes('cupboard-2'), r.surfaces.join());
+});
+
+test('a made shot ends with the clock normal, and a big dt crosses into slow motion', () => {
+  const run = createRun({ start }); run.shoot(onBin(), ZONES.bin);
+  const slowAt = run.result.time - 0.6; run.advance(slowAt + 0.3);
+  assert.ok(run.timeScale < 1);
+  assert.ok(Math.abs(run.time - (slowAt + 0.3 * 0.25)) < 1e-9, `${run.time} vs ${slowAt}`); // 0.3 s of real time past the boundary is only 0.3 * SLOW of the shot
+  run.advance(1e6);
+  assert.equal(run.timeScale, 1); assert.equal(run.state, 'done');
+});
+
+test('a negative or NaN dt waits', () => {
+  const run = createRun({ start }); run.shoot(onBin(), ZONES.bin); run.advance(0.5);
+  for (const dt of [-1, NaN]) { run.advance(dt); assert.ok(Math.abs(run.time - 0.5) < 1e-9, `${dt}`); }
+});
+
+test('points are whole, and the score is points times multiplier', () => {
+  const r = scoreContacts(['wall-n', 'wall-n', 'wall-n'].map(s => hit(s)));
+  assert.deepEqual(pick(r), { points: 88, multiplier: 1 }); // 50 + 25 + 12.5
 });
