@@ -36,6 +36,23 @@ test('a real mesh goes with the hand, its middle on the palm, until it\'s let go
   assert.equal(mesh.parent, hand.palm); assert.deepEqual(mesh.position.toArray(), [0, 0, 0]);
   hand.free(); assert.equal(mesh.parent, null);
 });
+test('held, a real mesh keeps out of what a click finds too; let go of, it counts again', () => {
+  const hand = createHand(new THREE.Group()), ball = new THREE.Mesh(new THREE.SphereGeometry(0.1)), part = new THREE.Mesh(new THREE.SphereGeometry(0.1)); ball.add(part);
+  const hits = () => { ball.updateWorldMatrix(true, true); const at = ball.getWorldPosition(new THREE.Vector3()); return new THREE.Raycaster(at.setZ(at.z + 5), new THREE.Vector3(0, 0, -1)).intersectObject(ball, true).length; };
+  assert.equal(hits(), 2);
+  hand.hold(ball, 0.1); assert.equal(hits(), 0);
+  hand.free(); assert.equal(hits(), 2);
+  const own = () => {}; part.raycast = own; hand.hold(ball, 0.1); hand.free();
+  assert.ok(part.raycast === own, 'its own stays its own'); assert.equal(hits(), 1);
+});
+test('taking another thing in hand lets go of the one before', () => {
+  const hand = createHand(new THREE.Group()), one = new THREE.Mesh(new THREE.SphereGeometry(0.1)), two = new THREE.Mesh(new THREE.SphereGeometry(0.1));
+  hand.hold(one, 0.1); hand.hold(two, 0.1);
+  assert.ok(one.parent === null && two.parent === hand.palm); // not equal(): printing a hand when it fails runs Node out of memory
+  one.updateWorldMatrix(true, true);
+  assert.equal(new THREE.Raycaster(new THREE.Vector3(0, 0, 5), new THREE.Vector3(0, 0, -1)).intersectObject(one).length, 1);
+  hand.hold(null, 0.1); assert.ok(two.parent === null);
+});
 test('the hand keeps out of what a click finds', () => {
   const hand = createHand(new THREE.Group()), ray = new THREE.Raycaster(), centre = new THREE.Vector3();
   hand.hold(null, 0.1); hand.palm.updateWorldMatrix(true, true);
@@ -54,12 +71,15 @@ test('the arm runs off to the bottom left of the fist, for the darts as it did',
   assert.ok(box.min.x < fist.x - 0.1 && box.min.y < fist.y - 0.2 && box.max.z > fist.z + 0.1);
 });
 
-// A Player without a browser, and what it tells the office. `holding` is whether a press has something to charge.
+// A Player without a browser, and what it tells the office. `holding` is whether a press has something to charge. What was there
+// before the first fake goes back after each test, as `npm test` runs every file in one process.
+let found = null;
 function presses(t, holding = true) {
-  const was = { document: globalThis.document, window: globalThis.window }, handlers = {}, calls = [], listeners = { addEventListener: (type, fn) => { handlers[type] = fn; }, removeEventListener() {} };
+  found ??= { document: globalThis.document, window: globalThis.window };
+  const handlers = {}, calls = [], listeners = { addEventListener: (type, fn) => { handlers[type] = fn; }, removeEventListener() {} };
   globalThis.document = { ...listeners, body: { classList: { contains: () => false } }, querySelector: () => null, activeElement: null, pointerLockElement: null, hasFocus: () => true, exitPointerLock() { calls.push('unlock'); } };
   globalThis.window = listeners;
-  t.after(() => Object.assign(globalThis, was));
+  t.after(() => Object.assign(globalThis, found));
   const canvas = { ...listeners, setPointerCapture() {}, getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 100 }) };
   let active = false;
   const player = new Player(canvas, {
@@ -70,7 +90,7 @@ function presses(t, holding = true) {
     onCancel: () => { const was = active; active = false; if (was) calls.push('cancel'); return was; },
   });
   const pointer = (type, clientX = 50, extra = {}) => handlers[`pointer${type}`]({ pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1, clientX, clientY: 50, movementX: 0, movementY: 0, timeStamp: 0, ...extra });
-  return { player, calls, handlers, pointer, canvas };
+  return { player, calls, handlers, pointer, canvas, holds: on => { holding = on; } };
 }
 test('nothing in hand, a press is the click it always was', t => {
   const { calls, pointer } = presses(t, false);
@@ -119,13 +139,37 @@ test('a charge held by a key is called off by a right click too, with the mouse 
   pointer('down', 50, { button: 2 });
   assert.deepEqual(calls, ['cancel']); assert.ok(player.wanted);
 });
-test('losing the window or the mouse calls the throw off, and the button coming up afterwards is nothing', t => {
-  const window = presses(t);
-  window.pointer('down', 20); window.handlers.blur();
-  assert.deepEqual(window.calls, [['press', 20], 'cancel']);
-  window.pointer('up', 20); assert.deepEqual(window.calls, [['press', 20], 'cancel'], 'no click either');
-  const lock = presses(t); lock.player.locked = true;
-  lock.pointer('down'); lock.handlers.pointerlockchange();
-  assert.deepEqual(lock.calls, [['press', 50], 'cancel']); assert.equal(lock.player.locked, false);
-  lock.pointer('up'); assert.deepEqual(lock.calls, [['press', 50], 'cancel']);
+test('losing the window calls the throw off, and the button coming up afterwards is nothing', t => {
+  const { calls, pointer, handlers } = presses(t);
+  pointer('down', 20); handlers.blur();
+  assert.deepEqual(calls, [['press', 20], 'cancel']);
+  pointer('up', 20); assert.deepEqual(calls, [['press', 20], 'cancel'], 'no click either');
+});
+test('losing the mouse calls the throw off, and the button coming up afterwards is nothing', t => {
+  const { calls, pointer, handlers, player } = presses(t); player.locked = true;
+  pointer('down'); handlers.pointerlockchange();
+  assert.deepEqual(calls, [['press', 50], 'cancel']); assert.equal(player.locked, false);
+  pointer('up'); assert.deepEqual(calls, [['press', 50], 'cancel']);
+});
+test('a right click during a key\'s charge calls it off, even with the left down since before there was a charge', t => {
+  const { calls, player, pointer, holds } = presses(t, false); player.locked = player.wanted = true;
+  pointer('down'); assert.deepEqual(calls, [['pick', 50]]); // that press picked it up
+  holds(true); player.onPress({ clientX: 0 }); calls.length = 0; // E
+  pointer('move', 50, { button: 2, buttons: 3 });
+  assert.deepEqual(calls, ['cancel']); assert.ok(player.locked && player.wanted);
+});
+test('captured, a right click with the left down and nothing charging is what it was: nothing', t => {
+  const { calls, player, pointer } = presses(t, false); player.locked = player.wanted = true;
+  pointer('down'); calls.length = 0;
+  pointer('move', 50, { button: 2, buttons: 3 });
+  assert.deepEqual(calls, []); assert.ok(player.locked && player.wanted);
+});
+test('not captured, a right click with the left down and nothing charging is what it was: nothing', t => {
+  const { calls, player, pointer } = presses(t, false);
+  pointer('down'); pointer('move', 50, { button: 2, buttons: 3 });
+  assert.deepEqual(calls, []);
+  pointer('up'); assert.deepEqual(calls, [['pick', 50]], 'still the click it was');
+});
+test('no fake browser is left behind for the files after this one', () => {
+  assert.ok(globalThis.document === found.document && globalThis.window === found.window);
 });

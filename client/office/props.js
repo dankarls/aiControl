@@ -6,13 +6,13 @@
 // charges it, throwing.js has how); F (held) pours; the machine (fill) tops it up.
 // Whoever gets hit, or whose desk or things do, turns on the boss with a word or two (onHit); `others` adds anyone else who
 // can be hit (the goose). The goose can carry a thing off in its beak (carry, drop).
-// With reduced motion a kick lands at once, and pouring leaves its puddle without the stream. A throw flies: you aimed it.
+// With reduced motion a kick or a drop lands at once, and pouring leaves its puddle without the stream. A throw flies: you aimed it.
 import * as THREE from 'three';
 import { WALL_H, WALL_T, canvasTexture } from './furniture.js';
 import { toonMaterial, instancedOutline, highlight } from './toon.js';
 import { EYE } from './player.js';
 import { GRAVITY, advance, contact, escaped, makeBody, stopShort } from './flight.js';
-import { createHand, launch } from './throwing.js';
+import { launch } from './throwing.js';
 
 export const REACH = 2.6; // from your eyes
 const BODY = 0.3, KICK = 10; // the boss is a column this wide; the hardest kick, m/s
@@ -79,7 +79,7 @@ export function moveBody(b, dt, world, building, reachable = () => true) {
   else if (b.rest) { b.hits.clear(); b.home.copy(b.pos); }
 }
 
-export function createProps(scene, { room, cast, camera, player, view, bounds, reducedMotion, onHit, others = () => [], hand = createHand(camera) }) {
+export function createProps(scene, { room, cast, camera, player, view, bounds, reducedMotion, onHit, others = () => [], hand }) {
   const root = new THREE.Group(); scene.add(root);
   const bodies = [], matrix = new THREE.Matrix4(), one = new THREE.Vector3(1, 1, 1);
   const near = new THREE.Vector3(), normal = new THREE.Vector3();
@@ -223,6 +223,7 @@ export function createProps(scene, { room, cast, camera, player, view, bounds, r
       // door with it) it stays in the office, by the door where the shelf isn't, open or shut.
       stopShort(player.position, b.pos, b.kind, world.colliders);
       if (drop && room.secret.inside(b.pos)) { const { x, z } = room.secret.spot; b.pos.x = x; b.pos.z = z; }
+      if (drop && reducedMotion() && building) settle(b);
     },
     // Outline the thing a click or E would pick up.
     aim(b) { if (b === aimed) return; if (aimed) light(aimed, false); if (b) light(b, true); aimed = b; },

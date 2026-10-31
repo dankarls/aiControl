@@ -42,24 +42,27 @@ export function handModel() {
   return { arm, grip, fist };
 }
 
-// What you're holding sits at `palm`, the fist under it, sized to it. A real mesh goes with the hand. A thing that isn't one (null:
-// an instance of a mesh of balls) is kept at `palm` by its owner. `hands.userData.full`: you don't sip from your mug with it.
+// What you're holding sits at `palm`, the fist under it, sized to it. A real mesh goes with the hand, and clicks go through it
+// till it's let go of. A thing that isn't one (null: an instance of a mesh of balls) is kept at `palm` by its owner.
+// `hands.userData.full`: you don't sip from your mug with it.
 export function createHand(hands) {
   const palm = new THREE.Group(), { arm, fist } = handModel();
   palm.position.copy(HOLD); palm.visible = false; palm.add(arm); hands.add(palm);
-  palm.traverse(node => { node.raycast = () => {}; });
+  const ignored = () => {}, ignore = node => { if (!Object.hasOwn(node, 'raycast')) node.raycast = ignored; }, notice = node => { if (node.raycast === ignored) delete node.raycast; };
+  palm.traverse(ignore);
   let held = null;
+  const letGo = () => { if (!held) return; held.traverse(notice); held.removeFromParent(); held = null; };
   const hand = {
     palm,
     hold(mesh, radius) {
       const size = 1.6 + radius * 12;
       arm.scale.setScalar(size); arm.position.set(0, -radius - FINGERS * size * 0.4, radius * 0.2).addScaledVector(fist, -size);
-      held = mesh; if (mesh) { palm.add(mesh); mesh.position.set(0, 0, 0); }
+      letGo(); held = mesh; if (mesh) { palm.add(mesh); mesh.position.set(0, 0, 0); mesh.traverse(ignore); }
       palm.visible = hands.userData.full = true;
     },
     // Back towards you and tipped, the whole way at a full charge.
     pull(charge) { palm.position.set(HOLD.x - 0.04 * charge, HOLD.y, HOLD.z + 0.16 * charge); palm.rotation.x = 0.35 * charge; },
-    free() { held?.removeFromParent(); held = null; palm.visible = hands.userData.full = false; hand.pull(0); },
+    free() { letGo(); palm.visible = hands.userData.full = false; hand.pull(0); },
   };
   return hand;
 }

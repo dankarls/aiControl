@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { STEP, TiltedBox, makeBody, stepBody, advance, simulate, escaped, stopShort } from '../client/office/flight.js';
 import { createProps, moveBody } from '../client/office/props.js';
+import { createHand } from '../client/office/throwing.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const kind = (extra = {}) => ({ radius: 0.1, low: 0.1, bounce: 0.5, roll: 1, drag: 0.1, throw: 8, tumble: 4, upright: false, centre: V(0, 0, 0), ...extra });
@@ -245,7 +246,7 @@ function office({ colliders = [], still = false, people = [] } = {}) {
   const camera = new THREE.PerspectiveCamera(); camera.position.set(1, 1.6, 1);
   const view = { amount: 0, drunk: 0 };
   globalThis.document = { createElement: () => ({ getContext: blank }) };
-  const props = createProps(scene, { room, cast, camera, player, view, bounds: () => size, reducedMotion: () => still, onHit: (id, line) => heard.push([id, line]) });
+  const props = createProps(scene, { room, cast, camera, player, view, bounds: () => size, reducedMotion: () => still, onHit: (id, line) => heard.push([id, line]), hand: createHand(camera) });
   delete globalThis.document;
   const ball = scene.children[0].children[0].userData.prop(0); // the football
   const run = (seconds, rate = 60) => { for (let i = 0; i < seconds * rate; i++) props.update(1 / rate); };
@@ -432,4 +433,11 @@ test('with reduced motion a throw flies too, and comes down where a thrown thing
   assert.ok(still.ball.pos.z > 7, `${still.ball.pos.z}`);
   for (const a of [quick, still]) a.run(8);
   assert.ok(still.ball.rest && still.ball.pos.distanceTo(quick.ball.pos) < 1e-6, `${still.ball.pos.toArray()} ${quick.ball.pos.toArray()}`);
+});
+test('with reduced motion a thing let go of lands at once, as a thing thrown doesn\'t', () => {
+  const dropped = office({ colliders: walls(), still: true }), thrown = office({ colliders: walls(), still: true });
+  inHand(dropped, 5, 8, 0, -1); inHand(thrown, 5, 8, 0, -1);
+  dropped.props.throw(null, true); thrown.props.release(1, V(0, 0, -1));
+  assert.equal(dropped.ball.rest, true); assert.equal(dropped.ball.pos.y, dropped.ball.kind.low);
+  assert.equal(thrown.ball.rest, false);
 });

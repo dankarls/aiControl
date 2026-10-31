@@ -92,7 +92,7 @@ export class OfficeCamera {
     const spin = Math.atan2(Math.sin(p.yaw - was.yaw), Math.cos(p.yaw - was.yaw)) * rate, nod = (p.pitch - was.pitch) * rate;
     Object.assign(was, { x: p.position.x, z: p.position.z, yaw: p.yaw, pitch: p.pitch });
     // Now and then a sip: up to your mouth at the bottom of the screen, tipped, and back. Not in a game, the overview, a
-    // talk or a pour, running or flying over, with the mug empty or with reduced motion, nor in the few seconds after any of those.
+    // talk or a pour, running or flying over, with something in your other hand, the mug empty or reduced motion, nor in the few seconds after any of those.
     const free = !instant && !this.game && !this.gameAmount && !this.amount && !this.focusPoint && this.pour < 0.01 && !p.running && !p.flight && !this.hands.userData.full;
     let sip = 0, sipping = 0;
     if (instant) this.sipping = null;
@@ -106,6 +106,7 @@ export class OfficeCamera {
       if (t >= RAISE + HOLD + LOWER) { this.sipping = null; this.nextSip = SIPS[0] + Math.random() * (SIPS[1] - SIPS[0]); }
     }
     // Held out in front, raised and tipped to the left; the coffee hides once it would show through the side.
+    // ponytail: it's the whole hands group that lifts, so what's in your other hand goes up the 12 cm with the mug.
     const tip = this.pour, out = -0.1 * tip, lift = 0.12 * tip;
     this.grip.rotation.set(-0.25 * tip + sip * this.sipTilt + 0.1 * sipping, 0.2 * sip, 1.15 * tip);
     this.coffee.visible = this.level > 0.02 && tip < 0.4; this.coffee.position.y = -0.05 + 0.09 * this.level;

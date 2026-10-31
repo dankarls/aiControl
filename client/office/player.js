@@ -76,7 +76,7 @@ export class Player {
       charging = this.onPress(event, event.pointerType === 'mouse');
     });
     listen(canvas, 'pointermove', event => {
-      if (charging && event.button === 2) this.onCancel(); // pressed with the left still down, a right click is only a move
+      if (event.button === 2) this.onCancel(); // pressed with the left still down, a right click is only a move
       if (this.locked) { look(event.movementX, event.movementY, LOCKED_LOOK); return; }
       // Browsers send still moves when the page shifts under the pointer (bubbles move); only a real one takes over from the keys.
       if (event.pointerType === 'mouse' && (event.movementX || event.movementY)) this.keyLook = false;
